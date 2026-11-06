@@ -1133,6 +1133,48 @@ def create_proxy(payload: ProxyCreate):
     return {"data": {"id": proxy_id, "name": payload.name, "status": "unchecked"}}
 
 
+@app.post("/api/v1/proxies/bulk")
+def bulk_create_proxies(payload: dict[str, Any]):
+    """批量导入代理：[{name, protocol, host, port, username, password}]"""
+    items = payload.get("proxies") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(422, detail={"code": "INVALID_PAYLOAD", "message": "proxies 不能为空"})
+    created, skipped = [], []
+    ts = db.now()
+    with db.session() as conn:
+        existing = {
+            (row["protocol"], row["host"], row["port"])
+            for row in conn.execute("SELECT protocol, host, port FROM proxies")
+        }
+        for index, item in enumerate(items[:500], start=1):
+            protocol = str(item.get("protocol") or "http").lower()
+            host = str(item.get("host") or "").strip()
+            try:
+                port = int(item.get("port"))
+            except (TypeError, ValueError):
+                skipped.append({"line": index, "reason": "端口无效"})
+                continue
+            if protocol not in ("http", "https", "socks5") or not host or not 0 < port < 65536:
+                skipped.append({"line": index, "reason": "格式无效"})
+                continue
+            if (protocol, host, port) in existing:
+                skipped.append({"line": index, "reason": "已存在"})
+                continue
+            proxy_id = new_id("px")
+            name = str(item.get("name") or f"{host}:{port}")
+            conn.execute(
+                "INSERT INTO proxies(id, name, protocol, host, port, username, password, "
+                "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'unchecked', ?, ?)",
+                (proxy_id, name, protocol, host, port,
+                 item.get("username") or None, item.get("password") or None, ts, ts),
+            )
+            existing.add((protocol, host, port))
+            created.append({"id": proxy_id, "name": name})
+    if created:
+        db.log("proxy.bulk_create", None, {"count": len(created)})
+    return {"data": {"created": len(created), "items": created, "skipped": skipped}}
+
+
 @app.patch("/api/v1/proxies/{proxy_id}")
 def update_proxy(proxy_id: str, payload: ProxyUpdate):
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}

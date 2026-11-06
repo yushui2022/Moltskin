@@ -792,6 +792,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         </div>
         <div class="head-actions">
           <button class="btn" id="checkAllProxies"><svg class="i"><use href="#i-bolt"/></svg>全部检测</button>
+          <button class="btn" id="bulkProxyBtn"><svg class="i"><use href="#i-import"/></svg>批量导入</button>
           <button class="btn icon" id="refreshProxies" title="刷新"><svg class="i"><use href="#i-refresh"/></svg></button>
           <button class="btn primary" id="toggleProxyForm"><svg class="i"><use href="#i-plus"/></svg>添加代理</button>
         </div>
@@ -1041,6 +1042,26 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   </div>
 </div>
 
+<!-- 批量导入代理 -->
+<div class="mask" id="bulkProxyMask">
+  <div class="modal" style="width:560px">
+    <div class="head">批量导入代理<button class="x" data-close="bulkProxyMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="body single">
+      <div class="field">
+        <label>每行一个代理</label>
+        <textarea class="input" id="bulkProxyText" rows="9" spellcheck="false"
+          placeholder="socks5://user:pass@1.2.3.4:1080&#10;http://5.6.7.8:8080&#10;9.9.9.9:3128:user:pass"></textarea>
+        <div class="hint">支持 <code>协议://用户:密码@主机:端口</code>、<code>主机:端口:用户:密码</code>、<code>主机:端口</code>。协议默认 http。</div>
+      </div>
+      <div class="hint" id="bulkProxyPreview" style="margin-top:8px"></div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close="bulkProxyMask">取消</button>
+      <button class="btn primary" id="confirmBulkProxy">导入</button>
+    </div>
+  </div>
+</div>
+
 <!-- 环境详情 -->
 <div class="mask" id="detailMask">
   <div class="modal wide">
@@ -1140,6 +1161,13 @@ const STATUS = {
   crashed: ["异常", "s-crashed"],
   draft: ["未配置", "s-draft"],
   proxy_failed: ["代理异常", "s-crashed"],
+};
+
+const PROXY_STATUS = {
+  ok: "可用",
+  slow: "较慢",
+  failed: "不可用",
+  unchecked: "未检测",
 };
 
 const ACTION_LABEL = {
@@ -2332,7 +2360,7 @@ function renderProxies() {
     <td class="mono">${p.exit_ip ? esc(p.exit_ip) : '<span class="dim">—</span>'}</td>
     <td>${p.country ? `<span class="flag">${flagOf(p.country)}</span> <span class="muted">${esc(p.country)}</span>` : '<span class="dim">—</span>'}</td>
     <td class="muted">${p.latency_ms != null ? p.latency_ms + "ms" : "—"}</td>
-    <td><span class="st ${p.status === "ok" ? "ok" : p.status === "slow" ? "slow" : p.status === "failed" ? "failed" : ""}">${esc(p.status)}</span></td>
+    <td><span class="st ${p.status === "ok" ? "ok" : p.status === "slow" ? "slow" : p.status === "failed" ? "failed" : ""}">${esc(PROXY_STATUS[p.status] || p.status)}</span></td>
     <td class="muted">${p.used_by || 0}</td>
     <td class="muted nowrap">${fmtTime(p.last_checked_at)}</td>
     <td><div class="action-cell">
@@ -2426,6 +2454,66 @@ async function refreshProxies() {
   fillSelects();
   $("navProxies").textContent = state.proxies.length;
 }
+
+/* ---------------- 批量导入代理 ---------------- */
+function parseProxyLine(raw) {
+  const line = raw.trim();
+  if (!line || line.startsWith("#")) return null;
+  const withScheme = line.match(/^(https?|socks5):\/\/(?:([^:@/]+):([^@/]*)@)?([^:/]+):(\d+)$/i);
+  if (withScheme) {
+    return {
+      protocol: withScheme[1].toLowerCase(),
+      username: withScheme[2] || null,
+      password: withScheme[3] || "",
+      host: withScheme[4],
+      port: Number(withScheme[5]),
+    };
+  }
+  const parts = line.split(/[\s,;]+/).filter(Boolean);
+  if (parts.length >= 4 && /^\d+$/.test(parts[1])) {
+    return { protocol: "http", host: parts[0], port: Number(parts[1]), username: parts[2], password: parts[3] };
+  }
+  if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+    return { protocol: "http", host: parts[0], port: Number(parts[1]), username: null, password: "" };
+  }
+  const colon = line.includes(":") ? line.split(":") : line.split(",");
+  if (colon.length === 2) return { protocol: "http", host: colon[0], port: Number(colon[1]), username: null, password: "" };
+  if (colon.length >= 4) return { protocol: "http", host: colon[0], port: Number(colon[1]), username: colon[2], password: colon.slice(3).join(":") };
+  return null;
+}
+
+function bulkProxyItems() {
+  return $("bulkProxyText").value
+    .split("\n")
+    .map(parseProxyLine)
+    .filter((item) => item && item.host && Number.isFinite(item.port) && item.port > 0 && item.port < 65536);
+}
+
+$("bulkProxyBtn").onclick = () => {
+  $("bulkProxyText").value = "";
+  $("bulkProxyPreview").textContent = "";
+  openModal("bulkProxyMask");
+};
+$("bulkProxyText").addEventListener("input", () => {
+  const items = bulkProxyItems();
+  $("bulkProxyPreview").textContent = items.length
+    ? `识别到 ${items.length} 条：${items.slice(0, 2).map((i) => `${i.protocol}://${i.host}:${i.port}`).join("、")}${items.length > 2 ? " …" : ""}`
+    : "还没有识别到有效代理";
+});
+$("confirmBulkProxy").onclick = async () => {
+  const items = bulkProxyItems();
+  if (!items.length) return toast("没有可导入的代理", true);
+  const btn = $("confirmBulkProxy");
+  btn.disabled = true;
+  try {
+    const result = await api("/proxies/bulk", { method: "POST", body: JSON.stringify({ proxies: items }) });
+    toast(`导入 ${result.created} 个${result.skipped.length ? `，跳过 ${result.skipped.length}` : ""}`, result.skipped.length > 0);
+    closeModal("bulkProxyMask");
+    await refreshProxies();
+    await refresh();
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+};
 
 /* ---------------- 日志 ---------------- */
 async function loadLogs() {
@@ -2614,7 +2702,6 @@ async function refresh({ silent = false } = {}) {
     if (state.page === "home") renderHome();
     if (state.page === "groups") renderGroups();
     if (state.page === "proxies") renderProxies();
-    if (!changed && !silent) toast("已是最新");
   } catch (err) {
     state.loading = false;
     $("errorBanner").style.display = "flex";
