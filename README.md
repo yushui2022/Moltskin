@@ -12,7 +12,11 @@ and exposes them through a web UI and a local REST API.
 
 ![Moltskin overview](docs/screenshots/overview.png)
 
-> Status: **v0.1.0 alpha**. The core create → launch → reuse loop works; expect breaking changes. [Changelog](CHANGELOG.md)
+| Dashboard | Create | Batch create |
+|---|---|---|
+| ![Home](docs/screenshots/home.png) | ![Create](docs/screenshots/create-profile.png) | ![Batch](docs/screenshots/batch-create.png) |
+
+> Status: **v0.2.0 alpha**. The core create → launch → reuse loop works; expect breaking changes. [Changelog](CHANGELOG.md)
 
 ---
 
@@ -38,11 +42,14 @@ and exposes them through a web UI and a local REST API.
 | Proxy pool with exit IP / country / timezone / latency check | ✅ |
 | GeoIP alignment (timezone, locale, coordinates) | ✅ |
 | Local API with bearer token | ✅ |
-| Web UI (responsive: table on desktop, cards on narrow screens) | ✅ |
+| Manager UI: dashboard, window list, groups, proxies, logs, settings | ✅ |
+| Sortable columns, pagination, column visibility, table/card views | ✅ |
+| Keyword search with field + operator, group/tag filters | ✅ |
+| Batch open/stop/delete/move/tag/export, batch create | ✅ |
 | Manager page opened inside the browser on launch | ✅ |
 | Orphan browser cleanup on startup | ✅ |
 | Scheduled proxy health checks | ✅ |
-| Groups, tags, batch open/stop/delete/move, JSON import/export | ✅ |
+| Groups, tags, JSON import/export | ✅ |
 | MCP server, Python SDK | ✅ |
 | Desktop app | 🚧 |
 

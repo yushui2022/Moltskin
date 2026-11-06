@@ -53,9 +53,25 @@ mcp = MCPServer(
 
 
 @mcp.tool()
-def list_profiles(status: str = "", q: str = "") -> list[dict[str, Any]]:
-    """List browser profiles. Optional status: ready, running, crashed, draft."""
-    data = _request("GET", "/profiles", params={"page_size": 200, "status": status, "q": q})
+def list_profiles(status: str = "", q: str = "", tag: str = "",
+                  sort: str = "last_opened", order: str = "desc") -> list[dict[str, Any]]:
+    """List browser profiles.
+
+    status: ready, running, crashed, draft, opened, unopened, stopped.
+    sort: last_opened, created_at, name, status, open_count.
+    """
+    data = _request(
+        "GET",
+        "/profiles",
+        params={
+            "page_size": 200,
+            "status": status,
+            "q": q,
+            "tag": tag,
+            "sort": sort,
+            "order": order,
+        },
+    )
     return data["items"]
 
 
@@ -117,6 +133,24 @@ def verify_profile(profile_id: str) -> dict[str, Any]:
 def run_self_test(profile_id: str) -> dict[str, Any]:
     """Open CreepJS in the profile and return a screenshot URL plus extracted report."""
     return _request("POST", f"/profiles/{profile_id}/self-test")
+
+
+@mcp.tool()
+def reset_fingerprint(profile_id: str) -> dict[str, Any]:
+    """Generate a new fingerprint preset for a stopped profile, keeping cookies."""
+    return _request("POST", f"/profiles/{profile_id}/reset-fingerprint")
+
+
+@mcp.tool()
+def list_tags() -> list[dict[str, Any]]:
+    """List every tag with the number of profiles using it."""
+    return _request("GET", "/tags")
+
+
+@mcp.tool()
+def stats() -> dict[str, Any]:
+    """Counts for profiles, running sessions, today's launches and proxy health."""
+    return _request("GET", "/stats")
 
 
 @mcp.tool()

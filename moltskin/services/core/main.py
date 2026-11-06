@@ -196,6 +196,7 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
         ),
         "last_session_id": row["last_session_id"],
         "last_opened_at": row["last_opened_at"],
+        "open_count": row["open_count"] if "open_count" in row.keys() else 0,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -284,7 +285,7 @@ async def lifespan(app: FastAPI):
         stop_event.set()
 
 
-app = FastAPI(title="Moltskin", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Moltskin", version="0.2.0", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -358,7 +359,7 @@ def font(name: str):
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.2.0"}
 
 
 @app.get("/api/v1/export/profiles")
@@ -472,16 +473,50 @@ def import_profiles(payload: ImportRequest):
 
 @app.get("/api/v1/stats")
 def stats():
+    today_start = (
+        datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    )
     with db.session() as conn:
         total = conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"]
         running = conn.execute(
             "SELECT COUNT(*) AS n FROM profiles WHERE status='running'"
         ).fetchone()["n"]
+        crashed = conn.execute(
+            "SELECT COUNT(*) AS n FROM profiles WHERE status='crashed'"
+        ).fetchone()["n"]
+        today_opened = conn.execute(
+            "SELECT COUNT(*) AS n FROM sessions WHERE started_at >= ?", (today_start,)
+        ).fetchone()["n"]
+        opened = conn.execute(
+            "SELECT COUNT(*) AS n FROM profiles WHERE last_opened_at IS NOT NULL"
+        ).fetchone()["n"]
+        proxy_rows = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM proxies GROUP BY status"
+        ).fetchall()
+        groups = conn.execute("SELECT COUNT(*) AS n FROM groups").fetchone()["n"]
+        tags = conn.execute(
+            "SELECT COUNT(DISTINCT value) AS n FROM profiles, json_each(profiles.tags)"
+        ).fetchone()["n"]
+    proxy_stats = {"ok": 0, "slow": 0, "failed": 0, "unchecked": 0}
+    for row in proxy_rows:
+        if row["status"] in proxy_stats:
+            proxy_stats[row["status"]] = row["n"]
+    proxy_total = sum(proxy_stats.values())
     return {
         "data": {
             "profiles_total": total,
             "profiles_running": running,
+            "profiles_crashed": crashed,
+            "profiles_opened": opened,
+            "today_opened": today_opened,
             "max_concurrent": db.get_setting("max_concurrent", 10),
+            "profile_limit": db.get_setting("profile_limit", 200),
+            "daily_open_limit": db.get_setting("daily_open_limit", 20000),
+            "groups_total": groups,
+            "tags_total": tags,
+            "proxies_total": proxy_total,
+            "proxies_ok": proxy_stats["ok"] + proxy_stats["slow"],
+            "proxies_failed": proxy_stats["failed"],
         }
     }
 
@@ -513,7 +548,9 @@ def engine():
 def get_settings():
     with db.session() as conn:
         rows = conn.execute("SELECT key, value FROM settings").fetchall()
-    return {"data": {row["key"]: json.loads(row["value"]) for row in rows}}
+    data = {row["key"]: json.loads(row["value"]) for row in rows}
+    data["data_dir"] = str(config.DATA_DIR)
+    return {"data": data}
 
 
 @app.put("/api/v1/settings")
@@ -532,27 +569,91 @@ def put_settings(payload: dict[str, Any]):
 
 @app.get("/api/v1/profiles")
 def list_profiles(q: str = "", status: str = "", group_id: str = "",
+                  tag: str = "", opened: str = "", field: str = "all",
+                  op: str = "contains", sort: str = "last_opened", order: str = "desc",
                   page: int = 1, page_size: int = 50):
+    """环境列表：支持关键词 + 字段/运算符、分组、标签、打开状态、排序与分页。"""
     where, params = [], []
+
     if q:
-        where.append("(p.name LIKE ? OR p.remark LIKE ?)")
-        params += [f"%{q}%", f"%{q}%"]
-    if status:
+        like = f"%{q}%"
+        if op == "equals":
+            expr = "= ?"
+            operand = q
+        elif op == "not_contains":
+            expr = "NOT LIKE ?"
+            operand = like
+        else:
+            expr = "LIKE ?"
+            operand = like
+        if field == "name":
+            where.append(f"p.name {expr}")
+            params.append(operand)
+        elif field == "remark":
+            where.append(f"p.remark {expr}")
+            params.append(operand)
+        elif field == "proxy":
+            where.append(f"COALESCE(px.exit_ip,'') {expr}")
+            params.append(operand)
+        elif field == "group":
+            where.append(f"COALESCE(g.name,'') {expr}")
+            params.append(operand)
+        else:
+            where.append(
+                f"(p.name {expr} OR p.remark {expr} OR COALESCE(px.exit_ip,'') {expr} "
+                f"OR COALESCE(g.name,'') {expr})"
+            )
+            params += [operand] * 4
+
+    if status == "opened":
+        where.append("p.last_opened_at IS NOT NULL")
+    elif status == "unopened":
+        where.append("p.last_opened_at IS NULL")
+    elif status == "stopped":
+        where.append("p.status <> 'running'")
+    elif status:
         where.append("p.status = ?")
         params.append(status)
-    if group_id:
+
+    if group_id == "__none__":
+        where.append("p.group_id IS NULL")
+    elif group_id:
         where.append("p.group_id = ?")
         params.append(group_id)
+
+    if tag:
+        where.append("EXISTS (SELECT 1 FROM json_each(p.tags) WHERE value = ?)")
+        params.append(tag)
+
     clause = (" WHERE " + " AND ".join(where)) if where else ""
     offset = max(page - 1, 0) * page_size
 
+    sort_map = {
+        "seq": "p.created_at",
+        "name": "p.name",
+        "group": "COALESCE(g.name,'')",
+        "proxy": "COALESCE(px.exit_ip,'')",
+        "status": "p.status",
+        "created_at": "p.created_at",
+        "last_opened": "COALESCE(p.last_opened_at, p.created_at)",
+        "open_count": "COALESCE(p.open_count, 0)",
+    }
+    order_sql = "DESC" if str(order).lower() != "asc" else "ASC"
+    sort_sql = sort_map.get(sort, sort_map["last_opened"])
+    if sort == "status":
+        # 运行中的排前面，其余按时间
+        sort_sql = "(p.status = 'running')"
+
     with db.session() as conn:
         total = conn.execute(
-            "SELECT COUNT(*) AS n FROM profiles p" + clause, params
+            "SELECT COUNT(*) AS n FROM profiles p "
+            "LEFT JOIN groups g ON g.id = p.group_id "
+            "LEFT JOIN proxies px ON px.id = p.proxy_id" + clause,
+            params,
         ).fetchone()["n"]
         rows = conn.execute(
             profile_query() + clause +
-            " ORDER BY COALESCE(p.last_opened_at, p.created_at) DESC LIMIT ? OFFSET ?",
+            f" ORDER BY {sort_sql} {order_sql}, p.name ASC LIMIT ? OFFSET ?",
             (*params, page_size, offset),
         ).fetchall()
 
@@ -635,6 +736,26 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     except sqlite3.IntegrityError:
         raise HTTPException(409, detail={"code": "PROFILE_NAME_EXISTS", "message": "环境名称已存在"})
     db.log("profile.update", profile_id, {"fields": list(fields)})
+    return {"data": serialize_profile(get_profile_row(profile_id))}
+
+
+@app.post("/api/v1/profiles/{profile_id}/reset-fingerprint")
+def reset_fingerprint(profile_id: str):
+    """重新生成指纹预设（身份变化，Cookie 保留）。"""
+    row = get_profile_row(profile_id)
+    if row["status"] == "running":
+        raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境"})
+    fingerprint = json.loads(row["fingerprint"] or "{}")
+    preset = get_random_preset(os=row["os"])
+    if not preset:
+        raise HTTPException(500, detail={"code": "PRESET_FAILED", "message": "无法生成指纹预设"})
+    fingerprint["preset"] = preset
+    with db.session() as conn:
+        conn.execute(
+            "UPDATE profiles SET fingerprint=?, updated_at=? WHERE id=?",
+            (json.dumps(fingerprint, ensure_ascii=False), db.now(), profile_id),
+        )
+    db.log("profile.reset_fingerprint", profile_id, {"os": row["os"]})
     return {"data": serialize_profile(get_profile_row(profile_id))}
 
 
@@ -923,7 +1044,11 @@ def selftest_file(name: str):
 @app.get("/api/v1/groups")
 def list_groups():
     with db.session() as conn:
-        rows = conn.execute("SELECT * FROM groups ORDER BY sort_order, created_at").fetchall()
+        rows = conn.execute(
+            "SELECT g.*, COUNT(p.id) AS profile_count FROM groups g "
+            "LEFT JOIN profiles p ON p.group_id = g.id "
+            "GROUP BY g.id ORDER BY g.sort_order, g.created_at"
+        ).fetchall()
     return {"data": [dict(row) for row in rows]}
 
 
@@ -936,6 +1061,7 @@ def create_group(payload: GroupCreate):
             "INSERT INTO groups(id, name, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
             (group_id, payload.name, payload.parent_id, ts, ts),
         )
+    db.log("group.create", group_id, {"name": payload.name})
     return {"data": {"id": group_id, "name": payload.name}}
 
 
@@ -955,7 +1081,19 @@ def delete_group(group_id: str):
     with db.session() as conn:
         conn.execute("UPDATE profiles SET group_id=NULL WHERE group_id=?", (group_id,))
         conn.execute("DELETE FROM groups WHERE id=?", (group_id,))
+    db.log("group.delete", group_id, {})
     return {"data": {"id": group_id, "deleted": True}}
+
+
+@app.get("/api/v1/tags")
+def list_tags():
+    """所有标签及使用次数，用于筛选项。"""
+    with db.session() as conn:
+        rows = conn.execute(
+            "SELECT value AS tag, COUNT(*) AS count FROM profiles, json_each(profiles.tags) "
+            "GROUP BY value ORDER BY count DESC, value ASC"
+        ).fetchall()
+    return {"data": [dict(row) for row in rows]}
 
 
 # ---------------------------------------------------------------------------
@@ -966,8 +1104,16 @@ def delete_group(group_id: str):
 @app.get("/api/v1/proxies")
 def list_proxies():
     with db.session() as conn:
-        rows = conn.execute("SELECT * FROM proxies ORDER BY created_at DESC").fetchall()
-    return {"data": [serialize_proxy(row) for row in rows]}
+        rows = conn.execute(
+            "SELECT px.*, (SELECT COUNT(*) FROM profiles p WHERE p.proxy_id = px.id) AS used_by "
+            "FROM proxies px ORDER BY px.created_at DESC"
+        ).fetchall()
+    data = []
+    for row in rows:
+        item = serialize_proxy(row)
+        item["used_by"] = row["used_by"]
+        data.append(item)
+    return {"data": data}
 
 
 @app.post("/api/v1/proxies", status_code=201)
@@ -1074,15 +1220,19 @@ def stop_session(session_id: str):
 
 
 @app.get("/api/v1/logs")
-def list_logs(page: int = 1, page_size: int = 50, action: str = ""):
+def list_logs(response: Response, page: int = 1, page_size: int = 50, action: str = ""):
     where, params = "", []
     if action:
         where = " WHERE action LIKE ?"
         params.append(f"%{action}%")
     offset = max(page - 1, 0) * page_size
     with db.session() as conn:
+        total = conn.execute(f"SELECT COUNT(*) AS n FROM logs{where}", params).fetchone()["n"]
         rows = conn.execute(
             f"SELECT * FROM logs{where} ORDER BY id DESC LIMIT ? OFFSET ?",
             (*params, page_size, offset),
         ).fetchall()
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Page"] = str(page)
+    response.headers["X-Page-Size"] = str(page_size)
     return {"data": [dict(row) for row in rows]}

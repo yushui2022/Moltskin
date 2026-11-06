@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moltskin · 指纹浏览器</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>Moltskin · 指纹浏览器</title>
 <style>
 @font-face {
   font-family: "Inter";
@@ -35,7 +35,6 @@
 }
 
 :root {
-  /* Twenty-inspired design tokens */
   --bg: #fafafa;
   --panel: #ffffff;
   --panel-2: #f7f7f7;
@@ -48,23 +47,22 @@
   --accent: #4662d6;
   --accent-2: #5a75e0;
   --accent-strong: #3a53c4;
+  --accent-soft: #eef1fe;
   --ok: #2f9e5f;
   --err: #c9483f;
   --warn: #b7791f;
-  --r-sm: 4px;
+  --r-xs: 4px;
+  --r-sm: 6px;
   --r-md: 8px;
   --r-lg: 12px;
   --r-pill: 999px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .04);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, .05);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, .08);
   --shadow-lg: 0 20px 60px rgba(0, 0, 0, .16);
-  --s1: 4px;
-  --s2: 8px;
-  --s3: 12px;
-  --s4: 16px;
-  --s5: 24px;
+  --side: 236px;
 }
 * { box-sizing: border-box; }
+html, body { height: 100%; }
 body {
   margin: 0;
   font-family: "Inter", "Moltskin Sans", -apple-system, BlinkMacSystemFont, "PingFang SC",
@@ -74,624 +72,1048 @@ body {
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
 }
-.app {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  grid-template-rows: 1fr;
-  height: 100vh;
-  min-width: 0;
-  background: var(--bg);
-}
+button, input, select, textarea { font: inherit; color: inherit; }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
+        stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+           overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Sidebar */
-.sidebar {
+/* ---------------- shell ---------------- */
+.shell { display: grid; grid-template-columns: var(--side) 1fr; height: 100vh; overflow: hidden; }
+
+.side {
   background: var(--panel-2);
   border-right: 1px solid var(--border);
-  padding: 12px 8px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  display: flex; flex-direction: column; min-height: 0;
+  padding: 12px 10px 10px;
 }
-.brand { display: flex; align-items: center; gap: 9px; padding: 6px 8px 18px; }
-.brand .logo {
-  width: 28px; height: 28px; border-radius: 6px;
-  display: block; object-fit: contain;
-}
-.brand-name { font-size: 14px; font-weight: 600; letter-spacing: -.1px; }
-.nav { display: flex; flex-direction: column; gap: 2px; }
+.brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 16px; }
+.brand img { width: 30px; height: 30px; border-radius: 7px; display: block; }
+.brand-name { font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
+.brand-ver { margin-left: auto; color: var(--dim); font-size: 10px; font-weight: 500;
+             border: 1px solid var(--border); border-radius: var(--r-pill);
+             padding: 1px 6px; background: var(--panel); }
+
+.nav { display: flex; flex-direction: column; gap: 1px; }
+.nav-label { padding: 14px 10px 5px; color: var(--dim); font-size: 10.5px;
+             letter-spacing: .06em; text-transform: uppercase; font-weight: 500; }
 .nav-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 8px 10px; border-radius: var(--r-md);
-  color: var(--muted); font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px;
+  border-radius: var(--r-md); color: var(--muted); cursor: pointer;
+  text-decoration: none; border: 0; background: transparent; width: 100%; text-align: left;
   transition: background .12s, color .12s;
 }
-.nav-item:hover { background: #efefef; color: var(--text); }
-.nav-item.active {
-  background: #eef1fe;
-  color: var(--accent);
-  font-weight: 500;
+.nav-item:hover { background: #ededed; color: var(--text); }
+.nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.nav-item .i { width: 16px; height: 16px; opacity: .95; }
+.nav-item .count {
+  margin-left: auto; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums;
 }
-.nav-item svg { width: 16px; height: 16px; opacity: .9; flex: none; }
-.nav-item span { white-space: nowrap; }
-.sidebar .footer { margin-top: auto; }
+.nav-item.active .count { color: var(--accent); }
+.side-foot { margin-top: auto; padding-top: 8px; }
+.engine-card {
+  margin-top: 8px; padding: 9px 10px; border: 1px solid var(--border);
+  border-radius: var(--r-md); background: var(--panel); font-size: 11px; color: var(--muted);
+  line-height: 1.45;
+}
+.engine-card b { color: var(--text); font-weight: 500; display: block; font-size: 11.5px; }
 
-/* Main */
-.main { display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-.error-banner {
-  display: none; align-items: center; justify-content: space-between; gap: var(--s3);
-  margin: 16px 24px 0; padding: 10px 12px;
-  border: 1px solid #f2c7c3;
-  background: #fdf3f2;
-  border-radius: var(--r-md); color: #a5362d; font-size: 12px;
-}
-.error-banner.show { display: flex; }
+/* ---------------- page scaffolding ---------------- */
+.main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
+.page { display: none; flex: 1; flex-direction: column; min-height: 0; }
+.page.active { display: flex; }
 
 .page-head {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  gap: var(--s4); padding: 24px 24px 16px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding: 22px 24px 14px; flex: none;
 }
-.page-title h1 {
-  margin: 0 0 4px; font-size: 20px; line-height: 1.2;
-  font-weight: 600; letter-spacing: -.2px;
-}
-.page-title p { margin: 0; color: var(--muted); font-size: 13px; }
-.head-actions { display: flex; align-items: center; gap: var(--s2); flex: none; }
-.engine {
-  font-size: 11px; color: var(--muted);
-  padding: 5px 9px; border: 1px solid var(--border);
-  border-radius: var(--r-pill); background: var(--panel);
-  white-space: nowrap;
-}
+.page-title h1 { margin: 0 0 3px; font-size: 19px; line-height: 1.2; font-weight: 600; letter-spacing: -.2px; }
+.page-title p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.head-actions { display: flex; align-items: center; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
 
+.page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.scroll { flex: 1; overflow: auto; padding: 0 24px 24px; }
+
+/* ---------------- buttons ---------------- */
 .btn {
   border: 1px solid #dcdcdc; background: var(--panel); color: var(--text);
-  border-radius: var(--r-md); padding: 7px 12px; font-size: 13px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 6px; min-height: 32px;
-  box-shadow: var(--shadow-sm);
-  transition: background .12s, border-color .12s;
+  border-radius: var(--r-md); padding: 0 12px; font-size: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; height: 32px;
+  box-shadow: var(--shadow-sm); white-space: nowrap;
+  transition: background .12s, border-color .12s, color .12s;
 }
 .btn:hover { background: #f7f7f7; border-color: #cfcfcf; }
-.btn.primary {
-  background: var(--accent); border-color: var(--accent); color: #fff;
-  font-weight: 500;
-}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
 .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
-.btn.danger { color: var(--err); border-color: #f0c4c0; background: var(--panel); }
+.btn.danger { color: var(--err); border-color: #f0c4c0; }
 .btn.danger:hover { background: #fdf3f2; }
-.btn.small { padding: 4px 9px; font-size: 12px; min-height: 26px; border-radius: 6px; }
+.btn.ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); }
+.btn.ghost:hover { background: #efefef; color: var(--text); }
+.btn.small { height: 26px; padding: 0 9px; font-size: 12px; border-radius: var(--r-sm); }
+.btn.icon { width: 32px; padding: 0; justify-content: center; }
+.btn.icon.small { width: 26px; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn .i { width: 15px; height: 15px; }
+.btn.primary .i { color: #fff; }
 
-.list-bar {
-  display: flex; align-items: center; gap: var(--s4);
-  padding: 0 24px; border-bottom: 1px solid var(--border);
+.split { display: inline-flex; }
+.split .btn.primary { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split .btn.caret-btn {
+  border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: rgba(255,255,255,.28);
+  padding: 0 8px;
 }
-.list-tools { margin-left: auto; display: flex; align-items: center; gap: var(--s4); }
-.meta { display: flex; align-items: center; gap: var(--s2); color: var(--muted); font-size: 12px; white-space: nowrap; }
-.meta b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
-.meta-dot { width: 1px; height: 12px; background: var(--border); }
-.meta-muted { color: var(--dim); }
+.split .btn.caret-btn .i { width: 14px; height: 14px; }
 
-.tabs { display: flex; align-items: center; gap: 4px; padding: 10px 0; border-bottom: none; overflow-x: auto; scrollbar-width: none; }
-.tabs::-webkit-scrollbar { display: none; }
-.tab {
-  border: 1px solid transparent; background: transparent; color: var(--muted);
-  padding: 6px 12px; font-size: 12.5px; border-radius: 6px;
-  cursor: pointer; white-space: nowrap; min-height: 28px;
+/* ---------------- inputs ---------------- */
+.input, .select, textarea.input {
+  height: 32px; border: 1px solid #dcdcdc; border-radius: var(--r-md);
+  padding: 0 10px; background: var(--panel); outline: none; min-width: 0;
+  transition: border-color .12s, box-shadow .12s;
 }
-.tab:hover { background: #efefef; color: var(--text); }
-.tab.active {
-  background: var(--panel); color: var(--text);
-  border-color: var(--border);
-  box-shadow: var(--shadow-sm); font-weight: 500;
+textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+.input::placeholder { color: #b3b3b3; }
+.input:focus, .select:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(70, 98, 214, .12);
 }
+.select { appearance: none; padding-right: 26px; cursor: pointer;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat; background-position: right 9px center; }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field label { color: var(--muted); font-size: 12px; }
+.field .hint { color: var(--dim); font-size: 11px; }
+.field-row { display: flex; gap: 8px; align-items: center; }
 
+/* ---------------- tabs / toolbar ---------------- */
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 0 24px 10px; flex: none; }
+.toolbar .spacer { margin-left: auto; }
 
-.search { display: flex; align-items: center; gap: 8px; }
-.search input {
-  width: 230px; border: 1px solid #dcdcdc; border-radius: var(--r-md);
-  padding: 7px 11px; font-size: 12px; outline: none;
-  background: var(--panel); color: var(--text); min-height: 32px;
+.segmented { display: flex; align-items: center; gap: 2px; background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: var(--r-md); padding: 2px; }
+.segmented button {
+  border: 0; background: transparent; color: var(--muted); height: 26px; padding: 0 11px;
+  border-radius: var(--r-sm); cursor: pointer; font-size: 12.5px; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px;
 }
-.search input::placeholder { color: #b3b3b3; }
-.search input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(70, 98, 214, .12);
-}
+.segmented button:hover { color: var(--text); }
+.segmented button.active { background: var(--panel); color: var(--text); font-weight: 500;
+  box-shadow: var(--shadow-sm); }
+.segmented button .n { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.segmented button.active .n { color: var(--muted); }
 
-/* Table card */
-.table-wrap {
-  flex: 1; overflow: auto; min-width: 0;
-  margin: 16px 24px 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--panel);
-  box-shadow: var(--shadow-sm);
+.filter-bar { display: flex; align-items: center; gap: 8px; padding: 0 24px 10px;
+  flex-wrap: wrap; flex: none; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px 0 10px;
+  border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent-strong);
+  font-size: 12px;
 }
-table { width: 100%; min-width: 900px; border-collapse: separate; border-spacing: 0; }
-thead th {
-  position: sticky; top: 0; z-index: 2;
-  background: #fafafa; color: var(--dim);
-  font-weight: 500; font-size: 11px; text-align: left;
-  padding: 10px 12px; white-space: nowrap;
-  border-bottom: 1px solid var(--border);
+.chip button { border: 0; background: transparent; color: inherit; cursor: pointer;
+  display: inline-flex; padding: 2px; opacity: .7; }
+.chip button:hover { opacity: 1; }
+
+.quota { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted);
+  padding: 0 24px 10px; flex: none; flex-wrap: wrap; }
+.quota .bar { width: 90px; height: 5px; border-radius: 3px; background: #ececec; overflow: hidden; }
+.quota .bar span { display: block; height: 100%; background: var(--accent); }
+.quota b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.quota .sep { width: 1px; height: 11px; background: var(--border); }
+.quota a { color: var(--accent); text-decoration: none; font-size: 12px; }
+.quota a:hover { text-decoration: underline; }
+
+/* ---------------- card / table ---------------- */
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm); }
+.list-card { flex: 1; display: flex; flex-direction: column; min-height: 0;
+  margin: 0 24px; overflow: hidden; }
+.list-scroll { flex: 1; overflow: auto; min-height: 0; }
+
+table.grid { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0; }
+.grid thead th {
+  position: sticky; top: 0; z-index: 3; background: #fbfbfb; color: var(--dim);
+  font-weight: 500; font-size: 11px; text-align: left; padding: 9px 12px;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
   text-transform: uppercase; letter-spacing: .04em;
 }
-tbody td {
-  padding: 12px; border-bottom: 1px solid #f2f2f2;
-  vertical-align: middle; background: var(--panel); color: var(--text);
-  font-size: 13px;
+.grid thead th.sortable { cursor: pointer; user-select: none; }
+.grid thead th.sortable:hover { color: var(--muted); }
+.grid thead th .sort { display: inline-flex; flex-direction: column; gap: 1px; margin-left: 3px;
+  vertical-align: middle; }
+.grid thead th .sort i { width: 7px; height: 5px; background: #d0d0d0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.grid thead th .sort i.down { clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.grid thead th.sorted .sort i { background: var(--accent); }
+.grid thead th.sorted { color: var(--text); }
+.grid tbody td {
+  padding: 11px 12px; border-bottom: 1px solid #f3f3f3; vertical-align: middle;
+  background: var(--panel); font-size: 13px; overflow: hidden;
 }
-tbody tr:last-child td { border-bottom: none; }
-tbody tr:hover td { background: #fafafa; }
+.grid tbody tr:last-child td { border-bottom: 0; }
+.grid tbody tr:hover td { background: #fafafb; }
+.grid tbody tr.selected td { background: #f6f8ff; }
+.grid .col-actions { text-align: right; }
+.grid th.col-actions { text-align: right; }
 .muted { color: var(--muted); }
-.row-name { display: flex; align-items: center; gap: 7px; font-weight: 500; color: var(--text); cursor: pointer; }
-.row-name:hover, .card-name:hover { color: var(--accent); }
-.ip { display: flex; flex-direction: column; gap: 2px; }
-.ip .addr { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--text); }
-.ip .geo { color: var(--muted); font-size: 11px; }
-.tag {
-  display: inline-block; background: #eef1fe; color: var(--accent-strong);
-  border-radius: var(--r-sm); padding: 1px 6px; font-size: 11px; margin-right: 3px;
-}
-.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-.status .dot-s { width: 7px; height: 7px; border-radius: 50%; }
+.dim { color: var(--dim); }
+.mono { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.nowrap { white-space: nowrap; }
+.ellipsis { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.cell-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.cell-name .txt { font-weight: 500; cursor: pointer; overflow: hidden; min-width: 0;
+  text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.cell-name .txt:hover { color: var(--accent); }
+.cell-name .i { color: var(--dim); width: 14px; height: 14px; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.cfg { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.cfg .i { width: 15px; height: 15px; color: var(--dim); flex: none; }
+.cfg .sub { color: var(--dim); font-size: 11px; }
+.flag { font-size: 13px; line-height: 1; }
+.ip-cell { display: flex; align-items: center; gap: 7px; }
+.ip-cell .badge { width: 20px; height: 20px; border-radius: var(--r-xs); background: #f0f0f0;
+  display: grid; place-items: center; font-size: 11px; flex: none; }
+.ip-cell .addr { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.ip-cell .geo { color: var(--dim); font-size: 11px; }
+.stack { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.stack .sub { color: var(--dim); font-size: 11px; }
+
+.tag { display: inline-block; background: var(--accent-soft); color: var(--accent-strong);
+  border-radius: var(--r-xs); padding: 1px 6px; font-size: 11px; margin: 1px 3px 1px 0;
+  white-space: nowrap; }
+.tag.gray { background: #f0f0f0; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
+  white-space: nowrap; }
+.status .dot-s { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .s-ready { background: #c9c9c9; }
-.s-running { background: var(--ok); }
+.s-running { background: var(--ok); box-shadow: 0 0 0 3px rgba(47, 158, 95, .14); }
 .s-crashed { background: var(--warn); }
 .s-draft { background: #d9d9d9; }
-.actions { display: flex; gap: 6px; align-items: center; }
+.s-off { background: #dcdcdc; }
+
 .open-btn {
   background: var(--accent); color: #fff; border: 1px solid var(--accent);
-  border-radius: var(--r-md); padding: 5px 12px; font-size: 12px; font-weight: 500;
-  cursor: pointer; min-width: 58px; min-height: 30px;
+  border-radius: var(--r-md); height: 30px; padding: 0 14px; font-size: 12px; font-weight: 500;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-width: 64px;
 }
 .open-btn:hover { background: var(--accent-strong); }
-.open-btn.stop {
-  background: var(--panel); color: var(--text); border: 1px solid #dcdcdc;
-  font-weight: 400;
-}
+.open-btn.stop { background: var(--panel); color: var(--text); border: 1px solid #dcdcdc; font-weight: 400; }
 .open-btn.stop:hover { background: #f7f7f7; }
 .open-btn:disabled { opacity: .55; cursor: wait; }
-.more {
-  border: 0; background: transparent; color: var(--dim);
-  width: 28px; height: 28px; border-radius: 6px;
-  display: inline-grid; place-items: center; cursor: pointer; font-size: 16px;
+.open-btn .i { width: 13px; height: 13px; }
+.action-cell { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.icon-btn {
+  width: 28px; height: 28px; border: 0; background: transparent; color: var(--dim);
+  border-radius: var(--r-sm); display: inline-grid; place-items: center; cursor: pointer;
 }
-.more:hover { color: var(--text); background: #efefef; }
-.loading { padding: 56px 20px; text-align: center; color: var(--muted); font-size: 12.5px; }
-.empty { padding: 56px 24px; max-width: 420px; margin: 0 auto; text-align: center; }
+.icon-btn:hover { background: #efefef; color: var(--text); }
+.icon-btn.danger:hover { background: #fdf3f2; color: var(--err); }
+
+.empty { padding: 64px 24px; max-width: 460px; margin: 0 auto; text-align: center; }
+.empty-ico { width: 44px; height: 44px; border-radius: 12px; background: var(--panel-2);
+  display: grid; place-items: center; margin: 0 auto 14px; color: var(--dim); }
+.empty-ico .i { width: 22px; height: 22px; }
 .empty-title { color: var(--text); font-size: 15px; font-weight: 500; margin-bottom: 6px; }
 .empty p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 16px; }
+.loading { padding: 64px 20px; text-align: center; color: var(--muted); font-size: 12.5px; }
 
-.footer-bar {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 24px; border-top: 1px solid var(--border);
-  background: var(--panel);
+/* ---------------- pagination ---------------- */
+.list-foot {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+  border-top: 1px solid var(--border); background: var(--panel); flex: none;
+  border-radius: 0 0 var(--r-lg) var(--r-lg); flex-wrap: wrap;
 }
-.footer-bar .total { color: var(--muted); font-size: 12px; }
-.footer-hint { color: var(--dim); font-size: 12px; margin-left: auto; }
-.batch-bar { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
+.list-foot .total { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pager { display: flex; align-items: center; gap: 3px; margin-left: auto; }
+.pager button {
+  min-width: 27px; height: 27px; padding: 0 7px; border: 1px solid transparent;
+  background: transparent; border-radius: var(--r-sm); color: var(--muted); cursor: pointer;
+  font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.pager button:hover:not(:disabled) { background: #f2f2f2; color: var(--text); }
+.pager button.active { background: var(--accent-soft); color: var(--accent-strong); font-weight: 500; }
+.pager button:disabled { opacity: .38; cursor: not-allowed; }
+.pager .jump { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 12px;
+  margin-left: 6px; }
+.pager .jump input { width: 46px; height: 27px; text-align: center; border: 1px solid #dcdcdc;
+  border-radius: var(--r-sm); outline: none; }
+.pager .jump input:focus { border-color: var(--accent); }
+.page-size { height: 27px; font-size: 12px; border-radius: var(--r-sm); }
+
+.batch-bar {
+  display: flex; align-items: center; gap: 6px; padding: 7px 10px; margin: 0 24px;
+  background: var(--accent-soft); border: 1px solid #d9e0fb; border-radius: var(--r-md);
+  color: var(--accent-strong); font-size: 12.5px; flex: none; margin-bottom: 8px;
+}
 .batch-bar[hidden] { display: none; }
-.batch-bar b { color: var(--text); font-weight: 500; }
+.batch-bar b { font-weight: 600; }
+.batch-bar .spacer { margin-left: auto; }
+.batch-bar .btn { background: #fff; border-color: #d9e0fb; color: var(--accent-strong); box-shadow: none; }
+.batch-bar .btn:hover { background: #fff; border-color: #b9c4f5; }
+.batch-bar .btn.danger { color: var(--err); border-color: #f0c4c0; }
+
+/* ---------------- dropdown / popover ---------------- */
+.pop {
+  position: fixed; z-index: 60; min-width: 168px; padding: 5px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-md); display: none;
+}
+.pop.show { display: block; }
+.pop button {
+  display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 9px;
+  border: 0; background: transparent; border-radius: var(--r-sm); cursor: pointer;
+  font-size: 12.5px; color: var(--text); text-align: left;
+}
+.pop button:hover { background: #f3f3f5; }
+.pop button.danger { color: var(--err); }
+.pop button.danger:hover { background: #fdf3f2; }
+.pop button .i { width: 14px; height: 14px; color: var(--dim); }
+.pop button.danger .i { color: var(--err); }
+.pop .sep { height: 1px; background: var(--border-soft); margin: 4px 2px; }
+.pop .pop-title { padding: 6px 9px 6px; color: var(--dim); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .04em; }
+.pop label.opt { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 9px;
+  border-radius: var(--r-sm); cursor: pointer; font-size: 12.5px; }
+.pop label.opt:hover { background: #f3f3f5; }
+.pop .scroll-list { max-height: 260px; overflow: auto; }
 input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
 
-/* Cards for narrow layouts */
-.cards { display: none; padding: 8px; }
-.card {
-  padding: 14px; margin-bottom: 8px;
-  border: 1px solid var(--border); border-radius: var(--r-md);
-  background: var(--panel); box-shadow: var(--shadow-sm);
-}
-.card:last-child { margin-bottom: 0; }
-.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); }
-.card-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-.card-name { font-size: 14px; font-weight: 500; line-height: 1.35; cursor: pointer; }
-.card-sub { margin-top: 3px; color: var(--muted); font-size: 12px; }
-.card-meta { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 12px; }
-.card-meta b { color: var(--text); font-weight: 500; }
-.card-actions { margin-top: 12px; display: flex; gap: var(--s2); }
+/* ---------------- KPI / home ---------------- */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 14px 16px; box-shadow: var(--shadow-sm); min-width: 0; }
+.kpi .k { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.kpi .k .i { width: 14px; height: 14px; color: var(--dim); }
+.kpi .v { font-size: 26px; font-weight: 600; letter-spacing: -.6px; margin-top: 6px;
+  font-variant-numeric: tabular-nums; line-height: 1.1; }
+.kpi .v small { font-size: 13px; font-weight: 400; color: var(--dim); margin-left: 3px; }
+.kpi .s { color: var(--dim); font-size: 11.5px; margin-top: 4px; }
+.home-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm); overflow: hidden; }
+.panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft); font-weight: 500; font-size: 13px; }
+.panel-head .btn { margin-left: auto; }
+.panel-body { padding: 6px 0; }
+.mini-row { display: flex; align-items: center; gap: 10px; padding: 9px 16px; }
+.mini-row + .mini-row { border-top: 1px solid var(--border-soft); }
+.mini-row .grow { flex: 1; min-width: 0; }
+.mini-row .nm { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-row .sub { color: var(--dim); font-size: 11.5px; margin-top: 1px; }
+.panel-empty { padding: 28px 16px; text-align: center; color: var(--dim); font-size: 12.5px; }
 
-/* Modals */
+/* card view */
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px; padding: 12px; }
+.env-card { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--panel);
+  padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+.env-card.selected { border-color: #c3cdf5; background: #f8faff; }
+.env-card-head { display: flex; align-items: flex-start; gap: 9px; }
+.env-card-head .grow { flex: 1; min-width: 0; }
+.env-card-name { font-weight: 500; cursor: pointer; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.env-card-name:hover { color: var(--accent); }
+.env-card-sub { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+.env-card-meta { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.env-card-meta > div { display: flex; gap: 8px; min-width: 0; }
+.env-card-meta .k { color: var(--dim); width: 28px; flex: none; }
+.env-card-meta .v { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.env-card-tags { display: flex; flex-wrap: wrap; gap: 2px; }
+.env-card-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 2px; }
+.env-card-foot .open-btn { flex: 1; }
+
+/* ---------------- forms / modal ---------------- */
 .mask {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, .25);
-  display: none; align-items: center; justify-content: center; z-index: 20;
+  position: fixed; inset: 0; background: rgba(24, 24, 28, .32); backdrop-filter: blur(1px);
+  display: none; align-items: center; justify-content: center; z-index: 80; padding: 24px;
 }
 .mask.show { display: flex; }
 .modal {
-  width: 680px; max-height: 86vh; overflow: auto;
-  background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+  width: 620px; max-width: 100%; max-height: 88vh; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg); overflow: hidden;
 }
+.modal.wide { width: 760px; }
 .modal .head {
-  padding: 16px 20px; border-bottom: 1px solid var(--border);
-  font-weight: 500; font-size: 14px; display: flex; align-items: center;
-  position: sticky; top: 0; background: var(--panel); z-index: 1;
+  padding: 14px 18px; border-bottom: 1px solid var(--border); font-weight: 500; font-size: 14px;
+  display: flex; align-items: center; gap: 8px; flex: none;
 }
-.modal .head .x { margin-left: auto; cursor: pointer; color: var(--dim); font-size: 19px; }
-.modal .head .x:hover { color: var(--text); }
-.modal .body { padding: 18px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
-.modal .detail-body { display: block; }
-.field { display: flex; flex-direction: column; }
+.modal .head .x { margin-left: auto; cursor: pointer; color: var(--dim); border: 0;
+  background: transparent; width: 28px; height: 28px; border-radius: var(--r-sm);
+  display: grid; place-items: center; }
+.modal .head .x:hover { background: #f2f2f2; color: var(--text); }
+.modal .body { padding: 16px 18px; overflow: auto; display: grid;
+  grid-template-columns: 1fr 1fr; gap: 12px 14px; align-content: start; }
+.modal .body.single { display: block; }
+.modal .foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex;
+  justify-content: flex-end; gap: 8px; flex: none; background: var(--panel); }
 .field.full { grid-column: 1 / -1; }
-.field label { color: var(--muted); font-size: 12px; margin-bottom: 5px; }
-.field input, .field select {
-  padding: 7px 10px; border: 1px solid #dcdcdc; border-radius: var(--r-md);
-  font-size: 13px; outline: none; background: var(--panel); color: var(--text);
-  min-height: 32px;
-}
-.field input::placeholder { color: #b3b3b3; }
-.field input:focus, .field select:focus {
-  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(70, 98, 214, .12);
-}
-.field .hint { color: var(--dim); font-size: 11px; margin-top: 4px; }
-.input-row { display: flex; gap: 6px; align-items: center; }
-.input-row select { flex: 1; min-width: 0; }
-.modal .foot {
-  padding: 14px 20px; border-top: 1px solid var(--border);
-  display: flex; justify-content: flex-end; gap: 8px;
-  position: sticky; bottom: 0; background: var(--panel);
-}
-.proxy-list { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; }
-.proxy-row {
-  display: flex; align-items: center; gap: 10px;
-  border: 1px solid var(--border); border-radius: var(--r-md);
-  padding: 10px 12px; background: #fafafa;
-}
-.proxy-row .info { flex: 1; }
-.proxy-row .sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
-.proxy-row .st {
-  font-size: 10px; padding: 2px 7px; border-radius: var(--r-pill);
-  background: #efefef; color: var(--muted); text-transform: uppercase;
-}
-.proxy-row .st.ok { background: #e9f7ef; color: var(--ok); }
-.proxy-row .st.failed { background: #fdf0ef; color: var(--err); }
 
-/* Detail */
-.detail-modal { width: min(760px, 94vw); }
-.detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
-.detail-name { font-size: 18px; font-weight: 600; }
-.detail-sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.detail-section { border-top: 1px solid var(--border-soft); padding: 14px 0; }
-.detail-section:first-of-type { border-top: 0; padding-top: 0; }
-.detail-section h3 { margin: 0 0 10px; font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-.detail-section h3 .btn { margin-left: auto; }
-.detail-hint { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
-.preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }
-.preview-item { min-width: 0; }
-.preview-item .k { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
-.preview-item .v { font-size: 13px; overflow-wrap: anywhere; margin-top: 2px; }
+/* profile detail */
+.detail-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
+.detail-name { font-size: 17px; font-weight: 600; }
+.detail-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.detail-head .status { margin-left: auto; }
+.section { border-top: 1px solid var(--border-soft); padding: 13px 0; }
+.section:first-of-type { border-top: 0; padding-top: 0; }
+.section h3 { margin: 0 0 9px; font-size: 12.5px; font-weight: 500; color: var(--text);
+  display: flex; align-items: center; gap: 8px; }
+.section h3 .btn { margin-left: auto; }
+.section .hint { color: var(--muted); font-size: 12px; margin: 0 0 9px; }
+.kv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 18px; }
+.kv .k { color: var(--dim); font-size: 11px; }
+.kv .v { font-size: 12.5px; margin-top: 2px; overflow-wrap: anywhere; }
 .check-list { display: flex; flex-direction: column; gap: 7px; }
-.check-row { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.check-row { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; }
 .check-row .ico { width: 15px; flex: none; font-weight: 600; }
 .check-row.ok .ico { color: var(--ok); }
 .check-row.bad .ico { color: var(--err); }
 .check-row .detail { color: var(--muted); }
-.check-warning {
-  margin-top: 8px; padding: 8px 10px;
-  border: 1px solid #f2d59b; background: #fff9e8;
-  border-radius: var(--r-md); color: #8a5a00; font-size: 12px;
-}
-.selftest-result { margin-top: 12px; }
-.selftest-result img {
-  width: 100%; max-height: 420px; object-fit: contain; object-position: top;
-  border: 1px solid var(--border); border-radius: var(--r-md); background: #fff;
-}
-.selftest-meta { color: var(--muted); font-size: 11px; margin-top: 6px; }
+.check-warning { margin-top: 8px; padding: 8px 10px; border: 1px solid #f2d59b;
+  background: #fff9e8; border-radius: var(--r-md); color: #8a5a00; font-size: 12px; }
+.selftest-result { margin-top: 10px; }
+.selftest-result img { width: 100%; max-height: 380px; object-fit: contain; object-position: top;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: #fff; }
+.selftest-meta { color: var(--dim); font-size: 11px; margin-top: 5px; }
 
+/* toast */
 .toast {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  background: #1a1a1a; color: #fff; padding: 9px 16px;
-  border-radius: var(--r-md); font-size: 12px;
-  opacity: 0; pointer-events: none; transition: .18s; z-index: 40;
-  box-shadow: var(--shadow-md);
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: #1a1a1a; color: #fff; padding: 9px 16px; border-radius: var(--r-md);
+  font-size: 12px; opacity: 0; pointer-events: none; transition: .18s; z-index: 90;
+  box-shadow: var(--shadow-md); max-width: 70vw;
 }
-.toast.show { opacity: 1; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(-2px); }
 .toast.err { background: #8f2f28; }
-.spinner {
-  width: 11px; height: 11px; border: 2px solid rgba(255, 255, 255, .4);
+.spinner { width: 11px; height: 11px; border: 2px solid rgba(255, 255, 255, .45);
   border-top-color: #fff; border-radius: 50%; display: inline-block;
-  animation: spin .8s linear infinite;
-}
-.sr-only {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
-}
-button, input, select { font: inherit; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-@media (max-width: 1120px) {
-  thead th:nth-child(3), tbody td:nth-child(3),
-  thead th:nth-child(6), tbody td:nth-child(6),
-  thead th:nth-child(7), tbody td:nth-child(7),
-  thead th:nth-child(8), tbody td:nth-child(8) { display: none; }
-  #profileTable { display: none; }
-  .cards { display: block; }
-  .table-wrap { border: 0; background: transparent; box-shadow: none; }
-  .meta-muted { display: none; }
-  .page-title h1 { font-size: 19px; }
+/* proxy page */
+.proxy-form { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px;
+  padding: 12px; border-bottom: 1px solid var(--border-soft); background: #fcfcfc; }
+.proxy-form .actions { display: flex; gap: 6px; align-items: flex-end; }
+.st { font-size: 10.5px; padding: 2px 7px; border-radius: var(--r-pill); background: #f0f0f0;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.st.ok { background: #e9f7ef; color: var(--ok); }
+.st.slow { background: #fff9e8; color: var(--warn); }
+.st.failed { background: #fdf0ef; color: var(--err); }
+
+/* settings */
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.settings-grid .panel-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.settings-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+@media (max-width: 1200px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .home-grid { grid-template-columns: 1fr; }
+  .proxy-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (max-width: 900px) {
-  .app { grid-template-columns: 64px 1fr; }
-  .brand { justify-content: center; padding: 6px 0 16px; }
-  .brand-name { display: none; }
-  .nav-item { justify-content: center; padding: 10px 0; }
-  .nav-item span { display: none; }
+@media (max-width: 980px) {
+  .shell { grid-template-columns: 68px 1fr; }
+  .brand-name, .nav-item span, .nav-label, .nav-item .count, .engine-card { display: none; }
+  .brand { justify-content: center; padding: 4px 0 14px; }
+  .nav-item { justify-content: center; padding: 0; }
+  .settings-grid { grid-template-columns: 1fr; }
 }
-@media (max-width: 780px) {
-  .page-head { flex-direction: column; align-items: stretch; padding: 18px 16px 12px; }
-  .head-actions { justify-content: flex-end; flex-wrap: wrap; }
-  .engine { display: none; }
-  .list-bar { flex-direction: column; align-items: stretch; gap: 4px; padding: 0 16px; }
-  .list-tools { margin-left: 0; justify-content: space-between; padding-bottom: 8px; }
-  .search { flex: 1; }
-  .search input { width: 100%; }
-  .table-wrap { margin: 12px 16px 0; }
-  .footer-hint { display: none; }
-  .preview-grid { grid-template-columns: 1fr; }
-  .modal { width: 94vw; }
-}
-@media (max-width: 620px) {
-  .app { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+@media (max-width: 760px) {
+  .page-head { flex-direction: column; padding: 16px 16px 12px; }
+  .head-actions { justify-content: flex-start; }
+  .toolbar, .filter-bar, .quota { padding-left: 16px; padding-right: 16px; }
+  .list-card { margin: 0 16px; }
+  .batch-bar { margin-left: 16px; margin-right: 16px; }
+  .scroll { padding: 0 16px 16px; }
+  .modal .body { grid-template-columns: 1fr; }
+  .kv-grid { grid-template-columns: 1fr; }
+  .proxy-form { grid-template-columns: 1fr 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: .01ms !important;
-  }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; }
 }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #d9d9d9; border-radius: 5px; }
-::-webkit-scrollbar-thumb:hover { background: #c9c9c9; }
+::-webkit-scrollbar-thumb { background: #dcdcdc; border-radius: 5px; border: 2px solid transparent;
+  background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #c9c9c9; background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
-
 </style>
 </head>
 <body>
-<div class="app">
-  <aside class="sidebar">
-    <div class="brand"><img class="logo" src="/logo.svg" width="28" height="28" alt="Moltskin logo"><div class="brand-name">Moltskin</div></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h3.6l2 2H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3.2 1.9"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.4 5.4l1.8 1.8M16.8 16.8l1.8 1.8M18.6 5.4l-1.8 1.8M7.2 16.8l-1.8 1.8"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.7 2.2c-.8.5-1.3 1-1.3 2"/><circle cx="12" cy="16.9" r=".9" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="18.5" r="1.4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.2"/><rect x="13" y="4" width="7" height="7" rx="1.2"/><rect x="4" y="13" width="7" height="7" rx="1.2"/><rect x="13" y="13" width="7" height="7" rx="1.2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M15.5 4.5 19.5 8.5 9 19H5v-4z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 6V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h1"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></symbol>
+  <symbol id="i-finger" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 0 0-8.5 8.5M20.5 12A8.5 8.5 0 0 0 12 3.5"/><path d="M7.5 20c.8-2.4 1.2-5 1.2-8a3.3 3.3 0 0 1 6.6 0c0 3-.3 5.6-1 8"/><path d="M4 15c.5-1.5.7-2.9.7-3a7.3 7.3 0 0 1 14.6 0c0 1.6-.2 3.2-.6 4.8"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M11.5 3.5H20v8.5l-8.6 8.6a1.5 1.5 0 0 1-2.1 0l-6.4-6.4a1.5 1.5 0 0 1 0-2.1z"/><circle cx="16.2" cy="7.8" r="1.2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L11 21l8-10.5h-6z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v6c0 4-3 7-7 8.5C8 19 5 16 5 12V6z"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V4M8 7.5 12 3.5l4 4M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 3v11M8 10.5 12 14.5l4-4M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></symbol>
+</svg>
+
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <img src="/logo.svg" width="30" height="30" alt="Moltskin">
+      <div class="brand-name">Moltskin</div>
+      <span class="brand-ver">v0.2</span>
+    </div>
+
     <nav class="nav" id="nav">
-      <a class="nav-item active" data-page="windows" title="浏览器窗口" aria-current="page">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-        <span>浏览器窗口</span>
+      <a class="nav-item" href="#/home" data-page="home">
+        <svg class="i"><use href="#i-home"/></svg><span>首页</span>
       </a>
-      <a class="nav-item" data-page="proxy" title="代理 IP">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>
-        <span>代理 IP</span>
+      <a class="nav-item active" href="#/windows" data-page="windows">
+        <svg class="i"><use href="#i-window"/></svg><span>浏览器窗口</span>
+        <span class="count" id="navWindows">0</span>
       </a>
-      <a class="nav-item" data-page="logs" title="操作日志">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
-        <span>操作日志</span>
+      <a class="nav-item" href="#/groups" data-page="groups">
+        <svg class="i"><use href="#i-folder"/></svg><span>分组管理</span>
+        <span class="count" id="navGroups">0</span>
       </a>
-      <a class="nav-item" data-page="settings" title="设置">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2.1 2.1M16.9 16.9 19 19M19 5l-2.1 2.1M7.1 16.9 5 19"/></svg>
-        <span>设置</span>
+      <a class="nav-item" href="#/proxies" data-page="proxies">
+        <svg class="i"><use href="#i-globe"/></svg><span>代理 IP</span>
+        <span class="count" id="navProxies">0</span>
+      </a>
+      <a class="nav-item" href="#/logs" data-page="logs">
+        <svg class="i"><use href="#i-log"/></svg><span>操作日志</span>
+      </a>
+      <a class="nav-item" href="#/settings" data-page="settings">
+        <svg class="i"><use href="#i-gear"/></svg><span>设置</span>
       </a>
     </nav>
-    <div class="footer">
-      <a class="nav-item" data-page="help" title="使用帮助">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 1 1 3.8 2.3c-.8.5-1.3 1-1.3 2.1"/><circle cx="12" cy="17.2" r=".9" fill="currentColor" stroke="none"/></svg>
-        <span>使用帮助</span>
+
+    <div class="side-foot">
+      <a class="nav-item" href="#/help" data-page="help">
+        <svg class="i"><use href="#i-help"/></svg><span>使用帮助</span>
       </a>
+      <div class="engine-card" id="engineCard">
+        <b>引擎检测中…</b>
+        <span>Camoufox 内核</span>
+      </div>
     </div>
   </aside>
 
   <main class="main">
-    <div class="error-banner" id="errorBanner" role="alert">
+    <div class="error-banner" id="errorBanner" style="display:none;margin:12px 24px 0;padding:9px 12px;border:1px solid #f2c7c3;background:#fdf3f2;border-radius:8px;color:#a5362d;font-size:12px;align-items:center;justify-content:space-between">
       <span>无法连接本地服务，请确认 Moltskin 正在运行。</span>
       <button class="btn small" id="retryBtn">重试</button>
     </div>
 
-    <header class="page-head">
-      <div class="page-title">
-        <h1>浏览器窗口</h1>
-        <p>管理独立浏览器环境、代理与登录状态</p>
-      </div>
-      <div class="head-actions">
-        <span class="engine" id="enginePill">引擎检测中…</span>
-        <button class="btn" id="importBtn">导入</button>
-        <button class="btn" id="exportBtn">导出</button>
-        <button class="btn" id="refreshBtn">刷新</button>
-        <button class="btn primary" id="createBtn">＋ 创建窗口</button>
-        <input type="file" id="importFile" accept="application/json,.json" hidden>
-      </div>
-    </header>
-
-    <div class="list-bar">
-      <div class="tabs" id="tabs" role="tablist" aria-label="环境筛选">
-        <button class="tab active" role="tab" aria-selected="true" data-tab="all">全部</button>
-        <button class="tab" role="tab" aria-selected="false" data-tab="running">运行中</button>
-        <button class="tab" role="tab" aria-selected="false" data-tab="ready">已停止</button>
-      </div>
-      <div class="list-tools">
-        <div class="meta" aria-live="polite">
-          <span><b id="statTotal">0</b> 个环境</span>
-          <span class="meta-dot" aria-hidden="true"></span>
-          <span><b id="statRunning">0</b> 运行中</span>
-          <span class="meta-muted">上限 <b id="statMax">10</b></span>
+    <!-- ============ 首页 ============ -->
+    <section class="page" id="page-home" data-page="home">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>首页</h1>
+          <p>环境、代理与最近活动概览</p>
         </div>
-        <label class="search" for="searchInput">
-          <span class="sr-only">搜索环境</span>
-          <input id="searchInput" placeholder="搜索名称 / 备注 / IP">
-        </label>
+        <div class="head-actions">
+          <button class="btn" data-goto="logs">查看日志</button>
+          <button class="btn primary" data-action="create"><svg class="i"><use href="#i-plus"/></svg>创建窗口</button>
+        </div>
+      </header>
+      <div class="scroll">
+        <div class="kpis" id="kpis"></div>
+        <div class="home-grid">
+          <div class="panel">
+            <div class="panel-head">
+              正在运行
+              <button class="btn small ghost" data-goto="windows" data-filter="running">全部环境</button>
+            </div>
+            <div class="panel-body" id="homeRunning"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              最近操作
+              <button class="btn small ghost" data-goto="logs">全部日志</button>
+            </div>
+            <div class="panel-body" id="homeLogs"></div>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <div class="table-wrap">
-      <div class="loading" id="loading" role="status">正在加载环境…</div>
-      <table id="profileTable">
-        <caption class="sr-only">浏览器环境列表</caption>
-        <thead>
-          <tr>
-            <th scope="col" style="width:36px"><input type="checkbox" id="selectAll" aria-label="全选环境"></th>
-            <th scope="col" style="width:56px">序号</th>
-            <th scope="col" style="width:140px">分组</th>
-            <th scope="col" style="width:230px">窗口名称</th>
-            <th scope="col" style="width:190px">代理 IP</th>
-            <th scope="col" style="width:90px">标签</th>
-            <th scope="col" style="width:110px">备注</th>
-            <th scope="col" style="width:140px">创建时间</th>
-            <th scope="col" style="width:100px">状态</th>
-            <th scope="col" style="width:150px">操作</th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-      <div class="cards" id="cards"></div>
-      <div class="empty" id="empty" style="display:none">
-        <div class="empty-title">还没有环境</div>
-        <p>创建第一个独立浏览器环境，绑定代理后即可开始。</p>
-        <button class="btn primary" id="emptyCreate">＋ 创建窗口</button>
+    <!-- ============ 浏览器窗口 ============ -->
+    <section class="page active" id="page-windows" data-page="windows">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>浏览器窗口</h1>
+          <p>管理独立浏览器环境、代理与登录状态</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn" data-action="import"><svg class="i"><use href="#i-import"/></svg>导入</button>
+          <button class="btn" data-action="export"><svg class="i"><use href="#i-export"/></svg>导出</button>
+          <button class="btn icon" id="refreshBtn" title="刷新"><svg class="i"><use href="#i-refresh"/></svg></button>
+          <div class="split">
+            <button class="btn primary" data-action="create"><svg class="i"><use href="#i-plus"/></svg>创建窗口</button>
+            <button class="btn primary caret-btn" id="createMenuBtn" title="更多创建方式"><svg class="i"><use href="#i-chev"/></svg></button>
+          </div>
+        </div>
+      </header>
+
+      <div class="quota" id="quota"></div>
+
+      <div class="toolbar">
+        <div class="segmented" id="tabs">
+          <button data-tab="all" class="active">全部<span class="n" id="tabAll">0</span></button>
+          <button data-tab="running">已打开<span class="n" id="tabRunning">0</span></button>
+          <button data-tab="stopped">已关闭<span class="n" id="tabStopped">0</span></button>
+          <button data-tab="crashed">异常<span class="n" id="tabCrashed">0</span></button>
+          <button data-tab="unopened">未打开</button>
+        </div>
+        <div class="spacer"></div>
+
+        <div class="field-row">
+          <select class="select" id="searchField" style="height:32px;width:104px" aria-label="搜索字段">
+            <option value="all">全部字段</option>
+            <option value="name">窗口名称</option>
+            <option value="remark">备注</option>
+            <option value="proxy">代理 IP</option>
+            <option value="group">分组</option>
+          </select>
+          <select class="select" id="searchOp" style="height:32px;width:88px" aria-label="匹配方式">
+            <option value="contains">包含</option>
+            <option value="not_contains">不包含</option>
+            <option value="equals">等于</option>
+          </select>
+          <label style="position:relative;display:block">
+            <svg class="i" style="position:absolute;left:9px;top:8px;color:#aaa"><use href="#i-search"/></svg>
+            <input class="input" id="searchInput" placeholder="搜索" style="width:200px;padding-left:30px" aria-label="搜索环境">
+          </label>
+        </div>
+
+        <div class="segmented" role="group" aria-label="视图">
+          <button id="viewTable" class="active" title="表格视图"><svg class="i"><use href="#i-list"/></svg></button>
+          <button id="viewGrid" title="卡片视图"><svg class="i"><use href="#i-grid"/></svg></button>
+        </div>
+        <button class="btn icon" id="columnsBtn" title="显示列"><svg class="i"><use href="#i-columns"/></svg></button>
+        <button class="btn" id="groupFilterBtn"><svg class="i"><use href="#i-folder"/></svg>分组</button>
+        <button class="btn" id="tagFilterBtn"><svg class="i"><use href="#i-tag"/></svg>标签</button>
       </div>
-    </div>
 
-    <div class="footer-bar">
-      <span class="total" id="listTotal">共 0 条</span>
+      <div class="filter-bar" id="filterBar"></div>
+
       <div class="batch-bar" id="batchBar" hidden>
-        <span>已选 <b id="selCount">0</b> 个</span>
-        <button class="btn small" data-batch="launch">打开</button>
-        <button class="btn small" data-batch="stop">关闭</button>
-        <button class="btn small" data-batch="move">分组</button>
-        <button class="btn small" data-batch="tag">标签</button>
-        <button class="btn small danger" data-batch="delete">删除</button>
-        <button class="btn small" data-batch="clear">取消</button>
+        <span>已选 <b id="selCount">0</b> 个环境</span>
+        <div class="spacer"></div>
+        <button class="btn small" data-batch="launch"><svg class="i"><use href="#i-play"/></svg>打开</button>
+        <button class="btn small" data-batch="stop"><svg class="i"><use href="#i-stop"/></svg>关闭</button>
+        <button class="btn small" data-batch="move">移动分组</button>
+        <button class="btn small" data-batch="tag">编辑标签</button>
+        <button class="btn small" data-batch="export">导出</button>
+        <button class="btn small danger" data-batch="delete"><svg class="i"><use href="#i-trash"/></svg>删除</button>
+        <button class="btn small ghost" data-batch="clear">取消选择</button>
       </div>
-      <span class="footer-hint">关闭浏览器窗口后，状态会自动更新</span>
-    </div>
+
+      <div class="card list-card" id="windowsCard">
+        <div class="list-scroll">
+          <table class="grid" id="profileTable">
+            <caption class="sr-only">浏览器环境列表</caption>
+            <thead>
+              <tr id="theadRow"></tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+          <div class="cards-grid" id="cards" style="display:none"></div>
+          <div class="empty" id="empty" style="display:none">
+            <div class="empty-ico"><svg class="i"><use href="#i-window"/></svg></div>
+            <div class="empty-title">还没有环境</div>
+            <p>创建第一个独立浏览器环境，绑定代理后即可开始。</p>
+            <button class="btn primary" data-action="create"><svg class="i"><use href="#i-plus"/></svg>创建窗口</button>
+          </div>
+        </div>
+        <div class="list-foot">
+          <span class="total" id="listTotal">共 0 条</span>
+          <div class="pager" id="pager"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 分组 ============ -->
+    <section class="page" id="page-groups" data-page="groups">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>分组管理</h1>
+          <p>按业务线或团队组织环境，支持批量移动</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn primary" id="newGroupBtn"><svg class="i"><use href="#i-plus"/></svg>新建分组</button>
+        </div>
+      </header>
+      <div class="scroll" style="padding-bottom:24px">
+        <div class="card">
+          <table class="grid" style="min-width:720px">
+            <thead>
+              <tr>
+                <th style="width:52px">#</th>
+                <th>分组名称</th>
+                <th style="width:120px">环境数</th>
+                <th style="width:170px">创建时间</th>
+                <th class="col-actions" style="width:160px">操作</th>
+              </tr>
+            </thead>
+            <tbody id="groupRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 代理 ============ -->
+    <section class="page" id="page-proxies" data-page="proxies">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>代理 IP</h1>
+          <p>代理池、出口地区与可用性</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn" id="checkAllProxies"><svg class="i"><use href="#i-bolt"/></svg>全部检测</button>
+          <button class="btn icon" id="refreshProxies" title="刷新"><svg class="i"><use href="#i-refresh"/></svg></button>
+          <button class="btn primary" id="toggleProxyForm"><svg class="i"><use href="#i-plus"/></svg>添加代理</button>
+        </div>
+      </header>
+      <div class="scroll" style="padding-bottom:24px">
+        <div class="card">
+          <form class="proxy-form" id="proxyForm" style="display:none">
+            <div class="field"><label>名称</label><input class="input" id="pName" placeholder="PH-01" required></div>
+            <div class="field"><label>协议</label>
+              <select class="select" id="pProtocol">
+                <option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option>
+              </select>
+            </div>
+            <div class="field"><label>主机</label><input class="input" id="pHost" placeholder="1.2.3.4" required></div>
+            <div class="field"><label>端口</label><input class="input" id="pPort" type="number" placeholder="8080" required></div>
+            <div class="field"><label>用户名</label><input class="input" id="pUser" placeholder="可选"></div>
+            <div class="field"><label>密码</label><input class="input" id="pPass" type="password" placeholder="可选"></div>
+            <div class="actions" style="grid-column:1/-1;justify-content:flex-end">
+              <button class="btn small" type="button" id="cancelProxy">取消</button>
+              <button class="btn small primary" type="submit">保存并检测</button>
+            </div>
+          </form>
+          <table class="grid" style="min-width:1000px">
+            <thead>
+              <tr>
+                <th>名称</th>
+                <th style="width:190px">地址</th>
+                <th style="width:170px">出口 IP</th>
+                <th style="width:150px">地区</th>
+                <th style="width:90px">延迟</th>
+                <th style="width:88px">状态</th>
+                <th style="width:80px">使用中</th>
+                <th style="width:120px">检测时间</th>
+                <th class="col-actions" style="width:120px">操作</th>
+              </tr>
+            </thead>
+            <tbody id="proxyRows"></tbody>
+          </table>
+          <div class="empty" id="proxyEmpty" style="display:none">
+            <div class="empty-ico"><svg class="i"><use href="#i-globe"/></svg></div>
+            <div class="empty-title">还没有代理</div>
+            <p>添加 HTTP / SOCKS5 代理后，可以绑定到环境并校验出口地区。</p>
+            <button class="btn primary" id="emptyProxyAdd"><svg class="i"><use href="#i-plus"/></svg>添加代理</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 日志 ============ -->
+    <section class="page" id="page-logs" data-page="logs">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>操作日志</h1>
+          <p>本机所有环境、代理与会话操作记录</p>
+        </div>
+        <div class="head-actions">
+          <select class="select" id="logAction" style="width:150px">
+            <option value="">全部动作</option>
+            <option value="profile">环境</option>
+            <option value="proxy">代理</option>
+            <option value="group">分组</option>
+            <option value="session">会话</option>
+          </select>
+          <button class="btn icon" id="refreshLogs" title="刷新"><svg class="i"><use href="#i-refresh"/></svg></button>
+        </div>
+      </header>
+      <div class="page-body" style="padding:0 24px 20px">
+        <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+          <div class="list-scroll">
+            <table class="grid" style="min-width:820px">
+              <thead>
+                <tr>
+                  <th style="width:150px">时间</th>
+                  <th style="width:190px">动作</th>
+                  <th style="width:150px">对象</th>
+                  <th>详情</th>
+                </tr>
+              </thead>
+              <tbody id="logRows"></tbody>
+            </table>
+            <div class="empty" id="logEmpty" style="display:none">
+              <div class="empty-ico"><svg class="i"><use href="#i-log"/></svg></div>
+              <div class="empty-title">暂无日志</div>
+              <p>创建、打开或修改环境后，这里会记录操作。</p>
+            </div>
+          </div>
+          <div class="list-foot">
+            <span class="total" id="logTotal">共 0 条</span>
+            <div class="pager" id="logPager"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 设置 ============ -->
+    <section class="page" id="page-settings" data-page="settings">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>设置</h1>
+          <p>运行参数、代理检测与数据管理</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn primary" id="saveSettings">保存设置</button>
+        </div>
+      </header>
+      <div class="scroll">
+        <div class="settings-grid">
+          <div class="panel">
+            <div class="panel-head">运行</div>
+            <div class="panel-body">
+              <div class="field"><label>最大同时运行</label><input class="input" id="sMax" type="number" min="1" max="200"></div>
+              <div class="field"><label>默认无头模式</label>
+                <select class="select" id="sHeadless"><option value="false">否（显示窗口）</option><option value="true">是（后台运行）</option></select>
+              </div>
+              <div class="field"><label>启动时打开管理页</label>
+                <select class="select" id="sManager"><option value="true">是</option><option value="false">否</option></select>
+                <div class="hint">新环境启动后，首个标签页打开 Moltskin 管理页</div>
+              </div>
+              <div class="field"><label>环境上限</label><input class="input" id="sProfileLimit" type="number" min="1"></div>
+              <div class="field"><label>每日打开上限</label><input class="input" id="sDailyLimit" type="number" min="1"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">代理</div>
+            <div class="panel-body">
+              <div class="field"><label>检测地址</label><input class="input" id="sProxyUrl" placeholder="https://ipinfo.io/json"></div>
+              <div class="field"><label>巡检间隔（分钟）</label><input class="input" id="sProxyHealth" type="number" min="0" max="1440">
+                <div class="hint">0 = 关闭后台巡检</div>
+              </div>
+              <div class="field"><label>启动前必须代理可用</label>
+                <select class="select" id="sRequireProxy"><option value="false">否</option><option value="true">是</option></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">数据</div>
+            <div class="panel-body">
+              <div class="field"><label>环境配置</label>
+                <div class="field-row">
+                  <button class="btn small" data-action="export">导出 JSON</button>
+                  <button class="btn small" data-action="import">导入 JSON</button>
+                </div>
+                <div class="hint">只导出配置与指纹，不含 Cookie</div>
+              </div>
+              <div class="field"><label>数据目录</label>
+                <div class="mono muted" id="dataDir" style="font-size:11.5px;overflow-wrap:anywhere">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head">引擎</div>
+            <div class="panel-body" id="enginePanel"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 帮助 ============ -->
+    <section class="page" id="page-help" data-page="help">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>使用帮助</h1>
+          <p>三步开始，以及常见问题的处理方式</p>
+        </div>
+      </header>
+      <div class="scroll">
+        <div class="panel" style="max-width:760px">
+          <div class="panel-body" style="padding:18px 20px;line-height:1.75">
+            <h3 style="margin:0 0 8px;font-size:14px">1. 准备代理（可选）</h3>
+            <p class="muted" style="margin:0 0 16px">在「代理 IP」添加 HTTP 或 SOCKS5 代理并检测，确认出口 IP 与目标地区一致。</p>
+            <h3 style="margin:0 0 8px;font-size:14px">2. 创建环境</h3>
+            <p class="muted" style="margin:0 0 16px">创建时系统会生成一份随机指纹并永久保存；同一环境每次启动都是同一身份。</p>
+            <h3 style="margin:0 0 8px;font-size:14px">3. 打开窗口</h3>
+            <p class="muted" style="margin:0 0 16px">点击「打开」启动独立的 Camoufox 实例，登录状态保存在该环境自己的数据目录里。</p>
+            <h3 style="margin:0 0 8px;font-size:14px">常见问题</h3>
+            <p class="muted" style="margin:0">· 环境显示「异常」：上次进程被强制结束，重新打开即可恢复。<br>
+              · 打开失败并提示并发上限：到「设置 → 最大同时运行」调高上限。<br>
+              · 指纹自检需要环境处于关闭状态，会在 CreepJS 中截图。</p>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 </div>
 
-<!-- 创建环境 -->
-<div class="mask" id="createMask">
+<!-- 弹出层容器 -->
+<div class="pop" id="pop"></div>
+
+<!-- 创建 / 编辑环境 -->
+<div class="mask" id="profileMask">
   <div class="modal">
-    <div class="head">创建窗口 <span class="x" data-close="createMask">×</span></div>
+    <div class="head"><span id="profileModalTitle">创建窗口</span><button class="x" data-close="profileMask"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body">
-      <div class="field full">
-        <label>窗口名称 *</label>
-        <input id="fName" placeholder="例如：店铺-菲律宾-01">
+      <div class="field full"><label>窗口名称 *</label><input class="input" id="fName" placeholder="例如：店铺-菲律宾-01"></div>
+      <div class="field"><label>操作系统</label>
+        <select class="select" id="fOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
       </div>
-      <div class="field">
-        <label>操作系统</label>
-        <select id="fOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
+      <div class="field"><label>代理</label>
+        <select class="select" id="fProxy"><option value="">不使用代理</option></select>
       </div>
-      <div class="field">
-        <label>代理</label>
-        <select id="fProxy"><option value="">不使用代理</option></select>
-        <div class="hint">没有代理？先去左侧「代理 IP」添加</div>
-      </div>
-      <div class="field">
-        <label>分组</label>
-        <div class="input-row">
-          <select id="fGroup"><option value="">未分组</option></select>
-          <button class="btn small" id="newGroupBtn" type="button">新建</button>
+      <div class="field"><label>分组</label>
+        <div class="field-row">
+          <select class="select" id="fGroup" style="flex:1"><option value="">未分组</option></select>
+          <button class="btn small" type="button" id="newGroupInline">新建</button>
         </div>
       </div>
-      <div class="field">
-        <label>启动方式</label>
-        <select id="fHeadless"><option value="0">有头（显示窗口）</option><option value="1">无头（后台）</option></select>
+      <div class="field"><label>启动方式</label>
+        <select class="select" id="fHeadless"><option value="0">有头（显示窗口）</option><option value="1">无头（后台）</option></select>
       </div>
-      <div class="field full">
-        <label>标签</label>
-        <input id="fTags" placeholder="用逗号分隔，例如：菲律宾, 店铺">
-      </div>
-      <div class="field full">
-        <label>备注</label>
-        <input id="fRemark" placeholder="可选">
-      </div>
+      <div class="field full"><label>标签</label><input class="input" id="fTags" placeholder="用逗号分隔，例如：菲律宾, 店铺"></div>
+      <div class="field full"><label>备注</label><input class="input" id="fRemark" placeholder="可选"></div>
     </div>
     <div class="foot">
-      <button class="btn" data-close="createMask">取消</button>
-      <button class="btn primary" id="confirmCreate">创建</button>
+      <button class="btn" data-close="profileMask">取消</button>
+      <button class="btn primary" id="confirmProfile">创建</button>
     </div>
   </div>
 </div>
 
-<!-- 代理管理 -->
-<div class="mask" id="proxyMask">
-  <div class="modal">
-    <div class="head">代理 IP <span class="x" data-close="proxyMask">×</span></div>
+<!-- 批量创建 -->
+<div class="mask" id="batchMask">
+  <div class="modal" style="width:520px">
+    <div class="head">批量创建窗口<button class="x" data-close="batchMask"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body">
-      <div class="field"><label>名称</label><input id="pName" placeholder="PH-01"></div>
-      <div class="field"><label>协议</label><select id="pProtocol"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option></select></div>
-      <div class="field"><label>主机</label><input id="pHost" placeholder="1.2.3.4"></div>
-      <div class="field"><label>端口</label><input id="pPort" placeholder="8080" type="number"></div>
-      <div class="field"><label>用户名</label><input id="pUser" placeholder="可选"></div>
-      <div class="field"><label>密码</label><input id="pPass" placeholder="可选" type="password"></div>
-      <div class="field full" style="flex-direction:row;justify-content:flex-end">
-        <button class="btn primary" id="addProxy">添加代理</button>
+      <div class="field"><label>数量</label><input class="input" id="bCount" type="number" min="1" max="200" value="5"></div>
+      <div class="field"><label>起始序号</label><input class="input" id="bStart" type="number" min="1" value="1"></div>
+      <div class="field full"><label>名称前缀</label><input class="input" id="bPrefix" placeholder="环境">
+        <div class="hint" id="batchPreview" style="margin-top:4px"></div>
       </div>
-      <div class="proxy-list" id="proxyList"></div>
-    </div>
-  </div>
-</div>
-
-<!-- 设置 -->
-<div class="mask" id="settingsMask">
-  <div class="modal">
-    <div class="head">设置 <span class="x" data-close="settingsMask">×</span></div>
-    <div class="body">
-      <div class="field"><label>最大同时运行</label><input id="sMax" type="number" min="1" max="100"></div>
-      <div class="field"><label>默认无头</label><select id="sHeadless"><option value="false">否</option><option value="true">是</option></select></div>
-      <div class="field"><label>启动时打开管理页</label><select id="sManager"><option value="true">是</option><option value="false">否</option></select>
-        <div class="hint">新环境启动后，首个标签页打开 Moltskin 管理页</div>
+      <div class="field"><label>操作系统</label>
+        <select class="select" id="bOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
       </div>
-      <div class="field"><label>代理巡检间隔（分钟）</label><input id="sProxyHealth" type="number" min="0" max="1440">
-        <div class="hint">0 = 关闭；后台会重新检测过期代理</div>
+      <div class="field"><label>启动方式</label>
+        <select class="select" id="bHeadless"><option value="0">有头（显示窗口）</option><option value="1">无头（后台）</option></select>
       </div>
-      <div class="field full"><label>代理检测地址</label><input id="sProxyUrl"></div>
+      <div class="field"><label>分组</label><select class="select" id="bGroup"><option value="">未分组</option></select></div>
+      <div class="field"><label>代理</label><select class="select" id="bProxy"><option value="">不使用代理</option></select></div>
+      <div class="field full"><label>标签</label><input class="input" id="bTags" placeholder="用逗号分隔，应用到全部新环境"></div>
     </div>
     <div class="foot">
-      <button class="btn" data-close="settingsMask">取消</button>
-      <button class="btn primary" id="saveSettings">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- 日志 -->
-<div class="mask" id="logsMask">
-  <div class="modal">
-    <div class="head">操作日志 <span class="x" data-close="logsMask">×</span></div>
-    <div class="body" style="display:block">
-      <div id="logList" class="muted">加载中…</div>
+      <button class="btn" data-close="batchMask">取消</button>
+      <button class="btn primary" id="confirmBatch">开始创建</button>
     </div>
   </div>
 </div>
 
 <!-- 环境详情 -->
 <div class="mask" id="detailMask">
-  <div class="modal detail-modal">
-    <div class="head">环境详情 <span class="x" data-close="detailMask">×</span></div>
-    <div class="body detail-body">
-      <div class="detail-header">
+  <div class="modal wide">
+    <div class="head">环境详情<button class="x" data-close="detailMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="body single">
+      <div class="detail-head">
         <div>
           <div class="detail-name" id="detailName">—</div>
           <div class="detail-sub" id="detailSub">—</div>
         </div>
         <span id="detailStatus"></span>
       </div>
-
-      <section class="detail-section">
+      <section class="section">
         <h3>指纹预览</h3>
-        <div class="preview-grid" id="fingerprintPreview"></div>
+        <div class="kv-grid" id="fingerprintPreview"></div>
       </section>
-
-      <section class="detail-section">
-        <h3>启动前检查 <button class="btn small" id="recheckBtn">重新检查</button></h3>
+      <section class="section">
+        <h3>启动前检查<button class="btn small" id="recheckBtn">重新检查</button></h3>
         <div id="consistency" class="check-list"><span class="muted">检查中…</span></div>
       </section>
-
-      <section class="detail-section">
+      <section class="section">
         <h3>指纹自检</h3>
-        <p class="detail-hint">在 CreepJS 中打开该环境并截图。运行前需要先关闭环境。</p>
-        <button class="btn primary" id="selfTestBtn">运行自检</button>
+        <p class="hint">在 CreepJS 中打开该环境并截图，运行前需要先关闭环境。</p>
+        <button class="btn primary small" id="selfTestBtn">运行自检</button>
         <div id="selfTestResult" class="selftest-result"></div>
       </section>
     </div>
   </div>
 </div>
 
+<!-- 文本输入弹窗 -->
+<div class="mask" id="promptMask">
+  <div class="modal" style="width:420px">
+    <div class="head"><span id="promptTitle">输入</span><button class="x" data-close="promptMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="body single">
+      <div class="field"><label id="promptLabel">内容</label><input class="input" id="promptInput"></div>
+      <div class="field" id="promptHintWrap" style="margin-top:8px"><div class="hint" id="promptHint"></div></div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close="promptMask">取消</button>
+      <button class="btn primary" id="promptOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 选择弹窗 -->
+<div class="mask" id="chooseMask">
+  <div class="modal" style="width:420px">
+    <div class="head"><span id="chooseTitle">选择</span><button class="x" data-close="chooseMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="body single">
+      <div class="field"><label id="chooseLabel">选项</label><select class="select" id="chooseSelect"></select></div>
+      <div class="field" id="chooseExtra" style="margin-top:8px;display:none"><label>新分组名称</label><input class="input" id="chooseInput" placeholder="留空则使用所选分组"></div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close="chooseMask">取消</button>
+      <button class="btn primary" id="chooseOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 确认弹窗 -->
+<div class="mask" id="confirmMask">
+  <div class="modal" style="width:400px">
+    <div class="head"><span id="confirmTitle">确认</span><button class="x" data-close="confirmMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="body single"><div id="confirmText" class="muted" style="line-height:1.65"></div></div>
+    <div class="foot">
+      <button class="btn" data-close="confirmMask">取消</button>
+      <button class="btn primary" id="confirmOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="importFile" accept="application/json,.json" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -699,39 +1121,61 @@ const TOKEN = "__MOLTSKIN_TOKEN__";
 const $ = (id) => document.getElementById(id);
 
 const state = {
-  profiles: [], proxies: [], groups: [], tab: "all", q: "",
-  busy: new Set(), selected: new Set(), loading: true, engine: null, refreshedAt: null,
+  page: "windows",
+  profiles: [], proxies: [], groups: [], stats: null, tags: [], engine: null,
+  tab: "all", q: "", field: "all", op: "contains", groupId: "", tag: "",
+  sort: "last_opened", order: "desc",
+  pageNo: 1, pageSize: 10,
+  view: localStorage.getItem("moltskin.view") || "table",
+  columns: JSON.parse(localStorage.getItem("moltskin.columns") || '{"group":1,"proxy":1,"tags":1,"remark":1,"created":1}'),
+  selected: new Set(), busy: new Set(),
+  logs: { page: 1, pageSize: 20, action: "", total: 0 },
+  loading: true, sig: "",
+  editingId: null,
 };
 
+const STATUS = {
+  ready: ["已关闭", "s-ready"],
+  running: ["运行中", "s-running"],
+  crashed: ["异常", "s-crashed"],
+  draft: ["未配置", "s-draft"],
+  proxy_failed: ["代理异常", "s-crashed"],
+};
+
+const ACTION_LABEL = {
+  "profile.create": "创建环境",
+  "profile.update": "修改环境",
+  "profile.delete": "删除环境",
+  "profile.duplicate": "复制环境",
+  "profile.reset_fingerprint": "重置指纹",
+  "profile.launch": "打开环境",
+  "profile.stop": "关闭环境",
+  "session.start": "会话开始",
+  "session.stop": "会话结束",
+  "session.crashed": "会话异常",
+  "session.orphan": "清理残留",
+  "proxy.create": "添加代理",
+  "proxy.update": "修改代理",
+  "proxy.delete": "删除代理",
+  "proxy.check": "检测代理",
+  "group.create": "新建分组",
+  "group.update": "重命名分组",
+  "group.delete": "删除分组",
+};
+
+function actionLabel(action) {
+  return ACTION_LABEL[action] || action;
+}
+
+/* ---------------- utils ---------------- */
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   })[ch]);
 }
-
-async function api(path, options = {}) {
-  const res = await fetch("/api/v1" + path, {
-    ...options,
-    headers: { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json", ...(options.headers || {}) },
-  });
-  let body = null;
-  try { body = await res.json(); } catch (_) {}
-  if (!res.ok || (body && body.error)) {
-    const msg = body?.error?.message || `请求失败 (${res.status})`;
-    throw new Error(msg);
-  }
-  return body?.data;
+function icon(name, cls = "") {
+  return `<svg class="i ${cls}"><use href="#i-${name}"/></svg>`;
 }
-
-let toastTimer;
-function toast(msg, isErr = false) {
-  const el = $("toast");
-  el.textContent = msg;
-  el.className = "toast show" + (isErr ? " err" : "");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.className = "toast", 2200);
-}
-
 function fmtTime(value) {
   if (!value) return "—";
   const d = new Date(value);
@@ -739,251 +1183,748 @@ function fmtTime(value) {
   const p = (n) => String(n).padStart(2, "0");
   return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
+function relTime(value) {
+  if (!value) return "从未打开";
+  const d = new Date(value).getTime();
+  if (Number.isNaN(d)) return "—";
+  const diff = Date.now() - d;
+  if (diff < 60e3) return "刚刚";
+  if (diff < 3600e3) return `${Math.floor(diff / 60e3)} 分钟前`;
+  if (diff < 86400e3) return `${Math.floor(diff / 3600e3)} 小时前`;
+  if (diff < 7 * 86400e3) return `${Math.floor(diff / 86400e3)} 天前`;
+  return fmtTime(value);
+}
+function flagOf(code) {
+  if (!code || code.length !== 2) return "";
+  const base = 127397;
+  return String.fromCodePoint(...[...code.toUpperCase()].map((c) => base + c.charCodeAt(0)));
+}
+function proxyLabel(p) {
+  if (!p || !p.proxy) return { text: "未绑定", geo: "", flag: "" };
+  if (!p.proxy.exit_ip) return { text: p.proxy.name || "未检测", geo: "", flag: "" };
+  return {
+    text: p.proxy.exit_ip,
+    geo: [p.proxy.country, p.proxy.latency_ms != null ? `${p.proxy.latency_ms}ms` : ""].filter(Boolean).join(" · "),
+    flag: flagOf(p.proxy.country),
+  };
+}
+let toastTimer;
+function toast(msg, isErr = false) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.className = "toast show" + (isErr ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = "toast"; }, 2400);
+}
 
-const STATUS = {
-  ready: ["已停止", "s-ready"],
-  running: ["运行中", "s-running"],
-  crashed: ["异常", "s-crashed"],
-  draft: ["未配置", "s-draft"],
-  proxy_failed: ["代理异常", "s-crashed"],
+/* ---------------- api ---------------- */
+async function api(path, options = {}) {
+  const res = await fetch("/api/v1" + path, {
+    ...options,
+    headers: {
+      "Authorization": "Bearer " + TOKEN,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  let body = null;
+  try { body = await res.json(); } catch (_) { /* 空响应 */ }
+  if (!res.ok || (body && body.error)) {
+    const msg = body?.error?.message || `请求失败 (${res.status})`;
+    throw new Error(msg);
+  }
+  return body?.data;
+}
+
+/* ---------------- 弹层 ---------------- */
+const pop = $("pop");
+let popAnchor = null;
+function closePop() {
+  pop.classList.remove("show");
+  pop.innerHTML = "";
+  popAnchor = null;
+}
+function openPop(anchor, html, { align = "left" } = {}) {
+  if (popAnchor === anchor) { closePop(); return; }
+  pop.innerHTML = html;
+  pop.classList.add("show");
+  const r = anchor.getBoundingClientRect();
+  const width = pop.offsetWidth;
+  let left = align === "right" ? r.right - width : r.left;
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+  let top = r.bottom + 6;
+  if (top + pop.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - pop.offsetHeight - 6);
+  pop.style.left = left + "px";
+  pop.style.top = top + "px";
+  popAnchor = anchor;
+}
+document.addEventListener("click", (e) => {
+  if (!pop.classList.contains("show")) return;
+  if (pop.contains(e.target)) return;
+  if (popAnchor && popAnchor.contains(e.target)) return;
+  closePop();
+});
+window.addEventListener("resize", closePop);
+document.addEventListener("scroll", (e) => {
+  if (pop.classList.contains("show") && !pop.contains(e.target)) closePop();
+}, true);
+
+/* ---------------- 弹窗 ---------------- */
+let lastFocused = null;
+function openModal(id) {
+  lastFocused = document.activeElement;
+  $(id).classList.add("show");
+  setTimeout(() => {
+    const first = $(id).querySelector("input:not([type=hidden]), select, button.primary");
+    first?.focus();
+  }, 40);
+}
+function closeModal(id) {
+  $(id).classList.remove("show");
+  if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
+  lastFocused = null;
+}
+document.querySelectorAll(".mask").forEach((mask) => {
+  const dialog = mask.querySelector(".modal");
+  dialog?.setAttribute("role", "dialog");
+  dialog?.setAttribute("aria-modal", "true");
+  mask.querySelectorAll("[data-close]").forEach((el) => {
+    el.addEventListener("click", () => closeModal(el.dataset.close));
+  });
+  mask.addEventListener("click", (e) => { if (e.target === mask) closeModal(mask.id); });
+});
+
+let promptResolve = null;
+function askText({ title, label, value = "", hint = "" }) {
+  $("promptTitle").textContent = title;
+  $("promptLabel").textContent = label;
+  $("promptInput").value = value;
+  $("promptHint").textContent = hint;
+  $("promptHintWrap").style.display = hint ? "" : "none";
+  openModal("promptMask");
+  setTimeout(() => { $("promptInput").focus(); $("promptInput").select(); }, 60);
+  return new Promise((resolve) => { promptResolve = resolve; });
+}
+$("promptOk").onclick = () => {
+  const v = $("promptInput").value;
+  closeModal("promptMask");
+  promptResolve?.(v);
+  promptResolve = null;
 };
+$("promptInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("promptOk").click();
+});
+
+let chooseResolve = null;
+function askChoose({ title, label, options, value = "", extra = false, extraLabel = "" }) {
+  $("chooseTitle").textContent = title;
+  $("chooseLabel").textContent = label;
+  $("chooseSelect").innerHTML = options.map((o) =>
+    `<option value="${esc(o.value)}" ${String(o.value) === String(value) ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+  $("chooseExtra").style.display = extra ? "" : "none";
+  if (extra) $("chooseExtra").querySelector("label").textContent = extraLabel;
+  $("chooseInput").value = "";
+  openModal("chooseMask");
+  return new Promise((resolve) => { chooseResolve = resolve; });
+}
+$("chooseOk").onclick = () => {
+  const value = $("chooseSelect").value;
+  const extraVal = $("chooseInput").value.trim();
+  closeModal("chooseMask");
+  chooseResolve?.({ value, extra: extraVal });
+  chooseResolve = null;
+};
+
+let confirmResolve = null;
+function askConfirm({ title, text, okText = "确定", danger = false }) {
+  $("confirmTitle").textContent = title;
+  $("confirmText").innerHTML = text;
+  const ok = $("confirmOk");
+  ok.textContent = okText;
+  ok.className = "btn " + (danger ? "danger" : "primary");
+  openModal("confirmMask");
+  return new Promise((resolve) => { confirmResolve = resolve; });
+}
+$("confirmOk").onclick = () => { closeModal("confirmMask"); confirmResolve?.(true); confirmResolve = null; };
+$("confirmMask").querySelectorAll("[data-close]").forEach((el) =>
+  el.addEventListener("click", () => { confirmResolve?.(false); confirmResolve = null; }));
+
+/* ---------------- 路由 ---------------- */
+function go(page) {
+  if (!document.getElementById("page-" + page)) page = "windows";
+  state.page = page;
+  document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.dataset.page === page));
+  document.querySelectorAll(".nav-item").forEach((n) => {
+    const active = n.dataset.page === page;
+    n.classList.toggle("active", active);
+    if (active) n.setAttribute("aria-current", "page"); else n.removeAttribute("aria-current");
+  });
+  closePop();
+  if (page === "logs") loadLogs();
+  if (page === "proxies") renderProxies();
+  if (page === "groups") renderGroups();
+  if (page === "settings") loadSettings();
+  if (page === "home") renderHome();
+  if (location.hash !== "#/" + page) history.replaceState(null, "", "#/" + page);
+}
+document.querySelectorAll(".nav-item").forEach((n) => {
+  n.addEventListener("click", (e) => {
+    e.preventDefault();
+    go(n.dataset.page);
+  });
+});
+document.querySelectorAll("[data-goto]").forEach((el) => {
+  el.addEventListener("click", () => {
+    if (el.dataset.filter) setTab(el.dataset.filter);
+    go(el.dataset.goto);
+  });
+});
+
+/* ---------------- 表格列 ---------------- */
+const COLUMNS = [
+  { key: "group", label: "分组", width: 130 },
+  { key: "proxy", label: "代理 IP", width: 180 },
+  { key: "tags", label: "标签", width: 120 },
+  { key: "remark", label: "备注", width: 130 },
+  { key: "created", label: "创建时间", width: 130 },
+];
+
+function theadHtml() {
+  const c = state.columns;
+  const sortBtn = (key, label, width = 210) => {
+    const active = state.sort === key;
+    return `<th class="sortable ${active ? "sorted" : ""}" data-sort="${key}" style="width:${width}px">${label}
+      ${active ? `<span class="sort"><i class="${state.order === "desc" ? "down" : ""}"></i></span>` : ""}</th>`;
+  };
+  return `
+    <th style="width:38px"><input type="checkbox" id="selectAll" aria-label="全选"></th>
+    <th style="width:56px">序号</th>
+    ${c.group ? `<th style="width:120px">分组</th>` : ""}
+    ${sortBtn("name", "窗口名称")}
+    ${c.proxy ? `<th style="width:180px">代理 IP</th>` : ""}
+    ${c.tags ? `<th style="width:140px">标签</th>` : ""}
+    ${c.remark ? `<th style="width:120px">备注</th>` : ""}
+    ${c.created ? `<th class="sortable ${state.sort === "created_at" ? "sorted" : ""}" data-sort="created_at" style="width:130px">创建时间
+      ${state.sort === "created_at" ? `<span class="sort"><i class="${state.order === "desc" ? "down" : ""}"></i></span>` : ""}</th>` : ""}
+    <th style="width:190px">配置</th>
+    <th class="col-actions" style="width:150px">打开</th>`;
+}
+
+/* ---------------- 列表逻辑 ---------------- */
+function filtered() {
+  const q = state.q.trim().toLowerCase();
+  let list = state.profiles;
+
+  if (state.tab === "running") list = list.filter((p) => p.status === "running");
+  else if (state.tab === "stopped") list = list.filter((p) => p.status !== "running");
+  else if (state.tab === "crashed") list = list.filter((p) => p.status === "crashed" || p.status === "proxy_failed");
+  else if (state.tab === "unopened") list = list.filter((p) => !p.last_opened_at);
+
+  if (state.groupId === "__none__") list = list.filter((p) => !p.group);
+  else if (state.groupId) list = list.filter((p) => p.group?.id === state.groupId);
+
+  if (state.tag) list = list.filter((p) => (p.tags || []).includes(state.tag));
+
+  if (q) {
+    const match = (p) => {
+      const values = {
+        name: p.name,
+        remark: p.remark,
+        proxy: p.proxy?.exit_ip || "",
+        group: p.group?.name || "",
+      };
+      const pool = state.field === "all" ? Object.values(values) : [values[state.field] || ""];
+      return pool.some((v) => {
+        const text = String(v).toLowerCase();
+        if (state.op === "equals") return text === q;
+        if (state.op === "not_contains") return !text.includes(q);
+        return text.includes(q);
+      });
+    };
+    list = list.filter(match);
+  }
+
+  const dir = state.order === "asc" ? 1 : -1;
+  const key = {
+    name: (p) => p.name,
+    created_at: (p) => p.created_at,
+    last_opened: (p) => p.last_opened_at || "",
+    open_count: (p) => p.open_count || 0,
+  }[state.sort];
+  if (key) {
+    list = [...list].sort((a, b) => {
+      const av = key(a), bv = key(b);
+      if (av === bv) return 0;
+      return av > bv ? dir : -dir;
+    });
+  }
+  return list;
+}
 
 function statusHtml(p) {
   const st = STATUS[p.status] || [p.status, "s-ready"];
-  const title = p.status === "crashed" ? "上次会话异常退出" : "";
-  return `<span class="status" ${title ? `title="${title}"` : ""}><span class="dot-s ${st[1]}"></span>${st[0]}</span>`;
-}
-
-function actionHtml(p, compact = false) {
-  const running = p.status === "running";
-  const busy = state.busy.has(p.id);
-  return `<button class="open-btn ${running ? "stop" : ""}" data-action="${running ? "stop" : "start"}" data-id="${p.id}" ${busy ? "disabled" : ""}>
-      ${busy ? '<span class="spinner"></span>' : (running ? "关闭" : "打开")}
-    </button>
-    <button class="more" data-action="delete" data-id="${p.id}" aria-label="删除环境 ${esc(p.name)}" title="删除环境">⋮</button>`;
-}
-
-function proxyHtml(p) {
-  if (!p.proxy || !p.proxy.exit_ip) return `<span class="muted">未绑定</span>`;
-  const geo = [p.proxy.country, p.proxy.latency_ms != null ? `${p.proxy.latency_ms}ms` : ""]
-    .filter(Boolean).join(" · ");
-  return `<div class="ip"><span class="addr">${esc(p.proxy.exit_ip)}</span><span class="geo">${esc(geo)}</span></div>`;
-}
-
-function tagsHtml(p) {
-  return (p.tags || []).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+  return `<span class="status"><span class="dot-s ${st[1]}"></span>${st[0]}</span>`;
 }
 
 function rowHtml(p, index) {
-  return `<tr>
+  const proxy = proxyLabel(p);
+  const c = state.columns;
+  const preview = p.fingerprint_preview;
+  const cfg = preview
+    ? `${preview.os === "macos" ? "macOS" : preview.os === "linux" ? "Linux" : "Win"} · ${preview.hardware_concurrency || "?"}核 · ${preview.screen || ""}`
+    : "未生成";
+  return `<tr class="${state.selected.has(p.id) ? "selected" : ""}">
     <td><input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}"></td>
-    <td class="muted">${index + 1}</td>
-    <td class="muted">${esc(p.group?.name || "未分组")}</td>
-    <td><div class="row-name" data-action="detail" data-id="${p.id}" title="查看详情">${esc(p.name)}</div></td>
-    <td>${proxyHtml(p)}</td>
-    <td>${tagsHtml(p)}</td>
-    <td class="muted" title="${esc(p.remark || "")}">${esc(p.remark || "")}</td>
-    <td class="muted">${fmtTime(p.created_at)}</td>
-    <td>${statusHtml(p)}</td>
-    <td><div class="actions">${actionHtml(p)}</div></td>
+    <td class="dim">${(state.pageNo - 1) * state.pageSize + index + 1}</td>
+    ${c.group ? `<td class="muted ellipsis" title="${esc(p.group?.name || "未分组")}">${esc(p.group?.name || "未分组")}</td>` : ""}
+    <td>
+      <div class="cell-name">
+        <span class="status-dot ${(STATUS[p.status] || ["", "s-ready"])[1]}"></span>
+        <span class="txt" data-action="detail" data-id="${p.id}" title="${esc(p.name)}">${esc(p.name)}</span>
+      </div>
+    </td>
+    ${c.proxy ? `<td>
+      <div class="ip-cell">
+        <span class="badge">${proxy.flag || icon("globe")}</span>
+        <div class="stack">
+          <span class="addr">${esc(proxy.text)}</span>
+          ${proxy.geo ? `<span class="geo">${esc(proxy.geo)}</span>` : ""}
+        </div>
+      </div>
+    </td>` : ""}
+    ${c.tags ? `<td><div style="display:flex;gap:3px;overflow:hidden;white-space:nowrap">${(p.tags || []).map((t) => `<span class="tag">${esc(t)}</span>`).join("") || '<span class="dim">—</span>'}</div></td>` : ""}
+    ${c.remark ? `<td class="muted ellipsis" title="${esc(p.remark || "")}">${esc(p.remark || "—")}</td>` : ""}
+    ${c.created ? `<td class="muted nowrap">${fmtTime(p.created_at)}</td>` : ""}
+    <td>
+      <div class="cfg">
+        ${icon("finger")}
+        <div class="stack">
+          <span class="mono" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(cfg)}</span>
+          <span class="sub">打开 ${p.open_count || 0} 次 · ${esc(relTime(p.last_opened_at))}</span>
+        </div>
+      </div>
+    </td>
+    <td>
+      <div class="action-cell">
+        ${openBtn(p)}
+        <button class="icon-btn" data-menu="${p.id}" aria-label="更多操作">${icon("more")}</button>
+      </div>
+    </td>
   </tr>`;
 }
 
+function openBtn(p) {
+  const running = p.status === "running";
+  const busy = state.busy.has(p.id);
+  return `<button class="open-btn ${running ? "stop" : ""}" data-action="${running ? "stop" : "start"}" data-id="${p.id}" ${busy ? "disabled" : ""}>
+    ${busy ? '<span class="spinner"></span>' : (running ? "关闭" : "打开")}
+  </button>`;
+}
+
 function cardHtml(p) {
-  const meta = [
-    `<span>代理 <b>${p.proxy?.exit_ip ? esc(p.proxy.exit_ip) : "未绑定"}</b></span>`,
-    `<span>创建 ${fmtTime(p.created_at)}</span>`,
-  ];
-  if (p.remark) meta.push(`<span>备注 ${esc(p.remark)}</span>`);
-  return `<article class="card">
-    <div class="card-head">
-      <div class="card-main">
-        <input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}">
-        <div>
-          <div class="card-name" data-action="detail" data-id="${p.id}" title="查看详情">${esc(p.name)}</div>
-          <div class="card-sub">${esc(p.group?.name || "未分组")}</div>
-        </div>
+  const proxy = proxyLabel(p);
+  const preview = p.fingerprint_preview;
+  return `<article class="env-card ${state.selected.has(p.id) ? "selected" : ""}">
+    <div class="env-card-head">
+      <input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}">
+      <div class="grow">
+        <div class="env-card-name" data-action="detail" data-id="${p.id}">${esc(p.name)}</div>
+        <div class="env-card-sub">${esc(p.group?.name || "未分组")} · ${esc(relTime(p.last_opened_at))}</div>
       </div>
       ${statusHtml(p)}
     </div>
-    <div class="card-meta">${meta.join("")}</div>
-    ${p.tags && p.tags.length ? `<div class="card-meta">${tagsHtml(p)}</div>` : ""}
-    <div class="card-actions">${actionHtml(p, true)}</div>
+    <div class="env-card-meta">
+      <div><span class="k">代理</span><span class="v mono">${esc(proxy.text)}${proxy.geo ? ` · ${esc(proxy.geo)}` : ""}</span></div>
+      <div><span class="k">指纹</span><span class="v">${preview ? `${esc(preview.os)} · ${esc(preview.screen || "")}` : "未生成"}</span></div>
+      <div><span class="k">打开</span><span class="v">${p.open_count || 0} 次</span></div>
+    </div>
+    ${(p.tags || []).length ? `<div class="env-card-tags">${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
+    <div class="env-card-foot">
+      ${openBtn(p)}
+      <button class="icon-btn" data-menu="${p.id}" aria-label="更多操作">${icon("more")}</button>
+    </div>
   </article>`;
 }
 
-function visibleProfiles() {
-  const q = state.q.trim().toLowerCase();
-  return state.profiles.filter((p) => {
-    if (state.tab === "running" && p.status !== "running") return false;
-    if (state.tab === "ready" && p.status === "running") return false;
-    if (!q) return true;
-    return [p.name, p.remark, p.proxy?.exit_ip]
-      .filter(Boolean)
-      .some((v) => String(v).toLowerCase().includes(q));
-  });
+function renderList() {
+  const list = filtered();
+  const totalPages = Math.max(1, Math.ceil(list.length / state.pageSize));
+  if (state.pageNo > totalPages) state.pageNo = totalPages;
+  const start = (state.pageNo - 1) * state.pageSize;
+  const pageItems = list.slice(start, start + state.pageSize);
+
+  $("theadRow").innerHTML = theadHtml();
+  $("rows").innerHTML = pageItems.map(rowHtml).join("");
+  $("cards").innerHTML = pageItems.map(cardHtml).join("");
+
+  const tableMode = state.view === "table";
+  $("profileTable").style.display = tableMode ? "" : "none";
+  $("cards").style.display = tableMode ? "none" : "";
+  const empty = !state.loading && list.length === 0;
+  $("empty").style.display = empty ? "block" : "none";
+  if (empty) {
+    const has = state.profiles.length > 0;
+    $("empty").querySelector(".empty-title").textContent = has ? "没有匹配的环境" : "还没有环境";
+    $("empty").querySelector("p").textContent = has
+      ? "换一个关键词，或清除筛选条件。"
+      : "创建第一个独立浏览器环境，绑定代理后即可开始。";
+    $("empty").querySelector("button").style.display = has ? "none" : "";
+  }
+
+  $("listTotal").textContent = state.loading ? "正在加载…" : `共 ${list.length} 条`;
+  $("pager").innerHTML = pagerHtml(state.pageNo, totalPages, "data-page");
+
+  const all = pageItems.length > 0 && pageItems.every((p) => state.selected.has(p.id));
+  const selectAll = $("selectAll");
+  if (selectAll) selectAll.checked = all;
+  $("batchBar").hidden = state.selected.size === 0;
+  $("selCount").textContent = state.selected.size;
+  renderFilterBar();
+  renderQuota();
 }
 
-function render() {
-  const list = visibleProfiles();
-  const hasProfiles = state.profiles.length > 0;
-  const showEmpty = !state.loading && list.length === 0;
-
-  $("rows").innerHTML = list.map(rowHtml).join("");
-  $("cards").innerHTML = list.map(cardHtml).join("");
-
-  $("loading").style.display = state.loading ? "block" : "none";
-  $("profileTable").style.display = state.loading || showEmpty ? "none" : "";
-  $("cards").style.display = state.loading || showEmpty ? "none" : "";
-  $("empty").style.display = showEmpty ? "block" : "none";
-
-  const emptyTitle = $("empty").querySelector(".empty-title");
-  const emptyText = $("empty").querySelector("p");
-  const emptyBtn = $("emptyCreate");
-  if (showEmpty && hasProfiles) {
-    emptyTitle.textContent = "没有匹配的环境";
-    emptyText.textContent = "换一个关键词，或清除搜索条件。";
-    emptyBtn.style.display = "none";
+function pagerHtml(current, total, attr, pageSize = state.pageSize) {
+  const pages = [];
+  const push = (n) => pages.push(`<button ${attr}="${n}" class="${n === current ? "active" : ""}">${n}</button>`);
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) push(i);
   } else {
-    emptyTitle.textContent = "还没有环境";
-    emptyText.textContent = "创建第一个独立浏览器环境，绑定代理后即可开始。";
-    emptyBtn.style.display = "";
+    push(1);
+    if (current > 3) pages.push('<button disabled>…</button>');
+    for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) push(i);
+    if (current < total - 2) pages.push('<button disabled>…</button>');
+    push(total);
   }
-
-  $("listTotal").textContent = state.loading
-    ? "正在加载…"
-    : `共 ${list.length} 条${state.q ? `（筛选自 ${state.profiles.length} 条）` : ""}`;
-
-  for (const id of [...state.selected]) {
-    if (!state.profiles.some((p) => p.id === id)) state.selected.delete(id);
-  }
-  const all = list.length > 0 && list.every((p) => state.selected.has(p.id));
-  if ($("selectAll")) $("selectAll").checked = all;
-  updateBatchBar();
+  return `<button ${attr}="${Math.max(1, current - 1)}" ${current === 1 ? "disabled" : ""} aria-label="上一页">${icon("left")}</button>
+    ${pages.join("")}
+    <button ${attr}="${Math.min(total, current + 1)}" ${current === total ? "disabled" : ""} aria-label="下一页">${icon("right")}</button>
+    <span class="jump">前往<input type="number" min="1" max="${total}" value="${current}" data-jump="${attr}">页</span>
+    <select class="select page-size" data-pagesize="${attr}">${[10, 20, 50, 100].map((n) =>
+      `<option value="${n}" ${n === pageSize ? "selected" : ""}>${n} 条/页</option>`).join("")}</select>`;
 }
 
-function updateBatchBar() {
-  const n = state.selected.size;
-  $("batchBar").hidden = n === 0;
-  $("selCount").textContent = n;
+function renderQuota() {
+  const s = state.stats;
+  if (!s) return;
+  const limit = s.profile_limit || 200;
+  const pct = Math.min(100, Math.round((s.profiles_total / Math.max(1, limit)) * 100));
+  $("quota").innerHTML = `
+    <span>已用 <b>${s.profiles_total}</b> / 总数 <b>${limit}</b></span>
+    <span class="bar"><span style="width:${pct}%"></span></span>
+    <span class="sep"></span>
+    <span>今日打开 <b>${s.today_opened}</b> / 总数 <b>${s.daily_open_limit || 20000}</b></span>
+    <span class="sep"></span>
+    <span>运行中 <b>${s.profiles_running}</b> / 并发上限 <b>${s.max_concurrent}</b></span>
+    <a href="#/settings" style="margin-left:auto">调整上限</a>`;
+  $("navWindows").textContent = s.profiles_total;
+  $("navGroups").textContent = s.groups_total ?? state.groups.length;
+  $("navProxies").textContent = s.proxies_total ?? state.proxies.length;
+  $("tabAll").textContent = state.profiles.length;
+  $("tabRunning").textContent = state.profiles.filter((p) => p.status === "running").length;
+  $("tabStopped").textContent = state.profiles.filter((p) => p.status !== "running").length;
+  $("tabCrashed").textContent = state.profiles.filter((p) => p.status === "crashed" || p.status === "proxy_failed").length;
 }
 
-function handleSelect(e) {
+function renderFilterBar() {
+  const chips = [];
+  if (state.groupId) {
+    const name = state.groupId === "__none__" ? "未分组" : (state.groups.find((g) => g.id === state.groupId)?.name || "分组");
+    chips.push(`<span class="chip">分组：${esc(name)}<button data-clear="group" aria-label="清除分组筛选">${icon("x")}</button></span>`);
+  }
+  if (state.tag) {
+    chips.push(`<span class="chip">标签：${esc(state.tag)}<button data-clear="tag" aria-label="清除标签筛选">${icon("x")}</button></span>`);
+  }
+  if (state.q) {
+    chips.push(`<span class="chip">${state.op === "not_contains" ? "排除" : "关键词"}：${esc(state.q)}<button data-clear="q" aria-label="清除关键词">${icon("x")}</button></span>`);
+  }
+  $("filterBar").innerHTML = chips.length
+    ? chips.join("") + `<button class="btn small ghost" data-clear="all">清除全部</button>`
+    : "";
+  $("filterBar").style.display = chips.length ? "" : "none";
+}
+
+function setTab(tab) {
+  state.tab = tab;
+  state.pageNo = 1;
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  renderList();
+}
+
+$("tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-tab]");
+  if (btn) setTab(btn.dataset.tab);
+});
+$("filterBar").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-clear]");
+  if (!btn) return;
+  const what = btn.dataset.clear;
+  if (what === "group" || what === "all") state.groupId = "";
+  if (what === "tag" || what === "all") state.tag = "";
+  if (what === "q" || what === "all") { state.q = ""; $("searchInput").value = ""; }
+  state.pageNo = 1;
+  renderList();
+});
+
+let searchTimer;
+$("searchInput").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.q = e.target.value;
+    state.pageNo = 1;
+    renderList();
+  }, 160);
+});
+$("searchField").addEventListener("change", (e) => { state.field = e.target.value; renderList(); });
+$("searchOp").addEventListener("change", (e) => { state.op = e.target.value; renderList(); });
+
+$("viewTable").onclick = () => setView("table");
+$("viewGrid").onclick = () => setView("grid");
+function setView(view) {
+  state.view = view;
+  localStorage.setItem("moltskin.view", view);
+  $("viewTable").classList.toggle("active", view === "table");
+  $("viewGrid").classList.toggle("active", view === "grid");
+  renderList();
+}
+
+$("columnsBtn").onclick = (e) => {
+  const html = `<div class="pop-title">显示的列</div>` + COLUMNS.map((c) =>
+    `<label class="opt"><input type="checkbox" data-col="${c.key}" ${state.columns[c.key] ? "checked" : ""}>${c.label}</label>`).join("");
+  openPop(e.currentTarget, html, { align: "right" });
+};
+
+$("groupFilterBtn").onclick = (e) => {
+  const items = [
+    `<button data-group-pick="">全部分组</button>`,
+    `<button data-group-pick="__none__">未分组</button>`,
+    state.groups.length ? '<div class="sep"></div>' : "",
+    ...state.groups.map((g) => `<button data-group-pick="${g.id}">
+      <span style="flex:1">${esc(g.name)}</span><span class="dim">${g.profile_count ?? ""}</span></button>`),
+  ];
+  openPop(e.currentTarget, `<div class="scroll-list">${items.join("")}</div>`, { align: "right" });
+};
+
+$("tagFilterBtn").onclick = (e) => {
+  const items = [
+    `<button data-tag-pick="">全部标签</button>`,
+    state.tags.length ? '<div class="sep"></div>' : "",
+    ...state.tags.map((t) => `<button data-tag-pick="${esc(t.tag)}">
+      <span style="flex:1">${esc(t.tag)}</span><span class="dim">${t.count}</span></button>`),
+  ];
+  openPop(e.currentTarget, `<div class="scroll-list">${items.join("")}</div>`, { align: "right" });
+};
+
+pop.addEventListener("click", (e) => {
+  const g = e.target.closest("[data-group-pick]");
+  const t = e.target.closest("[data-tag-pick]");
+  if (g) {
+    state.groupId = g.dataset.groupPick;
+    state.pageNo = 1;
+    closePop();
+    renderList();
+  }
+  if (t) {
+    state.tag = t.dataset.tagPick;
+    state.pageNo = 1;
+    closePop();
+    renderList();
+  }
+});
+pop.addEventListener("change", (e) => {
+  const box = e.target.closest("[data-col]");
+  if (!box) return;
+  state.columns[box.dataset.col] = box.checked ? 1 : 0;
+  localStorage.setItem("moltskin.columns", JSON.stringify(state.columns));
+  renderList();
+});
+
+$("pager").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-page]");
+  if (!btn || btn.disabled) return;
+  state.pageNo = Number(btn.dataset.page);
+  renderList();
+});
+$("pager").addEventListener("change", (e) => {
+  const size = e.target.closest("[data-pagesize]");
+  if (size) { state.pageSize = Number(size.value); state.pageNo = 1; renderList(); }
+  const jump = e.target.closest("[data-jump]");
+  if (jump) {
+    const list = filtered();
+    const total = Math.max(1, Math.ceil(list.length / state.pageSize));
+    state.pageNo = Math.min(total, Math.max(1, Number(jump.value) || 1));
+    renderList();
+  }
+});
+$("logPager").addEventListener("change", (e) => {
+  const size = e.target.closest("[data-pagesize]");
+  if (size) { state.logs.pageSize = Number(size.value); state.logs.page = 1; loadLogs(); }
+  const jump = e.target.closest("[data-jump]");
+  if (jump) {
+    const total = Math.max(1, Math.ceil(state.logs.total / state.logs.pageSize));
+    state.logs.page = Math.min(total, Math.max(1, Number(jump.value) || 1));
+    loadLogs();
+  }
+});
+
+/* 表头排序 */
+$("profileTable").addEventListener("click", (e) => {
+  const th = e.target.closest("th[data-sort]");
+  if (!th) return;
+  const key = th.dataset.sort;
+  if (state.sort === key) state.order = state.order === "desc" ? "asc" : "desc";
+  else { state.sort = key; state.order = "asc"; }
+  renderList();
+});
+
+/* 选择 */
+function onSelectChange(e) {
   const el = e.target.closest("[data-select]");
   if (!el) return;
   if (el.checked) state.selected.add(el.dataset.select);
   else state.selected.delete(el.dataset.select);
-  const list = visibleProfiles();
-  $("selectAll").checked = list.length > 0 && list.every((p) => state.selected.has(p.id));
-  updateBatchBar();
+  renderList();
 }
+$("rows").addEventListener("change", onSelectChange);
+$("cards").addEventListener("change", onSelectChange);
+$("profileTable").addEventListener("change", (e) => {
+  if (e.target.id !== "selectAll") return;
+  const list = filtered();
+  const start = (state.pageNo - 1) * state.pageSize;
+  const pageItems = list.slice(start, start + state.pageSize);
+  pageItems.forEach((p) => e.target.checked ? state.selected.add(p.id) : state.selected.delete(p.id));
+  renderList();
+});
+
+/* 行内操作 */
+async function handleProfileAction(e) {
+  const el = e.target.closest("[data-action]");
+  const menuBtn = e.target.closest("[data-menu]");
+  if (menuBtn) {
+    openRowMenu(menuBtn, menuBtn.dataset.menu);
+    return;
+  }
+  if (!el) return;
+  const { action, id } = el.dataset;
+  if (action === "detail") return openDetail(id);
+  if (action === "start") return startProfile(id);
+  if (action === "stop") return stopProfile(id);
+  if (action === "create") return openProfileModal();
+  if (action === "export") return exportProfiles();
+  if (action === "import") return $("importFile").click();
+}
+$("rows").addEventListener("click", handleProfileAction);
+$("cards").addEventListener("click", handleProfileAction);
+
+/* 页面头部 / 空状态的动作 */
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === "create") openProfileModal();
+  else if (action === "export") exportProfiles();
+  else if (action === "import") $("importFile").click();
+});
+
+function openRowMenu(anchor, id) {
+  const p = state.profiles.find((x) => x.id === id);
+  if (!p) return;
+  const running = p.status === "running";
+  const html = `
+    <button data-cmd="${running ? "stop" : "start"}" data-id="${id}">${icon(running ? "stop" : "play")}${running ? "关闭窗口" : "打开窗口"}</button>
+    <button data-cmd="detail" data-id="${id}">${icon("finger")}查看详情</button>
+    <div class="sep"></div>
+    <button data-cmd="edit" data-id="${id}">${icon("edit")}编辑环境</button>
+    <button data-cmd="duplicate" data-id="${id}">${icon("copy")}复制环境</button>
+    <button data-cmd="reset" data-id="${id}">${icon("refresh")}重置指纹</button>
+    <div class="sep"></div>
+    <button data-cmd="delete" data-id="${id}" class="danger">${icon("trash")}删除环境</button>`;
+  openPop(anchor, html, { align: "right" });
+}
+pop.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-cmd]");
+  if (!btn) return;
+  const { cmd, id } = btn.dataset;
+  closePop();
+  if (cmd === "start") return startProfile(id);
+  if (cmd === "stop") return stopProfile(id);
+  if (cmd === "detail") return openDetail(id);
+  if (cmd === "edit") return openProfileModal(id);
+  if (cmd === "duplicate") return duplicateProfile(id);
+  if (cmd === "delete") return deleteProfile(id);
+  if (cmd === "reset") {
+    const ok = await askConfirm({
+      title: "重置指纹",
+      text: "将重新生成一份随机指纹，Cookie 和登录状态保持不变。<br><b>已登录的站点可能要求重新验证。</b>",
+      okText: "重置",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/profiles/${id}/reset-fingerprint`, { method: "POST" });
+      toast("指纹已重置");
+      await refresh();
+    } catch (err) { toast(err.message, true); }
+  }
+});
+
+/* 批量 */
+$("batchBar").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-batch]");
+  if (!btn) return;
+  await runBatch(btn.dataset.batch);
+});
 
 async function runBatch(action) {
   const ids = [...state.selected];
   if (!ids.length) return;
-  if (action === "clear") {
-    state.selected.clear();
-    render();
-    return;
+  if (action === "clear") { state.selected.clear(); renderList(); return; }
+  if (action === "export") return exportProfiles(ids);
+
+  if (action === "delete") {
+    const ok = await askConfirm({
+      title: "删除环境",
+      text: `确定删除选中的 <b>${ids.length}</b> 个环境？<br>Cookie 与登录状态会一并删除，无法恢复。`,
+      okText: "删除",
+      danger: true,
+    });
+    if (!ok) return;
   }
 
   const body = { action, ids };
   if (action === "move") {
-    const name = prompt("分组名称（留空 = 未分组）");
-    if (name === null) return;
-    let groupId = null;
-    if (name.trim()) {
-      const existing = state.groups.find((g) => g.name === name.trim());
-      if (existing) {
-        groupId = existing.id;
-      } else {
-        const group = await api("/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+    const options = [{ value: "", label: "未分组" }, ...state.groups.map((g) => ({ value: g.id, label: g.name }))];
+    const res = await askChoose({
+      title: "移动分组", label: "目标分组", options, extra: true, extraLabel: "或新建分组",
+    });
+    if (!res) return;
+    let groupId = res.value || null;
+    if (res.extra) {
+      const existing = state.groups.find((g) => g.name === res.extra);
+      if (existing) groupId = existing.id;
+      else {
+        const group = await api("/groups", { method: "POST", body: JSON.stringify({ name: res.extra }) });
         groupId = group.id;
       }
     }
     body.group_id = groupId;
   }
   if (action === "tag") {
-    const value = prompt("标签，用逗号分隔（留空清除）");
+    const value = await askText({ title: "编辑标签", label: "标签（逗号分隔，留空清除）", value: "" });
     if (value === null) return;
     body.tags = value.split(",").map((x) => x.trim()).filter(Boolean);
   }
-  if (action === "delete" && !confirm(`删除选中的 ${ids.length} 个环境？会删除 Cookie 和登录态。`)) return;
 
   try {
     const data = await api("/profiles/batch", { method: "POST", body: JSON.stringify(body) });
-    toast(`完成 ${data.ok} 个，失败 ${data.failed} 个`, data.failed > 0);
-    if (data.failed === 0) state.selected.clear();
+    toast(`完成 ${data.ok} 个${data.failed ? `，失败 ${data.failed} 个` : ""}`, data.failed > 0);
+    if (!data.failed) state.selected.clear();
     await refresh();
-  } catch (err) {
-    toast(err.message, true);
-  }
+  } catch (err) { toast(err.message, true); }
 }
 
-$("selectAll").addEventListener("change", (e) => {
-  const list = visibleProfiles();
-  if (e.target.checked) list.forEach((p) => state.selected.add(p.id));
-  else list.forEach((p) => state.selected.delete(p.id));
-  render();
-});
-$("rows").addEventListener("change", handleSelect);
-$("cards").addEventListener("change", handleSelect);
-$("batchBar").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-batch]");
-  if (btn) runBatch(btn.dataset.batch);
-});
-
-async function refresh({ silent = false } = {}) {
-  try {
-    const [profiles, stats, proxies, groups] = await Promise.all([
-      api("/profiles?page_size=200"),
-      api("/stats"),
-      api("/proxies"),
-      api("/groups"),
-    ]);
-    const sig = JSON.stringify({ p: profiles.items, r: stats.profiles_running, t: stats.profiles_total });
-    const firstLoad = !state.sig;
-    const changed = sig !== state.sig;
-    state.sig = sig;
-    state.profiles = profiles.items;
-    state.proxies = proxies;
-    state.groups = groups;
-    state.loading = false;
-    state.refreshedAt = new Date();
-    $("statTotal").textContent = stats.profiles_total;
-    $("statRunning").textContent = stats.profiles_running;
-    $("statMax").textContent = stats.max_concurrent;
-    if (!state.engine) {
-      const engine = await api("/engine");
-      const active = (engine.browsers || []).find(b => b.active) || (engine.browsers || [])[0];
-      state.engine = engine;
-      $("enginePill").textContent = `Camoufox ${engine.camoufox} · ${active ? active.version : "未安装内核"}`;
-    }
-    $("errorBanner").classList.remove("show");
-    if (firstLoad || changed) render();
-    fillSelects();
-  } catch (err) {
-    state.loading = false;
-    $("enginePill").textContent = "服务不可用";
-    $("errorBanner").classList.add("show");
-    render();
-    if (!silent) toast(err.message, true);
-  }
-}
-
-function fillSelects() {
-  const proxySel = $("fProxy");
-  const current = proxySel.value;
-  proxySel.innerHTML = '<option value="">不使用代理</option>' +
-    state.proxies.map(p => `<option value="${p.id}">${p.name} · ${p.host}:${p.port} (${p.status})</option>`).join("");
-  proxySel.value = current;
-  const groupSel = $("fGroup");
-  groupSel.innerHTML = '<option value="">未分组</option>' +
-    state.groups.map(g => `<option value="${g.id}">${g.name}</option>`).join("");
-}
-
+/* ---------------- 环境操作 ---------------- */
 async function startProfile(id) {
-  state.busy.add(id); render();
+  state.busy.add(id); renderList();
   try {
     await api(`/profiles/${id}/launch`, { method: "POST" });
     toast("已启动");
@@ -994,9 +1935,8 @@ async function startProfile(id) {
     await refresh();
   }
 }
-
 async function stopProfile(id) {
-  state.busy.add(id); render();
+  state.busy.add(id); renderList();
   try {
     await api(`/profiles/${id}/stop`, { method: "POST" });
     toast("正在关闭…");
@@ -1004,35 +1944,246 @@ async function stopProfile(id) {
     toast(err.message, true);
   } finally {
     state.busy.delete(id);
-    setTimeout(refresh, 800);
+    setTimeout(refresh, 700);
   }
 }
+async function duplicateProfile(id) {
+  try {
+    const data = await api(`/profiles/${id}/duplicate`, { method: "POST" });
+    toast(`已复制：${data.name}`);
+    await refresh();
+  } catch (err) { toast(err.message, true); }
+}
+async function deleteProfile(id) {
+  const p = state.profiles.find((x) => x.id === id);
+  const ok = await askConfirm({
+    title: "删除环境",
+    text: `确定删除「<b>${esc(p?.name || "")}</b>」？<br>Cookie 与登录状态会一并删除。`,
+    okText: "删除",
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api(`/profiles/${id}?delete_data=true`, { method: "DELETE" });
+    toast("已删除");
+    state.selected.delete(id);
+    await refresh();
+  } catch (err) { toast(err.message, true); }
+}
 
-async function handleRowAction(e) {
-  const el = e.target.closest("[data-action]");
-  if (!el) return;
-  const { action, id } = el.dataset;
-  if (action === "detail") return openDetail(id);
-  if (action === "start") return startProfile(id);
-  if (action === "stop") return stopProfile(id);
-  if (action === "delete") {
-    const p = state.profiles.find(x => x.id === id);
-    if (!confirm(`删除「${p?.name}」？会同时删除该环境的 Cookie 和登录态。`)) return;
+/* ---------------- 创建 / 编辑 ---------------- */
+function openProfileModal(id = null) {
+  state.editingId = id;
+  const isEdit = Boolean(id);
+  $("profileModalTitle").textContent = isEdit ? "编辑环境" : "创建窗口";
+  $("confirmProfile").textContent = isEdit ? "保存" : "创建";
+  fillSelects();
+
+  const p = isEdit ? state.profiles.find((x) => x.id === id) : null;
+  $("fName").value = p?.name || "";
+  $("fOs").value = p?.os || "windows";
+  $("fOs").disabled = isEdit;
+  $("fProxy").value = p?.proxy?.id || "";
+  $("fGroup").value = p?.group?.id || "";
+  $("fHeadless").value = p?.headless ? "1" : "0";
+  $("fTags").value = (p?.tags || []).join(", ");
+  $("fRemark").value = p?.remark || "";
+  openModal("profileMask");
+}
+
+function fillSelects() {
+  const proxySel = $("fProxy");
+  const currentProxy = proxySel.value;
+  proxySel.innerHTML = '<option value="">不使用代理</option>' + state.proxies.map((p) =>
+    `<option value="${p.id}">${esc(p.name)} · ${esc(p.host)}:${p.port}${p.country ? ` (${esc(p.country)})` : ""}</option>`).join("");
+  proxySel.value = currentProxy;
+
+  const groupSel = $("fGroup");
+  const currentGroup = groupSel.value;
+  groupSel.innerHTML = '<option value="">未分组</option>' + state.groups.map((g) =>
+    `<option value="${g.id}">${esc(g.name)}</option>`).join("");
+  groupSel.value = currentGroup;
+}
+
+$("confirmProfile").onclick = async () => {
+  const name = $("fName").value.trim();
+  if (!name) return toast("请填写窗口名称", true);
+  const payload = {
+    name,
+    os: $("fOs").value,
+    proxy_id: $("fProxy").value || null,
+    group_id: $("fGroup").value || null,
+    headless: $("fHeadless").value === "1",
+    remark: $("fRemark").value.trim(),
+    tags: $("fTags").value.split(",").map((x) => x.trim()).filter(Boolean),
+  };
+  const btn = $("confirmProfile");
+  btn.disabled = true;
+  try {
+    if (state.editingId) {
+      await api(`/profiles/${state.editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      toast("已保存");
+    } else {
+      await api("/profiles", { method: "POST", body: JSON.stringify(payload) });
+      toast("创建成功");
+    }
+    closeModal("profileMask");
+    await refresh();
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+};
+
+$("newGroupInline").onclick = async () => {
+  const name = await askText({ title: "新建分组", label: "分组名称" });
+  if (!name || !name.trim()) return;
+  try {
+    const group = await api("/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+    await refresh();
+    $("fGroup").value = group.id;
+    toast("分组已创建");
+  } catch (err) { toast(err.message, true); }
+};
+
+$("createMenuBtn").onclick = (e) => {
+  openPop(e.currentTarget, `
+    <button data-create="single">${icon("plus")}创建单个窗口</button>
+    <button data-create="batch">${icon("copy")}批量创建</button>
+    <div class="sep"></div>
+    <button data-create="import">${icon("import")}从 JSON 导入</button>
+    <button data-create="export">${icon("export")}导出全部配置</button>
+  `, { align: "right" });
+};
+pop.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-create]");
+  if (!btn) return;
+  closePop();
+  const what = btn.dataset.create;
+  if (what === "single") openProfileModal();
+  if (what === "batch") openBatchModal();
+  if (what === "import") $("importFile").click();
+  if (what === "export") exportProfiles();
+});
+
+/* ---------------- 批量创建 ---------------- */
+function openBatchModal() {
+  fillBatchSelects();
+  $("bCount").value = 5;
+  $("bPrefix").value = "";
+  $("bStart").value = 1;
+  $("bTags").value = "";
+  const check = $("batchPreview");
+  check.textContent = "";
+  openModal("batchMask");
+  updateBatchPreview();
+}
+function updateBatchPreview() {
+  const count = Math.max(1, Math.min(200, Number($("bCount").value) || 1));
+  const prefix = $("bPrefix").value.trim() || "环境";
+  const start = Math.max(1, Number($("bStart").value) || 1);
+  const pad = (n) => String(n).padStart(String(start + count - 1).length, "0");
+  const names = Array.from({ length: Math.min(count, 3) }, (_, i) => `${prefix}-${pad(start + i)}`);
+  $("batchPreview").textContent = count > 3
+    ? `${names.join("、")} … 共 ${count} 个`
+    : names.join("、");
+}
+["bCount", "bPrefix", "bStart"].forEach((id) => {
+  $(id).addEventListener("input", updateBatchPreview);
+});
+function fillBatchSelects() {
+  const groupSel = $("bGroup");
+  groupSel.innerHTML = '<option value="">未分组</option>' + state.groups.map((g) =>
+    `<option value="${g.id}">${esc(g.name)}</option>`).join("");
+  const proxySel = $("bProxy");
+  proxySel.innerHTML = '<option value="">不使用代理</option>' + state.proxies.map((p) =>
+    `<option value="${p.id}">${esc(p.name)} · ${esc(p.host)}:${p.port}</option>`).join("");
+}
+$("confirmBatch").onclick = async () => {
+  const count = Math.max(1, Math.min(200, Number($("bCount").value) || 1));
+  const prefix = $("bPrefix").value.trim() || "环境";
+  const start = Math.max(1, Number($("bStart").value) || 1);
+  const pad = (n) => String(n).padStart(String(start + count - 1).length, "0");
+  const base = {
+    os: $("bOs").value,
+    proxy_id: $("bProxy").value || null,
+    group_id: $("bGroup").value || null,
+    headless: $("bHeadless").value === "1",
+    tags: $("bTags").value.split(",").map((x) => x.trim()).filter(Boolean),
+    remark: "",
+  };
+  const btn = $("confirmBatch");
+  btn.disabled = true;
+  btn.textContent = `创建中 0/${count}`;
+  let ok = 0, failed = 0;
+  for (let i = 0; i < count; i++) {
     try {
-      await api(`/profiles/${id}?delete_data=true`, { method: "DELETE" });
-      toast("已删除");
-      refresh();
-    } catch (err) { toast(err.message, true); }
+      await api("/profiles", {
+        method: "POST",
+        body: JSON.stringify({ ...base, name: `${prefix}-${pad(start + i)}` }),
+      });
+      ok++;
+    } catch (_) {
+      failed++;
+    }
+    btn.textContent = `创建中 ${i + 1}/${count}`;
   }
-}
-let detailId = null;
+  btn.disabled = false;
+  btn.textContent = "开始创建";
+  closeModal("batchMask");
+  toast(`创建 ${ok} 个${failed ? `，失败 ${failed} 个（名称可能重复）` : ""}`, failed > 0);
+  await refresh();
+};
 
+/* ---------------- 导入导出 ---------------- */
+async function exportProfiles(ids = null) {
+  try {
+    const res = await fetch("/api/v1/export/profiles", { headers: { Authorization: "Bearer " + TOKEN } });
+    if (!res.ok) throw new Error("导出失败");
+    const data = await res.json();
+    let payload = data;
+    if (ids && Array.isArray(data?.profiles)) {
+      const names = new Set(ids.map((id) => state.profiles.find((p) => p.id === id)?.name).filter(Boolean));
+      payload = { ...data, profiles: data.profiles.filter((p) => names.has(p.name)) };
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `moltskin-profiles-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast(ids ? `已导出 ${ids.length} 个环境` : "已导出");
+  } catch (err) { toast(err.message, true); }
+}
+
+$("importFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const profiles = Array.isArray(data) ? data : (data.profiles || data?.data?.profiles);
+    if (!Array.isArray(profiles)) throw new Error("文件格式不正确");
+    const result = await api("/import/profiles", { method: "POST", body: JSON.stringify({ profiles }) });
+    toast(`导入 ${result.created} 个${result.skipped?.length ? `，跳过 ${result.skipped.length}` : ""}`);
+    await refresh();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    e.target.value = "";
+  }
+});
+
+/* ---------------- 详情 ---------------- */
+let detailId = null;
 function openDetail(id) {
-  const p = state.profiles.find(x => x.id === id);
+  const p = state.profiles.find((x) => x.id === id);
   if (!p) return;
   detailId = id;
   $("detailName").textContent = p.name;
-  $("detailSub").textContent = `${p.group?.name || "未分组"} · ${p.os} · ${p.proxy?.exit_ip || "未绑定代理"}`;
+  $("detailSub").textContent = [
+    p.group?.name || "未分组",
+    p.os,
+    p.proxy?.exit_ip || "未绑定代理",
+    `打开 ${p.open_count || 0} 次`,
+  ].join(" · ");
   $("detailStatus").innerHTML = statusHtml(p);
 
   const preview = p.fingerprint_preview;
@@ -1045,7 +2196,7 @@ function openDetail(id) {
         "屏幕": `${preview.screen} @ ${preview.color_depth}bit`,
         "WebGL 厂商": preview.webgl_vendor,
         "WebGL 渲染器": preview.webgl_renderer,
-      }).map(([k, v]) => `<div class="preview-item"><div class="k">${k}</div><div class="v">${esc(v ?? "—")}</div></div>`).join("")
+      }).map(([k, v]) => `<div class="kv"><div class="k">${k}</div><div class="v">${esc(v ?? "—")}</div></div>`).join("")
     : '<span class="muted">尚未生成指纹</span>';
 
   $("consistency").innerHTML = '<span class="muted">检查中…</span>';
@@ -1059,7 +2210,7 @@ function openDetail(id) {
 async function runVerify(id) {
   try {
     const data = await api(`/profiles/${id}/verify`, { method: "POST" });
-    const rows = data.checks.map(check => `
+    const rows = data.checks.map((check) => `
       <div class="check-row ${check.ok ? "ok" : "bad"}">
         <span class="ico">${check.ok ? "✓" : "✕"}</span>
         <div>${esc(check.name)}<div class="detail">${esc(check.detail)}</div></div>
@@ -1072,7 +2223,8 @@ async function runVerify(id) {
   }
 }
 
-async function runSelfTest() {
+$("recheckBtn").onclick = () => detailId && runVerify(detailId);
+$("selfTestBtn").onclick = async () => {
   if (!detailId) return;
   const btn = $("selfTestBtn");
   btn.disabled = true;
@@ -1089,126 +2241,118 @@ async function runSelfTest() {
     btn.disabled = false;
     btn.textContent = "重新自检";
   }
-}
-
-$("recheckBtn").onclick = () => detailId && runVerify(detailId);
-$("selfTestBtn").onclick = runSelfTest;
-
-$("rows").addEventListener("click", handleRowAction);
-$("cards").addEventListener("click", handleRowAction);
-
-let lastFocused = null;
-function openModal(id) {
-  lastFocused = document.activeElement;
-  const mask = $(id);
-  mask.classList.add("show");
-  const first = mask.querySelector("input, select, button");
-  setTimeout(() => first?.focus(), 30);
-}
-function closeModal(id) {
-  $(id).classList.remove("show");
-  if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
-  lastFocused = null;
-}
-document.querySelectorAll(".mask").forEach((mask) => {
-  const dialog = mask.querySelector(".modal");
-  dialog?.setAttribute("role", "dialog");
-  dialog?.setAttribute("aria-modal", "true");
-  mask.querySelectorAll(".head .x").forEach((x) => {
-    x.setAttribute("role", "button");
-    x.setAttribute("aria-label", "关闭");
-    x.tabIndex = 0;
-    x.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") closeModal(mask.id);
-    });
-  });
-  mask.addEventListener("click", (e) => {
-    if (e.target === mask) closeModal(mask.id);
-  });
-});
-document.querySelectorAll("[data-close]").forEach((el) => {
-  el.onclick = () => closeModal(el.dataset.close);
-});
-$("createBtn").onclick = () => openModal("createMask");
-$("emptyCreate").onclick = () => openModal("createMask");
-$("refreshBtn").onclick = async (e) => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  btn.textContent = "刷新中…";
-  await refresh();
-  btn.disabled = false;
-  btn.textContent = "刷新";
 };
-$("retryBtn").onclick = () => refresh();
+
+/* ---------------- 分组 ---------------- */
+function renderGroups() {
+  const rows = state.groups || [];
+  const ungrouped = state.profiles.filter((p) => !p.group).length;
+  $("groupRows").innerHTML = rows.length
+    ? rows.map((g, i) => `<tr>
+        <td class="dim">${i + 1}</td>
+        <td><div class="cell-name">${icon("folder")}<span class="txt" data-group-open="${g.id}">${esc(g.name)}</span></div></td>
+        <td class="muted">${g.profile_count ?? 0}</td>
+        <td class="muted nowrap">${fmtTime(g.created_at)}</td>
+        <td>
+          <div class="action-cell">
+            <button class="btn small" data-group-rename="${g.id}">重命名</button>
+            <button class="icon-btn danger" data-group-del="${g.id}" aria-label="删除分组">${icon("trash")}</button>
+          </div>
+        </td>
+      </tr>`).join("") + `<tr>
+        <td class="dim">—</td>
+        <td><div class="cell-name"><span class="muted">未分组</span></div></td>
+        <td class="muted">${ungrouped}</td>
+        <td class="muted">—</td>
+        <td><div class="action-cell"><button class="btn small" data-group-open="__none__">查看</button></div></td>
+      </tr>`
+    : `<tr><td colspan="5"><div class="panel-empty">还没有分组，点右上角「新建分组」</div></td></tr>`;
+}
 
 $("newGroupBtn").onclick = async () => {
-  const name = prompt("新分组名称");
+  const name = await askText({ title: "新建分组", label: "分组名称" });
   if (!name || !name.trim()) return;
   try {
-    const group = await api("/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
-    await refresh();
-    $("fGroup").value = group.id;
+    await api("/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
     toast("分组已创建");
-  } catch (err) { toast(err.message, true); }
-};
-
-$("exportBtn").onclick = async () => {
-  try {
-    const res = await fetch("/api/v1/export/profiles", { headers: { Authorization: "Bearer " + TOKEN } });
-    if (!res.ok) throw new Error("导出失败");
-    const blob = await res.blob();
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "moltskin-profiles.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
-    toast("已导出");
-  } catch (err) { toast(err.message, true); }
-};
-
-$("importBtn").onclick = () => $("importFile").click();
-$("importFile").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  try {
-    const data = JSON.parse(await file.text());
-    const profiles = Array.isArray(data) ? data : data.profiles;
-    if (!Array.isArray(profiles)) throw new Error("文件格式不正确");
-    const result = await api("/import/profiles", { method: "POST", body: JSON.stringify({ profiles }) });
-    toast(`导入 ${result.created} 个${result.skipped.length ? `，跳过 ${result.skipped.length}` : ""}`);
     await refresh();
-  } catch (err) {
-    toast(err.message, true);
-  } finally {
-    e.target.value = "";
+    renderGroups();
+  } catch (err) { toast(err.message, true); }
+};
+
+$("groupRows").addEventListener("click", async (e) => {
+  const rename = e.target.closest("[data-group-rename]");
+  const del = e.target.closest("[data-group-del]");
+  const open = e.target.closest("[data-group-open]");
+  if (open) {
+    state.groupId = open.dataset.groupOpen === "__none__" ? "__none__" : open.dataset.groupOpen;
+    state.tab = "all";
+    state.pageNo = 1;
+    document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "all"));
+    go("windows");
+    renderList();
+    return;
+  }
+  if (rename) {
+    const g = state.groups.find((x) => x.id === rename.dataset.groupRename);
+    const name = await askText({ title: "重命名分组", label: "分组名称", value: g?.name || "" });
+    if (!name || !name.trim()) return;
+    try {
+      await api(`/groups/${g.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+      toast("已重命名");
+      await refresh();
+      renderGroups();
+    } catch (err) { toast(err.message, true); }
+  }
+  if (del) {
+    const g = state.groups.find((x) => x.id === del.dataset.groupDel);
+    const ok = await askConfirm({
+      title: "删除分组",
+      text: `删除分组「<b>${esc(g?.name || "")}</b>」？组内环境会变成未分组。`,
+      okText: "删除",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/groups/${g.id}`, { method: "DELETE" });
+      toast("已删除");
+      await refresh();
+      renderGroups();
+    } catch (err) { toast(err.message, true); }
   }
 });
 
-$("confirmCreate").onclick = async () => {
-  const name = $("fName").value.trim();
-  if (!name) return toast("请填写窗口名称", true);
-  const payload = {
-    name,
-    os: $("fOs").value,
-    proxy_id: $("fProxy").value || null,
-    group_id: $("fGroup").value || null,
-    headless: $("fHeadless").value === "1",
-    remark: $("fRemark").value.trim(),
-    tags: $("fTags").value.split(",").map((x) => x.trim()).filter(Boolean),
-  };
-  const btn = $("confirmCreate");
-  btn.disabled = true;
-  try {
-    await api("/profiles", { method: "POST", body: JSON.stringify(payload) });
-    closeModal("createMask");
-    $("fName").value = ""; $("fRemark").value = ""; $("fTags").value = "";
-    toast("创建成功");
-    refresh();
-  } catch (err) { toast(err.message, true); }
-  finally { btn.disabled = false; }
-};
+/* ---------------- 代理 ---------------- */
+function renderProxies() {
+  const list = state.proxies || [];
+  $("proxyEmpty").style.display = list.length ? "none" : "block";
+  $("proxyRows").innerHTML = list.map((p) => `<tr>
+    <td><div class="cell-name">${icon("globe")}<span class="txt">${esc(p.name)}</span></div></td>
+    <td class="mono muted">${esc(p.protocol)}://${esc(p.host)}:${p.port}</td>
+    <td class="mono">${p.exit_ip ? esc(p.exit_ip) : '<span class="dim">—</span>'}</td>
+    <td>${p.country ? `<span class="flag">${flagOf(p.country)}</span> <span class="muted">${esc(p.country)}</span>` : '<span class="dim">—</span>'}</td>
+    <td class="muted">${p.latency_ms != null ? p.latency_ms + "ms" : "—"}</td>
+    <td><span class="st ${p.status === "ok" ? "ok" : p.status === "slow" ? "slow" : p.status === "failed" ? "failed" : ""}">${esc(p.status)}</span></td>
+    <td class="muted">${p.used_by || 0}</td>
+    <td class="muted nowrap">${fmtTime(p.last_checked_at)}</td>
+    <td><div class="action-cell">
+      <button class="btn small" data-check="${p.id}">检测</button>
+      <button class="icon-btn danger" data-proxy-del="${p.id}" aria-label="删除代理">${icon("trash")}</button>
+    </div></td>
+  </tr>`).join("");
+}
 
-$("addProxy").onclick = async () => {
+$("toggleProxyForm").onclick = () => {
+  const form = $("proxyForm");
+  form.style.display = form.style.display === "none" ? "grid" : "none";
+  if (form.style.display === "grid") $("pName").focus();
+};
+$("emptyProxyAdd").onclick = () => $("toggleProxyForm").click();
+$("cancelProxy").onclick = () => { $("proxyForm").style.display = "none"; };
+$("refreshProxies").onclick = async () => { await refreshProxies(); toast("已刷新"); };
+
+$("proxyForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
   const payload = {
     name: $("pName").value.trim(),
     protocol: $("pProtocol").value,
@@ -1219,142 +2363,312 @@ $("addProxy").onclick = async () => {
   };
   if (!payload.name || !payload.host || !payload.port) return toast("名称/主机/端口必填", true);
   try {
-    await api("/proxies", { method: "POST", body: JSON.stringify(payload) });
+    const created = await api("/proxies", { method: "POST", body: JSON.stringify(payload) });
     $("pName").value = ""; $("pHost").value = ""; $("pPort").value = "";
     $("pUser").value = ""; $("pPass").value = "";
-    toast("已添加，点「检测」验证");
+    $("proxyForm").style.display = "none";
+    toast("已添加，正在检测…");
+    await refreshProxies();
+    try {
+      const r = await api(`/proxies/${created.id}/check`, { method: "POST" });
+      toast(r.status === "ok" ? `可用：${r.exit_ip} (${r.latency_ms}ms)` : `不可用：${r.error || r.status}`, r.status !== "ok");
+    } catch (err) { toast(err.message, true); }
     await refreshProxies();
   } catch (err) { toast(err.message, true); }
-};
+});
 
-function renderProxies() {
-  $("proxyList").innerHTML = state.proxies.length ? state.proxies.map(p => `
-    <div class="proxy-row">
-      <div class="info">
-        <div><b>${p.name}</b> <span class="muted">${p.protocol}://${p.host}:${p.port}</span></div>
-        <div class="sub">${p.exit_ip ? `${p.exit_ip} · ${p.country || ""} · ${p.latency_ms}ms` : "尚未检测"}</div>
-      </div>
-      <span class="st ${p.status === "ok" ? "ok" : p.status === "failed" ? "failed" : ""}">${p.status}</span>
-      <button class="btn small" data-check="${p.id}">检测</button>
-      <button class="btn small danger" data-del="${p.id}">删除</button>
-    </div>
-  `).join("") : '<div class="muted">还没有代理</div>';
-}
-
-async function refreshProxies() {
-  state.proxies = await api("/proxies");
-  renderProxies(); fillSelects();
-}
-
-$("proxyList").addEventListener("click", async (e) => {
+$("proxyRows").addEventListener("click", async (e) => {
   const check = e.target.closest("[data-check]");
-  const del = e.target.closest("[data-del]");
+  const del = e.target.closest("[data-proxy-del]");
   if (check) {
     check.disabled = true; check.textContent = "检测中…";
     try {
       const r = await api(`/proxies/${check.dataset.check}/check`, { method: "POST" });
       toast(r.status === "ok" ? `可用：${r.exit_ip} (${r.latency_ms}ms)` : `不可用：${r.error || r.status}`, r.status !== "ok");
     } catch (err) { toast(err.message, true); }
-    finally { await refreshProxies(); check.disabled = false; check.textContent = "检测"; }
+    finally { await refreshProxies(); }
   }
   if (del) {
-    if (!confirm("删除该代理？绑定的环境会被解绑。")) return;
-    await api(`/proxies/${del.dataset.del}`, { method: "DELETE" });
-    toast("已删除"); refreshProxies(); refresh();
+    const p = state.proxies.find((x) => x.id === del.dataset.proxyDel);
+    const ok = await askConfirm({
+      title: "删除代理",
+      text: `删除「<b>${esc(p?.name || "")}</b>」？绑定的 ${p?.used_by || 0} 个环境会被解绑。`,
+      okText: "删除", danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/proxies/${p.id}`, { method: "DELETE" });
+      toast("已删除");
+      await refreshProxies();
+      await refresh();
+    } catch (err) { toast(err.message, true); }
   }
 });
 
-$("nav").addEventListener("click", async (e) => {
-  const item = e.target.closest(".nav-item");
-  if (!item) return;
-  document.querySelectorAll(".nav-item").forEach(n => {
-    n.classList.remove("active");
-    n.removeAttribute("aria-current");
-  });
-  item.classList.add("active");
-  item.setAttribute("aria-current", "page");
-  const page = item.dataset.page;
-  if (page === "proxy") { openModal("proxyMask"); await refreshProxies(); }
-  else if (page === "settings") {
-    const s = await api("/settings");
+$("checkAllProxies").onclick = async (e) => {
+  const btn = e.currentTarget;
+  if (!state.proxies.length) return toast("没有可检测的代理", true);
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = "检测中…";
+  try {
+    const data = await api("/proxies/check-batch", { method: "POST", body: JSON.stringify({ ids: state.proxies.map((p) => p.id) }) });
+    const okCount = (data.results || data || []).filter((r) => r.status === "ok").length;
+    toast(`检测完成，可用 ${okCount} 个`);
+    await refreshProxies();
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; btn.textContent = old; }
+};
+
+async function refreshProxies() {
+  state.proxies = await api("/proxies");
+  renderProxies();
+  fillSelects();
+  $("navProxies").textContent = state.proxies.length;
+}
+
+/* ---------------- 日志 ---------------- */
+async function loadLogs() {
+  try {
+    const params = new URLSearchParams({ page: state.logs.page, page_size: state.logs.pageSize });
+    if (state.logs.action) params.set("action", state.logs.action);
+    const res = await fetch(`/api/v1/logs?${params}`, { headers: { Authorization: "Bearer " + TOKEN } });
+    const body = await res.json();
+    state.logs.total = Number(res.headers.get("X-Total-Count") || 0);
+    const rows = body?.data || [];
+    $("logEmpty").style.display = rows.length ? "none" : "block";
+    $("logRows").innerHTML = rows.map((l) => {
+      let detail = l.detail || "";
+      try {
+        const parsed = JSON.parse(detail || "{}");
+        detail = Object.entries(parsed).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`).join(" · ");
+      } catch (_) { /* 保留原文 */ }
+      return `<tr>
+        <td class="muted nowrap">${fmtTime(l.created_at)}</td>
+        <td>${esc(actionLabel(l.action))}<div class="dim mono" style="font-size:10.5px">${esc(l.action)}</div></td>
+        <td class="mono muted">${esc(l.target_id || "—")}</td>
+        <td class="muted" style="overflow-wrap:anywhere">${esc(detail)}</td>
+      </tr>`;
+    }).join("");
+    const totalPages = Math.max(1, Math.ceil(state.logs.total / state.logs.pageSize));
+    $("logTotal").textContent = `共 ${state.logs.total} 条`;
+    $("logPager").innerHTML = pagerHtml(state.logs.page, totalPages, "data-logpage", state.logs.pageSize);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+$("logPager").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-logpage]");
+  if (!btn || btn.disabled) return;
+  state.logs.page = Number(btn.dataset.logpage);
+  loadLogs();
+});
+$("refreshLogs").onclick = loadLogs;
+$("logAction").addEventListener("change", (e) => {
+  state.logs.action = e.target.value;
+  state.logs.page = 1;
+  loadLogs();
+});
+
+/* ---------------- 设置 ---------------- */
+let settingsCache = null;
+async function loadSettings() {
+  try {
+    const [s, engine] = await Promise.all([api("/settings"), state.engine ? Promise.resolve(state.engine) : api("/engine")]);
+    state.engine = engine;
+    settingsCache = s;
     $("sMax").value = s.max_concurrent;
     $("sHeadless").value = String(s.headless);
     $("sManager").value = String(s.open_manager_on_launch);
-    $("sProxyHealth").value = s.proxy_health_check_minutes ?? 30;
+    $("sProfileLimit").value = s.profile_limit ?? 200;
+    $("sDailyLimit").value = s.daily_open_limit ?? 20000;
     $("sProxyUrl").value = s.proxy_check_url;
-    openModal("settingsMask");
+    $("sProxyHealth").value = s.proxy_health_check_minutes ?? 30;
+    $("sRequireProxy").value = String(s.require_proxy_ok ?? false);
+    $("dataDir").textContent = s.data_dir || "data/";
+    renderEngine(engine);
+  } catch (err) {
+    toast(err.message, true);
   }
-  else if (page === "logs") {
-    $("logList").textContent = "加载中…";
-    const logs = await api("/logs?page_size=100");
-    $("logList").innerHTML = logs.map(l =>
-      `<div style="padding:6px 0;border-bottom:1px solid #262626"><span class="muted">${fmtTime(l.created_at)}</span>　<b>${l.action}</b>　${l.target_id || ""}</div>`
-    ).join("") || "暂无日志";
-    openModal("logsMask");
-  }
-  else if (page === "help") {
-    toast("提示：创建环境 → 绑定代理 → 打开窗口");
-  }
-});
+}
+
+function renderEngine(engine) {
+  const active = (engine.browsers || []).find((b) => b.active) || (engine.browsers || [])[0];
+  const card = $("engineCard");
+  card.innerHTML = `<b>Camoufox ${esc(engine.camoufox)}</b><span>内核 ${esc(active ? active.version : "未安装")}</span>`;
+  $("enginePanel").innerHTML = `
+    <div class="field"><label>Camoufox</label><div class="mono">${esc(engine.camoufox)}</div></div>
+    <div class="field"><label>Playwright</label><div class="mono">${esc(engine.playwright)}</div></div>
+    <div class="field"><label>浏览器内核</label><div class="mono">${esc(active ? active.version : "未安装")}</div></div>
+    <div class="field"><label>已安装内核</label><div class="mono">${(engine.browsers || []).map((b) => esc(b.version)).join("<br>") || "—"}</div></div>`;
+}
 
 $("saveSettings").onclick = async () => {
+  const btn = $("saveSettings");
+  btn.disabled = true;
   try {
     await api("/settings", { method: "PUT", body: JSON.stringify({
       max_concurrent: Number($("sMax").value),
       headless: $("sHeadless").value === "true",
       open_manager_on_launch: $("sManager").value === "true",
-      proxy_health_check_minutes: Number($("sProxyHealth").value) || 0,
+      profile_limit: Number($("sProfileLimit").value),
+      daily_open_limit: Number($("sDailyLimit").value),
       proxy_check_url: $("sProxyUrl").value.trim(),
+      proxy_health_check_minutes: Number($("sProxyHealth").value) || 0,
+      require_proxy_ok: $("sRequireProxy").value === "true",
     })});
-    closeModal("settingsMask");
     toast("已保存");
-    refresh();
+    await refresh();
   } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
 };
 
-document.querySelectorAll(".tab").forEach(tab => tab.onclick = () => {
-  document.querySelectorAll(".tab").forEach(t => {
-    t.classList.remove("active");
-    t.setAttribute("aria-selected", "false");
-  });
-  tab.classList.add("active");
-  tab.setAttribute("aria-selected", "true");
-  state.tab = tab.dataset.tab;
-  render();
+/* ---------------- 首页 ---------------- */
+function renderHome() {
+  const s = state.stats;
+  if (!s) return;
+  const cards = [
+    { k: "环境总数", v: s.profiles_total, s: `上限 ${s.profile_limit || 200}`, ico: "window" },
+    { k: "运行中", v: s.profiles_running, s: `并发上限 ${s.max_concurrent}`, ico: "bolt" },
+    { k: "今日打开", v: s.today_opened, s: `上限 ${s.daily_open_limit || 20000}`, ico: "clock" },
+    { k: "代理可用", v: s.proxies_ok, s: `共 ${s.proxies_total} 个代理`, ico: "globe" },
+  ];
+  $("kpis").innerHTML = cards.map((c) => `
+    <div class="kpi">
+      <div class="k">${icon(c.ico)}${c.k}</div>
+      <div class="v">${c.v}</div>
+      <div class="s">${esc(c.s)}</div>
+    </div>`).join("");
+
+  const running = state.profiles.filter((p) => p.status === "running");
+  $("homeRunning").innerHTML = running.length
+    ? running.map((p) => `<div class="mini-row">
+        <div class="grow">
+          <div class="nm">${esc(p.name)}</div>
+          <div class="sub">${esc(p.group?.name || "未分组")} · ${esc(p.proxy?.exit_ip || "未绑定代理")} · ${esc(relTime(p.last_opened_at))}</div>
+        </div>
+        <button class="btn small" data-action="stop" data-id="${p.id}">关闭</button>
+      </div>`).join("")
+    : '<div class="panel-empty">当前没有运行中的环境</div>';
+
+  loadHomeLogs();
+}
+
+let homeLogsLoading = false;
+async function loadHomeLogs() {
+  if (homeLogsLoading) return;
+  homeLogsLoading = true;
+  try {
+    const res = await fetch("/api/v1/logs?page_size=8", { headers: { Authorization: "Bearer " + TOKEN } });
+    const body = await res.json();
+    const rows = body?.data || [];
+    $("homeLogs").innerHTML = rows.length
+      ? rows.map((l) => `<div class="mini-row">
+          <div class="grow">
+            <div class="nm">${esc(actionLabel(l.action))}</div>
+            <div class="sub">${esc(l.target_id || "")}</div>
+          </div>
+          <span class="dim" style="font-size:11px;white-space:nowrap">${esc(relTime(l.created_at))}</span>
+        </div>`).join("")
+      : '<div class="panel-empty">还没有操作记录</div>';
+  } catch (_) {
+    $("homeLogs").innerHTML = '<div class="panel-empty">日志加载失败</div>';
+  } finally {
+    homeLogsLoading = false;
+  }
+}
+
+$("homeRunning").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  if (btn.dataset.action === "stop") stopProfile(btn.dataset.id);
 });
 
-$("searchInput").addEventListener("input", (e) => { state.q = e.target.value; render(); });
+/* ---------------- 数据刷新 ---------------- */
+async function refresh({ silent = false } = {}) {
+  try {
+    const [profiles, stats, proxies, groups, tags] = await Promise.all([
+      api("/profiles?page_size=200"),
+      api("/stats"),
+      api("/proxies"),
+      api("/groups"),
+      api("/tags"),
+    ]);
+    const sig = JSON.stringify({ p: profiles.items, r: stats.profiles_running, t: stats.profiles_total });
+    const changed = sig !== state.sig;
+    state.sig = sig;
+    state.profiles = profiles.items;
+    state.stats = stats;
+    state.proxies = proxies;
+    state.groups = groups;
+    state.tags = tags;
+    state.loading = false;
 
+    if (!state.engine) {
+      state.engine = await api("/engine");
+      renderEngine(state.engine);
+    }
+    $("errorBanner").style.display = "none";
+    fillSelects();
+    renderList();
+    if (state.page === "home") renderHome();
+    if (state.page === "groups") renderGroups();
+    if (state.page === "proxies") renderProxies();
+    if (!changed && !silent) toast("已是最新");
+  } catch (err) {
+    state.loading = false;
+    $("errorBanner").style.display = "flex";
+    renderList();
+    if (!silent) toast(err.message, true);
+  }
+}
+
+$("retryBtn").onclick = () => refresh();
+$("refreshBtn").onclick = async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  await refresh();
+  btn.disabled = false;
+};
+
+/* ---------------- 键盘 ---------------- */
 document.addEventListener("keydown", (e) => {
   const meta = e.metaKey || e.ctrlKey;
   if (meta && e.key.toLowerCase() === "k") {
     e.preventDefault();
+    go("windows");
     $("searchInput").focus();
   }
   if (meta && e.key.toLowerCase() === "n") {
     e.preventDefault();
-    openModal("createMask");
+    openProfileModal();
   }
   if (e.key === "Escape") {
-    document.querySelectorAll(".mask.show").forEach(m => closeModal(m.id));
+    if (pop.classList.contains("show")) return closePop();
+    document.querySelectorAll(".mask.show").forEach((m) => closeModal(m.id));
   }
 });
 
 function canAutoRefresh() {
   if (document.querySelector(".mask.show")) return false;
+  if (pop.classList.contains("show")) return false;
   const active = document.activeElement;
-  if (active && (active.closest("#rows") || active.closest("#cards"))) return false;
+  if (active && (active.tagName === "INPUT" || active.tagName === "SELECT" || active.tagName === "TEXTAREA")) return false;
   return true;
 }
 
-(async function init() {
-  render();
-  await refresh({ silent: true });
-  await refreshProxies().catch(() => {});
-  setInterval(async () => {
+/* ---------------- 启动 ---------------- */
+(function init() {
+  setView(state.view);
+  fillSelects();
+  renderList();
+  const page = (location.hash || "#/windows").replace("#/", "");
+  go(page);
+  refresh({ silent: true }).then(refreshProxies).catch(() => {});
+  setInterval(() => {
     if (document.hidden || !canAutoRefresh()) return;
-    await refresh({ silent: true });
-  }, 3000);
+    refresh({ silent: true }).catch(() => {});
+  }, 4000);
 })();
 </script>
 </body>

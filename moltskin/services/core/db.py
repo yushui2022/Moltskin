@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   status           TEXT NOT NULL DEFAULT 'draft',
   last_session_id  TEXT,
   last_opened_at   TEXT,
+  open_count       INTEGER NOT NULL DEFAULT 0,
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL
 );
@@ -126,11 +127,23 @@ def init_db() -> None:
     config.ensure_dirs()
     with session() as conn:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         for key, value in config.DEFAULTS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)",
                 (key, json.dumps(value)),
             )
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """给旧库补齐后加的列，保持升级不丢数据。"""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(profiles)")}
+    additions = {
+        "open_count": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for name, ddl in additions.items():
+        if name not in columns:
+            conn.execute(f"ALTER TABLE profiles ADD COLUMN {name} {ddl}")
 
 
 def get_setting(key: str, default: Any = None) -> Any:

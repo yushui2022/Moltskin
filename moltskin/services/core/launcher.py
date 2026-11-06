@@ -176,8 +176,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             (session_id, profile_id, db.now()),
         )
         conn.execute(
-            "UPDATE profiles SET status='running', last_session_id=?, last_opened_at=?, updated_at=? "
-            "WHERE id=?",
+            "UPDATE profiles SET status='running', last_session_id=?, last_opened_at=?, "
+            "open_count=COALESCE(open_count, 0) + 1, updated_at=? WHERE id=?",
             (session_id, db.now(), db.now(), profile_id),
         )
 

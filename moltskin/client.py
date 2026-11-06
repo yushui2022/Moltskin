@@ -74,8 +74,39 @@ class MoltskinClient:
 
     # Profiles -----------------------------------------------------------------
 
-    def list_profiles(self, status: str = "", q: str = "", page_size: int = 200) -> list[dict[str, Any]]:
-        data = self._request("GET", "/profiles", params={"page_size": page_size, "status": status, "q": q})
+    def list_profiles(
+        self,
+        status: str = "",
+        q: str = "",
+        page_size: int = 200,
+        group_id: str = "",
+        tag: str = "",
+        field: str = "all",
+        op: str = "contains",
+        sort: str = "last_opened",
+        order: str = "desc",
+    ) -> list[dict[str, Any]]:
+        """List profiles.
+
+        status: ready, running, crashed, draft, opened, unopened, stopped.
+        field:  all, name, remark, proxy, group; op: contains, not_contains, equals.
+        sort:   last_opened, created_at, name, status, open_count.
+        """
+        data = self._request(
+            "GET",
+            "/profiles",
+            params={
+                "page_size": page_size,
+                "status": status,
+                "q": q,
+                "group_id": group_id,
+                "tag": tag,
+                "field": field,
+                "op": op,
+                "sort": sort,
+                "order": order,
+            },
+        )
         return data["items"]
 
     def get_profile(self, profile_id: str) -> dict[str, Any]:
@@ -108,6 +139,10 @@ class MoltskinClient:
 
     def duplicate_profile(self, profile_id: str) -> dict[str, Any]:
         return self._request("POST", f"/profiles/{profile_id}/duplicate")
+
+    def reset_fingerprint(self, profile_id: str) -> dict[str, Any]:
+        """New fingerprint preset, cookies kept. The profile must be stopped."""
+        return self._request("POST", f"/profiles/{profile_id}/reset-fingerprint")
 
     def launch(self, profile_id: str) -> dict[str, Any]:
         return self._request("POST", f"/profiles/{profile_id}/launch")
@@ -174,6 +209,10 @@ class MoltskinClient:
     def check_proxy(self, proxy_id: str) -> dict[str, Any]:
         return self._request("POST", f"/proxies/{proxy_id}/check")
 
+    def check_all_proxies(self) -> list[dict[str, Any]]:
+        ids = [proxy["id"] for proxy in self.list_proxies()]
+        return self._request("POST", "/proxies/check-batch", json={"ids": ids})
+
     # Groups / misc ------------------------------------------------------------
 
     def list_groups(self) -> list[dict[str, Any]]:
@@ -181,6 +220,23 @@ class MoltskinClient:
 
     def create_group(self, name: str) -> dict[str, Any]:
         return self._request("POST", "/groups", json={"name": name})
+
+    def rename_group(self, group_id: str, name: str) -> dict[str, Any]:
+        return self._request("PATCH", f"/groups/{group_id}", json={"name": name})
+
+    def delete_group(self, group_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/groups/{group_id}")
+
+    def list_tags(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/tags")
+
+    def stats(self) -> dict[str, Any]:
+        return self._request("GET", "/stats")
+
+    def logs(self, page: int = 1, page_size: int = 50, action: str = "") -> list[dict[str, Any]]:
+        return self._request(
+            "GET", "/logs", params={"page": page, "page_size": page_size, "action": action}
+        )
 
     def engine_info(self) -> dict[str, Any]:
         return self._request("GET", "/engine")
