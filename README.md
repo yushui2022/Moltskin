@@ -20,7 +20,7 @@ and exposes them through a web UI and a local REST API.
 |---|---|---|
 | ![Extensions](docs/screenshots/extensions.png) | ![Schedules](docs/screenshots/schedules.png) | ![Detail](docs/screenshots/profile-detail.png) |
 
-> Status: **v0.3.0 alpha**. The core create → launch → reuse loop works; expect breaking changes. [Changelog](CHANGELOG.md)
+> Status: **v0.4.0 alpha**. The core create → launch → reuse loop works; expect breaking changes. [Changelog](CHANGELOG.md)
 
 ---
 
@@ -57,7 +57,10 @@ and exposes them through a web UI and a local REST API.
 | Cookie import / export (JSON, Netscape), copy between profiles | ✅ |
 | Extension center: upload, assign per profile, loaded on launch | ✅ |
 | Batch open/stop with per-environment progress | ✅ |
-| Scheduled launch / stop tasks | ✅ |
+| Scheduled launch / stop tasks (daily or every N minutes) | ✅ |
+| In-browser console button (sidebar / toolbar / Alt+Shift+M) | ✅ |
+| Environment sync: cookies + localStorage + IndexedDB | ✅ |
+| Backup / restore (database, extensions, optional login state) | ✅ |
 | MCP server, Python SDK | ✅ |
 | Desktop app | 🚧 |
 

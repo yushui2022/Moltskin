@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Moltskin</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fafafa; color: #333;
+    font: 13px/1.6 -apple-system, "PingFang SC", sans-serif; }
+  .box { display: grid; place-items: center; height: 100%; text-align: center; gap: 6px; padding: 16px; }
+  .hint { color: #888; font-size: 12px; }
+  button { margin-top: 10px; height: 30px; padding: 0 14px; border-radius: 8px;
+    border: 1px solid #4662d6; background: #4662d6; color: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div id="state">正在打开 Moltskin 控制台…</div>
+    <div class="hint">这个按钮会固定在左侧栏，随时切换回管理页</div>
+    <button id="open">打开控制台</button>
+  </div>
+  <script src="open-manager.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

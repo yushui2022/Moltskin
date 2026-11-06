@@ -21,11 +21,13 @@ from typing import Any
 from camoufox.fingerprints import get_random_preset
 from camoufox.multiversion import list_installed
 from camoufox.pkgman import installed_verstr
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
-from . import config, db, extensions, jobs, launcher, proxy_checker, scheduler, selftest
+from . import backup as backup_store
+from . import config, db, extensions, jobs, launcher, proxy_checker, scheduler, selftest, state_sync
 from . import cookies as cookie_store
 from .security import get_token
 
@@ -105,6 +107,8 @@ class CookiePayload(BaseModel):
 class ScheduleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     action: str = "launch"
+    mode: str = "daily"
+    interval_minutes: int = 60
     time_of_day: str = "09:00"
     weekdays: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5, 6, 7])
     target_type: str = "all"
@@ -115,6 +119,8 @@ class ScheduleCreate(BaseModel):
 class ScheduleUpdate(BaseModel):
     name: str | None = None
     action: str | None = None
+    mode: str | None = None
+    interval_minutes: int | None = None
     time_of_day: str | None = None
     weekdays: list[int] | None = None
     target_type: str | None = None
@@ -274,6 +280,16 @@ def raise_launch_error(exc: launcher.LaunchError) -> None:
 # ---------------------------------------------------------------------------
 
 
+def reap_loop(stop_event: Event) -> None:
+    while not stop_event.wait(15):
+        try:
+            cleaned = launcher.reap_stale()
+            if cleaned:
+                db.log("session.reap", None, {"count": cleaned})
+        except Exception:  # noqa: BLE001 - 后台巡检不能影响服务
+            pass
+
+
 def proxy_health_loop(stop_event: Event) -> None:
     """Periodically re-check proxies that have gone stale."""
     while not stop_event.wait(30):
@@ -306,6 +322,7 @@ async def lifespan(app: FastAPI):
     stop_event = Event()
     health_thread = Thread(target=proxy_health_loop, args=(stop_event,), daemon=True)
     health_thread.start()
+    Thread(target=reap_loop, args=(stop_event,), daemon=True).start()
     scheduler.start(stop_event)
     try:
         yield
@@ -313,7 +330,7 @@ async def lifespan(app: FastAPI):
         stop_event.set()
 
 
-app = FastAPI(title="Moltskin", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Moltskin", version="0.4.0", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -387,7 +404,7 @@ def font(name: str):
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "version": "0.3.0"}
+    return {"status": "ok", "version": "0.4.0"}
 
 
 @app.get("/api/v1/export/profiles")
@@ -501,6 +518,7 @@ def import_profiles(payload: ImportRequest):
 
 @app.get("/api/v1/stats")
 def stats():
+    launcher.reap_stale()
     today_start = (
         datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
     )
@@ -601,6 +619,7 @@ def list_profiles(q: str = "", status: str = "", group_id: str = "",
                   op: str = "contains", sort: str = "last_opened", order: str = "desc",
                   page: int = 1, page_size: int = 50):
     """环境列表：支持关键词 + 字段/运算符、分组、标签、打开状态、排序与分页。"""
+    launcher.reap_stale()
     where, params = [], []
 
     if q:
@@ -1567,6 +1586,8 @@ def _serialize_schedule(row: sqlite3.Row) -> dict[str, Any]:
     data = dict(row)
     data["weekdays"] = json.loads(data.get("weekdays") or "[]")
     data["target_ids"] = json.loads(data.get("target_ids") or "[]")
+    data.setdefault("mode", "daily")
+    data.setdefault("interval_minutes", 60)
     data["enabled"] = bool(data["enabled"])
     try:
         data["last_result"] = json.loads(data["last_result"]) if data.get("last_result") else None
@@ -1584,6 +1605,15 @@ def _validate_schedule(fields: dict[str, Any]) -> None:
             raise HTTPException(422, detail={"code": "INVALID_TIME", "message": "时间格式应为 HH:MM"})
     if "target_type" in fields and fields["target_type"] not in ("all", "group", "ids"):
         raise HTTPException(422, detail={"code": "INVALID_TARGET", "message": "目标类型无效"})
+    if "mode" in fields and fields["mode"] not in ("daily", "interval"):
+        raise HTTPException(422, detail={"code": "INVALID_MODE", "message": "模式必须是 daily 或 interval"})
+    if "interval_minutes" in fields:
+        try:
+            minutes = int(fields["interval_minutes"])
+        except (TypeError, ValueError):
+            raise HTTPException(422, detail={"code": "INVALID_INTERVAL", "message": "间隔必须是数字"})
+        if not 1 <= minutes <= 1440:
+            raise HTTPException(422, detail={"code": "INVALID_INTERVAL", "message": "间隔范围 1–1440 分钟"})
 
 
 @app.get("/api/v1/schedules")
@@ -1601,12 +1631,15 @@ def create_schedule(payload: ScheduleCreate):
     ts = db.now()
     with db.session() as conn:
         conn.execute(
-            "INSERT INTO schedules(id, name, action, time_of_day, weekdays, target_type, "
-            "target_ids, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO schedules(id, name, action, mode, interval_minutes, time_of_day, weekdays, "
+            "target_type, target_ids, enabled, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 schedule_id,
                 fields["name"],
                 fields["action"],
+                fields.get("mode", "daily"),
+                int(fields.get("interval_minutes", 60)),
                 fields["time_of_day"],
                 json.dumps(sorted(set(fields["weekdays"] or [1, 2, 3, 4, 5, 6, 7]))),
                 fields["target_type"],
@@ -1662,4 +1695,89 @@ def run_schedule_now(schedule_id: str):
         raise HTTPException(404, detail={"code": "SCHEDULE_NOT_FOUND", "message": "定时任务不存在"})
     schedule = _serialize_schedule(row)
     result = scheduler.run_schedule(schedule)
+    return {"data": result}
+
+
+# ---------------------------------------------------------------------------
+# 环境同步
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/profiles/{profile_id}/state-size")
+def profile_state_size(profile_id: str):
+    row = get_profile_row(profile_id)
+    return {"data": state_sync.size_of(row["user_data_dir"])}
+
+
+@app.post("/api/v1/profiles/{profile_id}/sync-from/{source_id}")
+def sync_profile_state(profile_id: str, source_id: str, parts: str = "cookies,storage"):
+    """把源环境的 Cookie / localStorage 覆盖到目标环境（两个都要先关闭）。"""
+    target = get_profile_row(profile_id)
+    source = get_profile_row(source_id)
+    if profile_id == source_id:
+        raise HTTPException(422, detail={"code": "SAME_PROFILE", "message": "不能从自己同步"})
+    for row, label in ((target, "目标"), (source, "源")):
+        if row["status"] == "running":
+            raise HTTPException(
+                409,
+                detail={"code": "PROFILE_RUNNING", "message": f"请先关闭{label}环境「{row['name']}」"},
+            )
+    wanted = [part.strip() for part in (parts or "").split(",") if part.strip()]
+    if not wanted:
+        wanted = ["cookies"]
+    result = state_sync.sync(target["user_data_dir"], source["user_data_dir"], wanted)
+    db.log("profile.sync", profile_id, {"from": source_id, **result})
+    return {"data": result}
+
+
+# ---------------------------------------------------------------------------
+# 备份 / 恢复
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/backup")
+def download_backup(include_profiles: bool = False):
+    # 只备份数据库时可以用 SQLite 在线快照，不必关闭环境；
+    # 带上 Cookie / localStorage 时才要求全部关闭。
+    if include_profiles:
+        with db.session() as conn:
+            running = conn.execute(
+                "SELECT COUNT(*) AS n FROM profiles WHERE status='running'"
+            ).fetchone()["n"]
+        if running:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "PROFILES_RUNNING",
+                    "message": f"还有 {running} 个环境在运行，请先关闭再导出登录态",
+                },
+            )
+    path = backup_store.create(include_profiles=include_profiles)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    db.log("backup.create", None, {"include_profiles": include_profiles})
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"moltskin-backup-{stamp}.zip",
+        background=BackgroundTask(lambda: path.unlink(missing_ok=True)),
+    )
+
+
+@app.post("/api/v1/backup/restore")
+def restore_backup(file: UploadFile = File(...)):
+    with db.session() as conn:
+        running = conn.execute("SELECT COUNT(*) AS n FROM profiles WHERE status='running'").fetchone()["n"]
+    if running:
+        raise HTTPException(
+            409, detail={"code": "PROFILES_RUNNING", "message": f"还有 {running} 个环境在运行，请先关闭"}
+        )
+    archive = file.file.read()
+    if len(archive) > 2 * 1024 * 1024 * 1024:
+        raise HTTPException(413, detail={"code": "TOO_LARGE", "message": "备份文件过大"})
+    try:
+        result = backup_store.restore(archive)
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": "BAD_BACKUP", "message": str(exc)})
+    ensure_presets()
+    db.log("backup.restore", None, {"profiles": result["profiles"]})
     return {"data": result}

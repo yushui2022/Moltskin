@@ -159,6 +159,10 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             ).fetchall()
         ]
     addon_paths = extensions.paths_for(ext_ids)
+    first_open = not (profile["open_count"] or 0)
+    builtin = extensions.builtin_manager_button(open_sidebar=first_open)
+    if builtin:
+        addon_paths.append(builtin)
 
     plan = {
         "profile_id": profile_id,
@@ -352,6 +356,33 @@ def cleanup_browser_orphans() -> int:
             cleaned += 1
         except OSError:
             pass
+    return cleaned
+
+
+def reap_stale() -> int:
+    """周期性回收：会话仍是 running 但进程已消失时，及时改状态。
+
+    没有这一步，被 SIGKILL 或崩溃的 runner 会让环境一直显示"运行中"，
+    并发上限、备份和批量操作都会被卡住。
+    """
+    cleaned = 0
+    with db.session() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE state IN ('starting','running','stopping')"
+        ).fetchall()
+        for row in rows:
+            if _pid_alive(row["pid"]):
+                continue
+            conn.execute(
+                "UPDATE sessions SET state='crashed', error_code='PROCESS_GONE', "
+                "error_message='进程已退出', ended_at=? WHERE id=?",
+                (db.now(), row["id"]),
+            )
+            conn.execute(
+                "UPDATE profiles SET status='crashed', updated_at=? WHERE id=? AND status='running'",
+                (db.now(), row["profile_id"]),
+            )
+            cleaned += 1
     return cleaned
 
 

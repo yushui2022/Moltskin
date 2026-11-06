@@ -191,6 +191,33 @@ Uploads are unpacked to `data/extensions/<id>/` and passed to Camoufox as
 temporary add-ons on launch. A `browser_specific_settings.gecko.id` is injected
 when the manifest has none.
 
+## Environment sync
+
+Copy cookies + localStorage + IndexedDB from one profile to another. Both
+profiles must be stopped.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/profiles/{id}/state-size` | Cookie and storage size |
+| POST | `/profiles/{id}/sync-from/{source_id}?parts=cookies,storage` | Overwrite target state |
+
+```bash
+curl -X POST .../profiles/pf_b/sync-from/pf_a?parts=cookies,storage \
+  -H "Authorization: Bearer $TOKEN"
+# -> {"data": {"parts": ["cookies", "storage"], "cookies": 12, "storage": true, "bytes": 39090710}}
+```
+
+## Backup / restore
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/backup?include_profiles=true` | Zip: `moltskin.db`, `extensions/`, optional `profiles/*/cookies.sqlite` + `storage/` |
+| POST | `/backup/restore` | Multipart `file=@backup.zip` |
+
+A database-only backup uses SQLite's online snapshot, so profiles may keep
+running. `include_profiles=true` requires everything stopped. Restore keeps the
+previous database as `moltskin.db.bak`.
+
 ## Schedules
 
 | Method | Path | Description |
@@ -205,6 +232,8 @@ when the manifest has none.
 {
   "name": "早班自动开机",
   "action": "launch",
+  "mode": "daily",
+  "interval_minutes": 60,
   "time_of_day": "09:00",
   "weekdays": [1, 2, 3, 4, 5],
   "target_type": "all",
@@ -212,7 +241,14 @@ when the manifest has none.
 }
 ```
 
-`action`: `launch` | `stop`. `target_type`: `all` | `group` | `ids`.
+`action`: `launch` | `stop`. `mode`: `daily` (time + weekdays) or `interval`
+(every `interval_minutes`, 1–1440). `target_type`: `all` | `group` | `ids`.
+
+## In-browser console button
+
+Every profile loads a built-in extension (`moltskin/builtin/manager-button`) that
+adds a sidebar entry, a toolbar button and `Alt+Shift+M`. Toggle it with the
+`manager_button` setting.
 The scheduler runs on the service, catches up tasks missed by up to 10 minutes,
 and records `last_run_at` / `last_result`.
 

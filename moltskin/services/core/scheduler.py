@@ -1,10 +1,9 @@
-"""定时任务：按天在指定时间批量打开或关闭环境。"""
+"""定时任务：按天在指定时间，或按固定间隔批量打开/关闭环境。"""
 
 from __future__ import annotations
 
 import json
 import threading
-import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -23,9 +22,7 @@ def _now_hm() -> tuple[int, int]:
     return now.hour, now.minute
 
 
-def _due(schedule: dict[str, Any]) -> bool:
-    if not schedule["enabled"]:
-        return False
+def _due_daily(schedule: dict[str, Any]) -> bool:
     try:
         hour, minute = (int(part) for part in str(schedule["time_of_day"]).split(":"))
     except (ValueError, AttributeError):
@@ -40,6 +37,36 @@ def _due(schedule: dict[str, Any]) -> bool:
     scheduled = hour * 60 + minute
     current = now_h * 60 + now_m
     return 0 <= current - scheduled <= GRACE_MINUTES
+
+
+def _due_interval(schedule: dict[str, Any]) -> bool:
+    try:
+        minutes = int(schedule.get("interval_minutes") or 0)
+    except (TypeError, ValueError):
+        return False
+    if minutes <= 0:
+        return False
+    last = schedule.get("last_run_at")
+    if not last:
+        # 新建的间隔任务从下一个完整周期开始，避免保存后立刻触发
+        return False
+    try:
+        last_dt = datetime.fromisoformat(last)
+    except ValueError:
+        return False
+    return datetime.now(timezone_from(last_dt)) - last_dt >= timedelta(minutes=minutes)
+
+
+def timezone_from(dt: datetime) -> Any:
+    return dt.tzinfo or datetime.now().astimezone().tzinfo
+
+
+def _due(schedule: dict[str, Any]) -> bool:
+    if not schedule["enabled"]:
+        return False
+    if schedule.get("mode") == "interval":
+        return _due_interval(schedule)
+    return _due_daily(schedule)
 
 
 def resolve_profiles(schedule: dict[str, Any]) -> list[dict[str, Any]]:
@@ -82,7 +109,7 @@ def run_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
                 if profile["status"] != "running":
                     skipped += 1
                     continue
-                launcher.stop(profile["id"])
+                launcher.stop_profile(profile["id"])
             ok += 1
         except Exception as exc:  # noqa: BLE001 - 单条失败要记录下来
             failed += 1
@@ -114,7 +141,6 @@ def _tick() -> None:
 
 
 def loop(stop_event: threading.Event) -> None:
-    # 启动后稍等，避免与服务初始化抢资源
     stop_event.wait(5)
     while not stop_event.is_set():
         try:
@@ -126,6 +152,23 @@ def loop(stop_event: threading.Event) -> None:
 
 def next_run(schedule: dict[str, Any]) -> str | None:
     """给 UI 用：算出下一次触发时间。"""
+    if schedule.get("mode") == "interval":
+        minutes = int(schedule.get("interval_minutes") or 0)
+        if minutes <= 0:
+            return None
+        last = schedule.get("last_run_at")
+        base = datetime.now().astimezone()
+        if last:
+            try:
+                base = datetime.fromisoformat(last)
+            except ValueError:
+                base = datetime.now().astimezone()
+        candidate = base + timedelta(minutes=minutes)
+        now = datetime.now().astimezone()
+        if candidate <= now:
+            return now.isoformat()
+        return candidate.isoformat()
+
     try:
         hour, minute = (int(part) for part in str(schedule["time_of_day"]).split(":"))
     except (ValueError, AttributeError):

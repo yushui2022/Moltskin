@@ -206,6 +206,34 @@ class MoltskinClient:
     def set_profile_extensions(self, profile_id: str, ids: list[str]) -> list[str]:
         return self._request("PUT", f"/profiles/{profile_id}/extensions", json={"ids": ids})["ids"]
 
+    # State sync / backup -----------------------------------------------------
+
+    def state_size(self, profile_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/profiles/{profile_id}/state-size")
+
+    def sync_state(
+        self, profile_id: str, source_id: str, parts: str = "cookies,storage"
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST", f"/profiles/{profile_id}/sync-from/{source_id}", params={"parts": parts}
+        )
+
+    def download_backup(self, include_profiles: bool = False) -> bytes:
+        response = self._client.get(
+            "/backup", params={"include_profiles": "true" if include_profiles else "false"}
+        )
+        response.raise_for_status()
+        return response.content
+
+    def restore_backup(self, archive: bytes) -> dict[str, Any]:
+        response = self._client.post(
+            "/backup/restore", files={"file": ("backup.zip", archive, "application/zip")}
+        )
+        if response.status_code >= 400:
+            error = response.json().get("error", {})
+            raise MoltskinError(error.get("code", "HTTP_ERROR"), error.get("message", response.text))
+        return response.json()["data"]
+
     # Schedules ---------------------------------------------------------------
 
     def list_schedules(self) -> list[dict[str, Any]]:

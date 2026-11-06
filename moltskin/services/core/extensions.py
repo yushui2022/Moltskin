@@ -12,7 +12,7 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from . import config
+from . import config, db
 
 MAX_SIZE = 40 * 1024 * 1024
 
@@ -112,6 +112,31 @@ def _ensure_addon_id(target: Path, ext_id: str) -> None:
         return
     gecko["id"] = f"{ext_id}@moltskin.local"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def builtin_manager_button(open_sidebar: bool = False) -> str | None:
+    """把内置的「控制台」扩展铺到 data/builtin/，返回可加载的目录。
+
+    open_sidebar 为真时，浏览器启动后会自动展开左侧栏，让入口按钮可见。
+    """
+    if not db.get_setting("manager_button", True):
+        return None
+    source = config.ROOT / "moltskin" / "builtin" / "manager-button"
+    if not (source / "manifest.json").exists():
+        return None
+    target = config.DATA_DIR / "builtin" / "manager-button"
+    target.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        if item.is_file():
+            shutil.copy2(item, target / item.name)
+    (target / "config.json").write_text(
+        json.dumps(
+            {"url": config.MANAGER_URL, "openSidebarOnStart": bool(open_sidebar)},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return str(target)
 
 
 def remove(ext_id: str) -> None:

@@ -36,6 +36,7 @@ DEFAULTS = {
     "headless": False,
     "open_manager_on_launch": True,
     "proxy_health_check_minutes": 30,
+    "manager_button": True,
     "profile_limit": 200,
     "daily_open_limit": 20000,
 }

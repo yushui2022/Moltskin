@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "name": "Moltskin 控制台",
+  "version": "1.0.0",
+  "description": "在侧边栏放一个按钮，点一下切回 Moltskin 管理控制台。",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "manager-button@moltskin.local",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": [
+    "tabs"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "sidebar_action": {
+    "default_title": "打开 Moltskin 控制台",
+    "default_panel": "panel.html",
+    "default_icon": "icon.svg",
+    "open_at_install": false
+  },
+  "commands": {
+    "open-manager": {
+      "suggested_key": {
+        "default": "Alt+Shift+M"
+      },
+      "description": "打开 Moltskin 控制台"
+    }
+  },
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  },
+  "browser_action": {
+    "default_title": "打开 Moltskin 控制台",
+    "default_icon": "icon.svg"
+  }
+}

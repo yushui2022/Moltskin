@@ -631,7 +631,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
     <div class="brand">
       <img src="/logo.svg" width="30" height="30" alt="Moltskin">
       <div class="brand-name">Moltskin</div>
-      <span class="brand-ver">v0.3</span>
+      <span class="brand-ver">v0.4</span>
     </div>
 
     <nav class="nav" id="nav">
@@ -1040,6 +1040,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
                 <select class="select" id="sManager"><option value="true">是</option><option value="false">否</option></select>
                 <div class="hint">新环境启动后，首个标签页打开 Moltskin 管理页</div>
               </div>
+              <div class="field"><label>环境内显示控制台按钮</label>
+                <select class="select" id="sManagerButton"><option value="true">是（侧边栏 + Alt+Shift+M）</option><option value="false">否</option></select>
+                <div class="hint">每个环境的浏览器左侧会多一个按钮，点一下回到管理控制台</div>
+              </div>
               <div class="field"><label>环境上限</label><input class="input" id="sProfileLimit" type="number" min="1"></div>
               <div class="field"><label>每日打开上限</label><input class="input" id="sDailyLimit" type="number" min="1"></div>
             </div>
@@ -1067,6 +1071,16 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
                   <button class="btn small" data-action="import">导入 JSON</button>
                 </div>
                 <div class="hint">只导出配置与指纹，不含 Cookie</div>
+              </div>
+              <div class="field"><label>备份</label>
+                <div class="field-row">
+                  <button class="btn small" id="backupBtn">导出备份</button>
+                  <button class="btn small" id="restoreBtn">恢复备份</button>
+                </div>
+                <div class="hint">导出数据库与扩展；勾选「包含登录态」会额外打包每个环境的 Cookie 与 localStorage（需要先关闭所有环境）</div>
+                <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-top:4px">
+                  <input type="checkbox" id="backupProfiles"> 包含登录态
+                </label>
               </div>
               <div class="field"><label>数据目录</label>
                 <div class="mono muted" id="dataDir" style="font-size:11.5px;overflow-wrap:anywhere">—</div>
@@ -1226,8 +1240,15 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="field"><label>动作</label>
         <select class="select" id="scAction"><option value="launch">打开环境</option><option value="stop">关闭环境</option></select>
       </div>
-      <div class="field"><label>时间</label><input class="input" id="scTime" type="time" value="09:00"></div>
-      <div class="field full"><label>星期</label>
+      <div class="field"><label>触发方式</label>
+        <select class="select" id="scMode">
+          <option value="daily">每天定时</option>
+          <option value="interval">固定间隔</option>
+        </select>
+      </div>
+      <div class="field" id="scTimeWrap"><label>时间</label><input class="input" id="scTime" type="time" value="09:00"></div>
+      <div class="field" id="scIntervalWrap" style="display:none"><label>间隔（分钟）</label><input class="input" id="scInterval" type="number" min="1" max="1440" value="60"></div>
+      <div class="field full" id="scWeekWrap"><label>星期</label>
         <div class="weekdays" id="scWeekdays">
           <label><input type="checkbox" value="1" checked>一</label>
           <label><input type="checkbox" value="2" checked>二</label>
@@ -1297,6 +1318,15 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </section>
 
       <section class="section">
+        <h3>环境同步<button class="btn small" id="stateSizeRefresh">刷新</button></h3>
+        <p class="hint">把另一个环境的 Cookie、localStorage、IndexedDB 覆盖到当前环境（两个环境都要先关闭）。</p>
+        <div class="field-row">
+          <button class="btn small" id="syncStateBtn">从其他环境同步</button>
+        </div>
+        <div class="hint" id="stateSize" style="margin-top:6px">统计中…</div>
+      </section>
+
+      <section class="section">
         <h3>Cookie<button class="btn small" id="cookieRefresh">刷新</button></h3>
         <div id="cookieSummary" class="hint">加载中…</div>
         <div class="field-row" style="flex-wrap:wrap">
@@ -1362,6 +1392,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 
 <input type="file" id="importFile" accept="application/json,.json" hidden>
 <input type="file" id="extFile" accept=".xpi,.zip,application/zip,application/x-xpinstall" hidden>
+<input type="file" id="restoreFile" accept=".zip,application/zip" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -2469,6 +2500,7 @@ function openDetail(id) {
   runVerify(id);
   loadDetailExtensions(id);
   loadCookieSummary(id);
+  loadStateSize(id);
 }
 
 async function runVerify(id) {
@@ -2804,6 +2836,7 @@ async function loadSettings() {
     $("sMax").value = s.max_concurrent;
     $("sHeadless").value = String(s.headless);
     $("sManager").value = String(s.open_manager_on_launch);
+    $("sManagerButton").value = String(s.manager_button ?? true);
     $("sProfileLimit").value = s.profile_limit ?? 200;
     $("sDailyLimit").value = s.daily_open_limit ?? 20000;
     $("sProxyUrl").value = s.proxy_check_url;
@@ -2835,6 +2868,7 @@ $("saveSettings").onclick = async () => {
       max_concurrent: Number($("sMax").value),
       headless: $("sHeadless").value === "true",
       open_manager_on_launch: $("sManager").value === "true",
+      manager_button: $("sManagerButton").value === "true",
       profile_limit: Number($("sProfileLimit").value),
       daily_open_limit: Number($("sDailyLimit").value),
       proxy_check_url: $("sProxyUrl").value.trim(),
@@ -2846,6 +2880,65 @@ $("saveSettings").onclick = async () => {
   } catch (err) { toast(err.message, true); }
   finally { btn.disabled = false; }
 };
+
+/* ---------------- 备份 / 恢复 ---------------- */
+$("backupBtn").onclick = async () => {
+  const includeProfiles = $("backupProfiles").checked;
+  const btn = $("backupBtn");
+  btn.disabled = true;
+  btn.textContent = "打包中…";
+  try {
+    const res = await fetch(`/api/v1/backup?include_profiles=${includeProfiles ? "true" : "false"}`, {
+      headers: { Authorization: "Bearer " + TOKEN },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error?.message || "导出失败");
+    }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `moltskin-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("备份已下载");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "导出备份";
+  }
+};
+
+$("restoreBtn").onclick = () => $("restoreFile").click();
+
+$("restoreFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const ok = await askConfirm({
+    title: "恢复备份",
+    text: "恢复会用备份里的数据库替换当前数据，当前数据库会自动留一份 <b>.bak</b>。<br>确定继续？",
+    okText: "恢复", danger: true,
+  });
+  if (!ok) return;
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res = await fetch("/api/v1/backup/restore", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + TOKEN },
+      body: form,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body?.error?.message || "恢复失败");
+    toast(`已恢复：${body.data.manifest?.profiles?.length ?? 0} 个环境配置`);
+    await refresh();
+    go("windows");
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
 
 /* ---------------- 首页 ---------------- */
 function renderHome() {
@@ -3053,6 +3146,54 @@ $("detailExtensions").addEventListener("change", async (e) => {
   }
 });
 
+/* ---------------- 环境同步 ---------------- */
+async function loadStateSize(id) {
+  const box = $("stateSize");
+  try {
+    const data = await api(`/profiles/${id}/state-size`);
+    const mb = (n) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(0, Math.round(n / 1024))} KB`);
+    box.textContent = `Cookie ${mb(data.cookies_bytes)} · localStorage / IndexedDB ${mb(data.storage_bytes)}`;
+  } catch (err) {
+    box.textContent = err.message;
+  }
+}
+
+$("stateSizeRefresh").onclick = () => detailId && loadStateSize(detailId);
+
+$("syncStateBtn").onclick = async () => {
+  if (!detailId) return;
+  const others = state.profiles.filter((p) => p.id !== detailId);
+  if (!others.length) return toast("没有其他环境", true);
+  const source = await askChoose({
+    title: "同步登录态",
+    label: "源环境（会覆盖当前环境的 Cookie 与本地存储）",
+    options: others.map((p) => ({ value: p.id, label: `${p.name} · ${p.group?.name || "未分组"}` })),
+  });
+  if (!source || !source.value) return;
+  const parts = await askChoose({
+    title: "同步范围",
+    label: "选择要同步的内容",
+    options: [
+      { value: "cookies,storage", label: "全部（Cookie + localStorage / IndexedDB）" },
+      { value: "cookies", label: "只同步 Cookie" },
+      { value: "storage", label: "只同步 localStorage / IndexedDB" },
+    ],
+  });
+  if (!parts) return;
+  const ok = await askConfirm({
+    title: "确认覆盖",
+    text: "当前环境对应数据会被源环境覆盖，操作不可撤销。",
+    okText: "覆盖同步", danger: true,
+  });
+  if (!ok) return;
+  try {
+    const result = await api(`/profiles/${detailId}/sync-from/${source.value}?parts=${encodeURIComponent(parts.value)}`, { method: "POST" });
+    toast(`已同步 ${result.cookies} 条 Cookie${result.storage ? " 与本地存储" : ""}`);
+    await loadStateSize(detailId);
+    await loadCookieSummary(detailId);
+  } catch (err) { toast(err.message, true); }
+};
+
 /* ---------------- Cookie ---------------- */
 async function loadCookieSummary(id) {
   const box = $("cookieSummary");
@@ -3190,14 +3331,16 @@ function renderSchedules() {
   const list = state.schedules || [];
   $("scheduleEmpty").style.display = list.length ? "none" : "block";
   $("scheduleRows").innerHTML = list.map((s) => {
-    const days = s.weekdays.length === 7 ? "每天" : s.weekdays.map((d) => WEEK_NAMES[d]).join(" ");
+    const days = s.mode === "interval"
+      ? "—"
+      : (s.weekdays.length === 7 ? "每天" : s.weekdays.map((d) => WEEK_NAMES[d]).join(" "));
     const result = s.last_result
       ? `成功 ${s.last_result.ok}${s.last_result.failed ? ` / 失败 ${s.last_result.failed}` : ""}`
       : "—";
     return `<tr>
       <td><div class="cell-name"><span class="txt" data-sch-edit="${s.id}">${esc(s.name)}</span></div></td>
       <td><span class="st ${s.action === "launch" ? "ok" : ""}">${s.action === "launch" ? "打开" : "关闭"}</span></td>
-      <td class="mono">${esc(s.time_of_day)}</td>
+      <td class="mono">${s.mode === "interval" ? `每 ${s.interval_minutes} 分钟` : esc(s.time_of_day)}</td>
       <td class="muted">${esc(days)}</td>
       <td class="muted ellipsis" title="${esc(scheduleTargetLabel(s))}">${esc(scheduleTargetLabel(s))}</td>
       <td class="muted nowrap">${s.enabled && s.next_run_at ? fmtTime(s.next_run_at) : "—"}</td>
@@ -3218,7 +3361,10 @@ function openScheduleModal(schedule = null) {
   $("scheduleModalTitle").textContent = schedule ? "编辑定时任务" : "新建定时任务";
   $("scName").value = schedule?.name || "";
   $("scAction").value = schedule?.action || "launch";
+  $("scMode").value = schedule?.mode || "daily";
+  $("scInterval").value = schedule?.interval_minutes || 60;
   $("scTime").value = schedule?.time_of_day || "09:00";
+  toggleScheduleMode();
   const days = new Set(schedule?.weekdays || [1, 2, 3, 4, 5]);
   $("scWeekdays").querySelectorAll("input").forEach((el) => { el.checked = days.has(Number(el.value)); });
   $("scTarget").value = schedule?.target_type || "all";
@@ -3248,6 +3394,14 @@ function renderScheduleTarget(type, selected = []) {
 
 $("scTarget").addEventListener("change", (e) => renderScheduleTarget(e.target.value, []));
 
+function toggleScheduleMode() {
+  const interval = $("scMode").value === "interval";
+  $("scTimeWrap").style.display = interval ? "none" : "";
+  $("scWeekWrap").style.display = interval ? "none" : "";
+  $("scIntervalWrap").style.display = interval ? "" : "none";
+}
+$("scMode").addEventListener("change", toggleScheduleMode);
+
 $("newScheduleBtn").onclick = () => openScheduleModal();
 $("emptyScheduleAdd").onclick = () => openScheduleModal();
 $("refreshSchedules").onclick = () => loadSchedules();
@@ -3258,7 +3412,7 @@ $("saveSchedule").onclick = async () => {
   const weekdays = [...$("scWeekdays").querySelectorAll("input")]
     .filter((el) => el.checked)
     .map((el) => Number(el.value));
-  if (!weekdays.length) return toast("至少选择一天", true);
+  if ($("scMode").value === "daily" && !weekdays.length) return toast("至少选择一天", true);
   const targetType = $("scTarget").value;
   const sel = $("scTargetValue");
   const targetIds = targetType === "all"
@@ -3268,6 +3422,8 @@ $("saveSchedule").onclick = async () => {
   const payload = {
     name,
     action: $("scAction").value,
+    mode: $("scMode").value,
+    interval_minutes: Number($("scInterval").value) || 60,
     time_of_day: $("scTime").value,
     weekdays,
     target_type: targetType,

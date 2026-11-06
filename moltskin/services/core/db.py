@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS schedules (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
   action      TEXT NOT NULL CHECK (action IN ('launch','stop')),
+  mode        TEXT NOT NULL DEFAULT 'daily',
+  interval_minutes INTEGER NOT NULL DEFAULT 60,
   time_of_day TEXT NOT NULL,
   weekdays    TEXT NOT NULL DEFAULT '[1,2,3,4,5,6,7]',
   target_type TEXT NOT NULL DEFAULT 'all',
@@ -176,6 +178,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for name, ddl in additions.items():
         if name not in columns:
             conn.execute(f"ALTER TABLE profiles ADD COLUMN {name} {ddl}")
+
+    schedule_columns = {row["name"] for row in conn.execute("PRAGMA table_info(schedules)")}
+    schedule_additions = {
+        "mode": "TEXT NOT NULL DEFAULT 'daily'",
+        "interval_minutes": "INTEGER NOT NULL DEFAULT 60",
+    }
+    for name, ddl in schedule_additions.items():
+        if schedule_columns and name not in schedule_columns:
+            conn.execute(f"ALTER TABLE schedules ADD COLUMN {name} {ddl}")
 
 
 def get_setting(key: str, default: Any = None) -> Any:
