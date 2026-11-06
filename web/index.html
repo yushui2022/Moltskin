@@ -1,0 +1,1462 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moltskin · 指纹浏览器</title>
+<style>
+:root {
+  --bg: #121014;
+  --bg-deep: #0d0b10;
+  --panel: #19161f;
+  --panel-2: #1f1b26;
+  --raised: #2b263a;
+  --raised-2: #352e47;
+  --border: #2b2536;
+  --border-soft: #241f2e;
+  --text: #f3f0f8;
+  --muted: #a79fb8;
+  --dim: #6f6880;
+  --accent: #9c85dd;
+  --accent-2: #b6a3ef;
+  --accent-strong: #7a63c4;
+  --ok: #7fc9a4;
+  --err: #e5767f;
+  --warn: #e0b36c;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-pill: 999px;
+}
+* { box-sizing: border-box; }
+@font-face {
+  font-family: "Moltskin Sans";
+  src: url("/fonts/moltskin-sans.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+body {
+  margin: 0;
+  font-family: "Moltskin Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+               "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(900px 380px at 88% -12%, rgba(156, 133, 221, .22), transparent 62%),
+    radial-gradient(700px 300px at 8% -10%, rgba(120, 90, 190, .14), transparent 60%),
+    var(--bg-deep);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+.app {
+  display: grid;
+  grid-template-columns: 208px 1fr;
+  grid-template-rows: 44px 1fr;
+  height: 100vh;
+  min-width: 0;
+  background: transparent;
+}
+
+/* 标题栏：复刻浏览器顶部的紫黑渐变 */
+.titlebar {
+  grid-column: 1 / -1;
+  background: linear-gradient(100deg, #2b263a 0%, #171518 42%, #171518 68%, #3e2122 100%);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 12px;
+  position: relative;
+  user-select: none;
+  border-bottom: 1px solid rgba(156, 133, 221, .16);
+}
+.traffic { display: flex; gap: 8px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; }
+.dot.r { background: #ff5f57; }
+.dot.y { background: #febc2e; }
+.dot.g { background: #28c840; }
+.titlebar .name {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  font-size: 12px; font-weight: 500; color: rgba(243, 240, 248, .72);
+}
+.titlebar .right { margin-left: auto; display: flex; gap: 14px; font-size: 11px; color: rgba(243, 240, 248, .5); }
+
+/* 侧边栏 */
+.sidebar {
+  background: linear-gradient(180deg, #15121a 0%, #100e14 100%);
+  border-right: 1px solid var(--border-soft);
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 16px; }
+.brand .logo {
+  width: 30px; height: 30px; border-radius: 9px;
+  background: linear-gradient(145deg, var(--accent-2), var(--accent-strong));
+  color: #140f1e;
+  display: grid; place-items: center;
+  font-weight: 800; font-size: 16px;
+  box-shadow: 0 4px 16px rgba(156, 133, 221, .35);
+}
+.brand-name { font-size: 14px; font-weight: 600; letter-spacing: .2px; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 11px; border-radius: var(--r-md);
+  color: var(--muted); font-size: 12.5px; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.nav-item:hover { background: rgba(156, 133, 221, .08); color: var(--text); }
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(156, 133, 221, .20), rgba(156, 133, 221, .05));
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px rgba(156, 133, 221, .18);
+}
+.nav-item svg { width: 15px; height: 15px; opacity: .85; flex: none; }
+.sidebar .footer { margin-top: auto; }
+
+/* 主区域 */
+.main { display: flex; flex-direction: column; overflow: hidden; }
+.promo {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 18px 0;
+  color: var(--muted); font-size: 11.5px;
+}
+.promo .right { margin-left: auto; display: flex; gap: 8px; }
+.pill {
+  background: rgba(156, 133, 221, .08);
+  border: 1px solid rgba(156, 133, 221, .16);
+  border-radius: var(--r-pill); padding: 4px 10px;
+  color: var(--muted); font-size: 11px;
+}
+
+.toolbar { display: flex; align-items: center; gap: 14px; padding: 12px 18px 10px; flex-wrap: wrap; }
+.btn {
+  border: 1px solid var(--border); background: rgba(43, 38, 58, .55); color: var(--text);
+  border-radius: var(--r-md); padding: 7px 13px; font-size: 12.5px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: background .15s, border-color .15s;
+}
+.btn:hover { background: var(--raised); border-color: rgba(156, 133, 221, .28); }
+.btn.primary {
+  background: linear-gradient(180deg, var(--accent-2), var(--accent-strong));
+  border-color: transparent; color: #140f1e; font-weight: 700;
+  box-shadow: 0 6px 18px rgba(122, 99, 196, .28);
+}
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.danger { color: var(--err); border-color: rgba(229, 118, 127, .28); background: transparent; }
+.btn.danger:hover { background: rgba(229, 118, 127, .10); }
+.btn.small { padding: 4px 9px; font-size: 11.5px; border-radius: var(--r-sm); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.usage { color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+.usage b { color: var(--text); font-weight: 600; }
+.search { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.search input {
+  width: 230px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 8px 14px; font-size: 12px; outline: none;
+  background: rgba(23, 21, 24, .85);
+  color: var(--text);
+  transition: border-color .15s, box-shadow .15s;
+}
+.search input::placeholder { color: var(--dim); }
+.search input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(156, 133, 221, .14);
+}
+
+/* 标签：圆角胶囊 */
+.tabs {
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 18px 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.tab {
+  padding: 6px 14px; color: var(--muted); cursor: pointer; font-size: 12px;
+  border-radius: var(--r-pill);
+  transition: background .15s, color .15s;
+}
+.tab:hover { color: var(--text); background: rgba(156, 133, 221, .08); }
+.tab.active {
+  color: var(--text);
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px rgba(156, 133, 221, .22);
+  font-weight: 600;
+}
+
+/* 表格卡片 */
+.table-wrap {
+  flex: 1; overflow: auto; min-width: 0;
+  margin: 10px 18px 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-lg);
+  background: rgba(25, 22, 31, .72);
+}
+table { width: 100%; min-width: 900px; border-collapse: separate; border-spacing: 0; }
+thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: #1c1823; color: var(--dim);
+  font-weight: 500; font-size: 10.5px; text-align: left;
+  padding: 10px 12px; white-space: nowrap;
+  border-bottom: 1px solid var(--border-soft);
+  text-transform: uppercase; letter-spacing: .4px;
+}
+tbody td {
+  padding: 12px; border-bottom: 1px solid rgba(43, 37, 54, .55);
+  vertical-align: middle; background: transparent; color: var(--text);
+  font-size: 12px;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(156, 133, 221, .055); }
+.muted { color: var(--muted); }
+.row-name { display: flex; align-items: center; gap: 7px; font-weight: 500; color: var(--text); }
+.ip { display: flex; flex-direction: column; gap: 2px; }
+.ip .addr { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; color: #d8d2e4; }
+.ip .geo { color: var(--muted); font-size: 11px; }
+.tag {
+  display: inline-block; background: rgba(224, 179, 108, .12); color: var(--warn);
+  border: 1px solid rgba(224, 179, 108, .22);
+  border-radius: var(--r-sm); padding: 1px 6px; font-size: 10.5px; margin-right: 3px;
+}
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); }
+.status .dot-s { width: 7px; height: 7px; border-radius: 50%; }
+.s-ready { background: var(--dim); }
+.s-running { background: var(--ok); box-shadow: 0 0 8px rgba(127, 201, 164, .5); }
+.s-crashed { background: var(--warn); }
+.s-draft { background: #4a4358; }
+.actions { display: flex; gap: 6px; align-items: center; }
+.open-btn {
+  background: linear-gradient(180deg, rgba(156, 133, 221, .9), rgba(122, 99, 196, .9));
+  color: #140f1e; border: none;
+  border-radius: var(--r-md); padding: 6px 13px; font-size: 11.5px; font-weight: 700;
+  cursor: pointer; min-width: 58px;
+  box-shadow: 0 4px 12px rgba(122, 99, 196, .22);
+}
+.open-btn:hover { filter: brightness(1.07); }
+.open-btn.stop {
+  background: transparent; color: var(--err);
+  border: 1px solid rgba(229, 118, 127, .35);
+  box-shadow: none;
+}
+.open-btn.stop:hover { background: rgba(229, 118, 127, .10); }
+.open-btn:disabled { opacity: .55; cursor: wait; }
+.more { color: var(--dim); cursor: pointer; font-size: 15px; padding: 0 4px; border-radius: 4px; }
+.more:hover { color: var(--text); background: rgba(156, 133, 221, .1); }
+.empty { padding: 70px; text-align: center; color: var(--dim); }
+
+.footer-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 18px; border-top: 1px solid var(--border-soft);
+  background: transparent;
+}
+.footer-bar .total { color: var(--muted); font-size: 11.5px; }
+
+/* 弹窗 */
+.mask {
+  position: fixed; inset: 0; background: rgba(8, 6, 12, .68);
+  backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center; z-index: 20;
+}
+.mask.show { display: flex; }
+.modal {
+  width: 680px; max-height: 86vh; overflow: auto;
+  background: linear-gradient(180deg, #1d1925 0%, #17141c 100%);
+  border: 1px solid rgba(156, 133, 221, .18);
+  border-radius: var(--r-lg);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .6), 0 0 0 1px rgba(0,0,0,.4);
+}
+.modal .head {
+  padding: 15px 20px; border-bottom: 1px solid var(--border-soft);
+  font-weight: 600; font-size: 14px; display: flex; align-items: center;
+}
+.modal .head .x { margin-left: auto; cursor: pointer; color: var(--muted); font-size: 19px; }
+.modal .head .x:hover { color: var(--text); }
+.modal .body { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 13px 16px; }
+.field { display: flex; flex-direction: column; }
+.field.full { grid-column: 1 / -1; }
+.field label { color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+.field input, .field select {
+  padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--r-md);
+  font-size: 12px; outline: none; background: rgba(43, 38, 58, .45); color: var(--text);
+  transition: border-color .15s, box-shadow .15s;
+}
+.field input::placeholder { color: var(--dim); }
+.field input:focus, .field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(156, 133, 221, .12);
+}
+.field .hint { color: var(--dim); font-size: 10.5px; margin-top: 4px; }
+.modal .foot {
+  padding: 13px 20px; border-top: 1px solid var(--border-soft);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.proxy-list { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 6px; }
+.proxy-row {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border-soft); border-radius: var(--r-md);
+  padding: 10px 12px; background: rgba(43, 38, 58, .25);
+}
+.proxy-row .info { flex: 1; }
+.proxy-row .sub { color: var(--muted); font-size: 10.5px; margin-top: 2px; }
+.proxy-row .st {
+  font-size: 9.5px; padding: 2px 7px; border-radius: var(--r-pill);
+  background: rgba(255,255,255,.06); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.proxy-row .st.ok { background: rgba(127, 201, 164, .14); color: var(--ok); }
+.proxy-row .st.failed { background: rgba(229, 118, 127, .14); color: var(--err); }
+
+.toast {
+  position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+  background: #241f2e; color: var(--text); padding: 10px 18px;
+  border: 1px solid rgba(156, 133, 221, .22); border-radius: var(--r-pill);
+  font-size: 12px; opacity: 0; pointer-events: none; transition: .2s; z-index: 40;
+  box-shadow: 0 12px 36px rgba(0,0,0,.5);
+}
+.toast.show { opacity: 1; }
+.toast.err { background: #3a1d22; border-color: rgba(229,118,127,.3); color: #ffc3c8; }
+.spinner {
+  width: 11px; height: 11px; border: 2px solid rgba(20, 15, 30, .3);
+  border-top-color: #140f1e; border-radius: 50%; display: inline-block;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #3a3350; border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4166; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 窄窗口（如侧边栏预览）只保留关键列 */
+@media (max-width: 1180px) {
+  thead th:nth-child(3), tbody td:nth-child(3),
+  thead th:nth-child(6), tbody td:nth-child(6),
+  thead th:nth-child(7), tbody td:nth-child(7),
+  thead th:nth-child(8), tbody td:nth-child(8) { display: none; }
+  table { min-width: 560px; }
+  .search input { width: 160px; }
+}
+
+
+/* ============================================================
+   企业级质感升级：层级、密度、响应式、状态与焦点
+   ============================================================ */
+:root {
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --text-body: 13px;
+  --text-helper: 12px;
+  --text-label: 11px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+button, input, select { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: var(--s4); padding: 22px 20px 14px;
+}
+.page-title h1 {
+  margin: 0 0 4px; font-size: 22px; line-height: 1.2;
+  font-weight: 650; letter-spacing: -0.2px;
+}
+.page-title p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.head-actions { display: flex; align-items: center; gap: var(--s2); flex: none; }
+.engine {
+  font-size: 11px; color: var(--muted);
+  padding: 6px 10px; border: 1px solid var(--border-soft);
+  border-radius: var(--r-pill); background: rgba(43, 38, 58, .35);
+  white-space: nowrap;
+}
+.head-actions .btn { min-height: 34px; }
+
+.list-bar {
+  display: flex; align-items: center; gap: var(--s4);
+  padding: 0 20px; border-bottom: 1px solid var(--border-soft);
+}
+.list-tools { margin-left: auto; display: flex; align-items: center; gap: var(--s4); }
+.meta {
+  display: flex; align-items: center; gap: var(--s2);
+  color: var(--muted); font-size: 11.5px; white-space: nowrap;
+}
+.meta b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.meta-dot { width: 1px; height: 12px; background: var(--border); }
+.meta-muted { color: var(--dim); }
+
+.tabs { padding: 8px 0; border-bottom: none; gap: 2px; }
+.tab {
+  border: none; background: transparent; color: var(--muted);
+  padding: 7px 14px; font-size: 12.5px; border-radius: var(--r-pill);
+  border-bottom: none; margin-bottom: 0; cursor: pointer;
+}
+.tab.active {
+  color: var(--text); background: var(--raised);
+  box-shadow: inset 0 0 0 1px rgba(156, 133, 221, .22);
+  border-bottom-color: transparent;
+}
+
+.table-wrap { margin: 12px 20px 0; }
+thead th { font-size: 10.5px; padding: 10px 12px; color: var(--muted); }
+tbody td { font-size: 13px; padding: 12px; }
+.row-name { font-size: 13px; }
+.status { font-size: 12px; }
+.open-btn { font-size: 12px; min-height: 30px; padding: 5px 12px; }
+.open-btn.stop {
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border); box-shadow: none;
+}
+.open-btn.stop:hover { background: var(--raised); }
+.more {
+  border: 0; background: transparent; color: var(--dim);
+  width: 28px; height: 28px; border-radius: 6px;
+  display: inline-grid; place-items: center; cursor: pointer; font-size: 16px;
+}
+.more:hover { color: var(--text); background: rgba(156, 133, 221, .10); }
+
+.footer-hint { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+
+.loading { padding: 56px 20px; text-align: center; color: var(--muted); font-size: 12.5px; }
+.error-banner {
+  display: none; align-items: center; justify-content: space-between; gap: var(--s3);
+  margin: 14px 20px 0; padding: 10px 12px;
+  border: 1px solid rgba(229, 118, 127, .35);
+  background: rgba(229, 118, 127, .08);
+  border-radius: var(--r-md); color: #ffc3c8; font-size: 12px;
+}
+.error-banner.show { display: flex; }
+
+.empty { padding: 56px 24px; max-width: 420px; margin: 0 auto; text-align: center; }
+.empty-title { color: var(--text); font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.empty p { color: var(--muted); font-size: 12.5px; line-height: 1.6; margin: 0 0 16px; }
+
+/* 窄容器：表格切换为卡片列表，保留全部关键信息与操作 */
+.cards { display: none; padding: 8px; }
+.card {
+  padding: 14px; margin-bottom: 8px;
+  border: 1px solid var(--border-soft); border-radius: var(--r-md);
+  background: rgba(43, 38, 58, .22);
+}
+.card:last-child { margin-bottom: 0; }
+.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); }
+.card-name { font-size: 14px; font-weight: 600; line-height: 1.35; }
+.card-sub { margin-top: 3px; color: var(--muted); font-size: 11.5px; }
+.card-meta {
+  margin-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 16px;
+  color: var(--muted); font-size: 11.5px;
+}
+.card-meta b { color: var(--text); font-weight: 500; }
+.card-actions { margin-top: 12px; display: flex; gap: var(--s2); }
+
+.nav-item span { white-space: nowrap; }
+.btn, .tab { white-space: nowrap; }
+.tabs { overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+
+/* 批量选择 */
+input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; }
+.batch-bar { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
+.batch-bar[hidden] { display: none; }
+.batch-bar b { color: var(--text); }
+.input-row { display: flex; gap: 6px; align-items: center; }
+.input-row select { flex: 1; min-width: 0; }
+
+/* 详情弹窗 */
+.detail-modal { width: min(760px, 94vw); }
+.modal .detail-body { display: block; }
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.detail-name { font-size: 18px; font-weight: 650; }
+.detail-sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.detail-section { border-top: 1px solid var(--border-soft); padding: 14px 0; }
+.detail-section:first-of-type { border-top: 0; padding-top: 0; }
+.detail-section h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.detail-section h3 .btn { margin-left: auto; }
+.detail-hint { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+.preview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }
+.preview-item { min-width: 0; }
+.preview-item .k { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .3px; }
+.preview-item .v { font-size: 12px; overflow-wrap: anywhere; margin-top: 2px; }
+.check-list { display: flex; flex-direction: column; gap: 7px; }
+.check-row { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; }
+.check-row .ico { width: 15px; flex: none; font-weight: 700; }
+.check-row.ok .ico { color: var(--ok); }
+.check-row.bad .ico { color: var(--err); }
+.check-row .detail { color: var(--muted); }
+.check-warning {
+  margin-top: 8px; padding: 8px 10px;
+  border: 1px solid rgba(224, 179, 108, .3);
+  background: rgba(224, 179, 108, .08);
+  border-radius: 8px; color: var(--warn); font-size: 11.5px;
+}
+.selftest-result { margin-top: 12px; }
+.selftest-result img {
+  width: 100%; max-height: 420px; object-fit: contain; object-position: top;
+  border: 1px solid var(--border); border-radius: 8px; background: #0d0b10;
+}
+.selftest-meta { color: var(--muted); font-size: 11px; margin-top: 6px; }
+.row-name, .card-name { cursor: pointer; }
+.row-name:hover, .card-name:hover { color: var(--accent-2); }
+
+@media (max-width: 900px) {
+  .app { grid-template-columns: 60px 1fr; }
+  .brand { justify-content: center; padding: 4px 0 14px; }
+  .brand-name { display: none; }
+  .nav-item { justify-content: center; padding: 10px 0; }
+  .nav-item span { display: none; }
+}
+@media (max-width: 620px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .titlebar .right { display: none; }
+  .titlebar .name {
+    position: static; transform: none; margin-left: 8px;
+    font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+@media (max-width: 1120px) {
+  #profileTable { display: none; }
+  .cards { display: block; }
+  .table-wrap { border: 0; background: transparent; }
+  .meta-muted { display: none; }
+  .page-title h1 { font-size: 20px; }
+}
+@media (max-width: 780px) {
+  .page-head { flex-direction: column; align-items: stretch; padding: 18px 16px 12px; }
+  .head-actions { justify-content: flex-end; }
+  .engine { display: none; }
+  .list-bar { flex-direction: column; align-items: stretch; gap: 4px; padding: 0 16px; }
+  .list-tools { margin-left: 0; justify-content: space-between; padding-bottom: 8px; }
+  .search { flex: 1; }
+  .search input { width: 100%; }
+  .table-wrap { margin: 10px 12px 0; }
+  .footer-hint { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="titlebar">
+    <div class="traffic"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+    <div class="name">Moltskin 0.1.0 · Camoufox 158</div>
+    <div class="right"><span>本地服务</span><span class="sep">|</span><span>简体中文</span></div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">M</div><div class="brand-name">Moltskin</div></div>
+    <nav class="nav" id="nav">
+      <a class="nav-item active" data-page="windows" title="浏览器窗口" aria-current="page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <span>浏览器窗口</span>
+      </a>
+      <a class="nav-item" data-page="proxy" title="代理 IP">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg>
+        <span>代理 IP</span>
+      </a>
+      <a class="nav-item" data-page="logs" title="操作日志">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        <span>操作日志</span>
+      </a>
+      <a class="nav-item" data-page="settings" title="设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2.1 2.1M16.9 16.9 19 19M19 5l-2.1 2.1M7.1 16.9 5 19"/></svg>
+        <span>设置</span>
+      </a>
+    </nav>
+    <div class="footer">
+      <a class="nav-item" data-page="help" title="使用帮助">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.6 2.6 0 1 1 3.8 2.3c-.8.5-1.3 1-1.3 2.1"/><circle cx="12" cy="17.2" r=".9" fill="currentColor" stroke="none"/></svg>
+        <span>使用帮助</span>
+      </a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="error-banner" id="errorBanner" role="alert">
+      <span>无法连接本地服务，请确认 Moltskin 正在运行。</span>
+      <button class="btn small" id="retryBtn">重试</button>
+    </div>
+
+    <header class="page-head">
+      <div class="page-title">
+        <h1>浏览器窗口</h1>
+        <p>管理独立浏览器环境、代理与登录状态</p>
+      </div>
+      <div class="head-actions">
+        <span class="engine" id="enginePill">引擎检测中…</span>
+        <button class="btn" id="importBtn">导入</button>
+        <button class="btn" id="exportBtn">导出</button>
+        <button class="btn" id="refreshBtn">刷新</button>
+        <button class="btn primary" id="createBtn">＋ 创建窗口</button>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+    </header>
+
+    <div class="list-bar">
+      <div class="tabs" id="tabs" role="tablist" aria-label="环境筛选">
+        <button class="tab active" role="tab" aria-selected="true" data-tab="all">全部</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="running">运行中</button>
+        <button class="tab" role="tab" aria-selected="false" data-tab="ready">已停止</button>
+      </div>
+      <div class="list-tools">
+        <div class="meta" aria-live="polite">
+          <span><b id="statTotal">0</b> 个环境</span>
+          <span class="meta-dot" aria-hidden="true"></span>
+          <span><b id="statRunning">0</b> 运行中</span>
+          <span class="meta-muted">上限 <b id="statMax">10</b></span>
+        </div>
+        <label class="search" for="searchInput">
+          <span class="sr-only">搜索环境</span>
+          <input id="searchInput" placeholder="搜索名称 / 备注 / IP">
+        </label>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="loading" id="loading" role="status">正在加载环境…</div>
+      <table id="profileTable">
+        <caption class="sr-only">浏览器环境列表</caption>
+        <thead>
+          <tr>
+            <th scope="col" style="width:36px"><input type="checkbox" id="selectAll" aria-label="全选环境"></th>
+            <th scope="col" style="width:56px">序号</th>
+            <th scope="col" style="width:140px">分组</th>
+            <th scope="col" style="width:230px">窗口名称</th>
+            <th scope="col" style="width:190px">代理 IP</th>
+            <th scope="col" style="width:90px">标签</th>
+            <th scope="col" style="width:110px">备注</th>
+            <th scope="col" style="width:140px">创建时间</th>
+            <th scope="col" style="width:100px">状态</th>
+            <th scope="col" style="width:150px">操作</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="cards" id="cards"></div>
+      <div class="empty" id="empty" style="display:none">
+        <div class="empty-title">还没有环境</div>
+        <p>创建第一个独立浏览器环境，绑定代理后即可开始。</p>
+        <button class="btn primary" id="emptyCreate">＋ 创建窗口</button>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <span class="total" id="listTotal">共 0 条</span>
+      <div class="batch-bar" id="batchBar" hidden>
+        <span>已选 <b id="selCount">0</b> 个</span>
+        <button class="btn small" data-batch="launch">打开</button>
+        <button class="btn small" data-batch="stop">关闭</button>
+        <button class="btn small" data-batch="move">分组</button>
+        <button class="btn small" data-batch="tag">标签</button>
+        <button class="btn small danger" data-batch="delete">删除</button>
+        <button class="btn small" data-batch="clear">取消</button>
+      </div>
+      <span class="footer-hint">关闭浏览器窗口后，状态会自动更新</span>
+    </div>
+  </main>
+</div>
+
+<!-- 创建环境 -->
+<div class="mask" id="createMask">
+  <div class="modal">
+    <div class="head">创建窗口 <span class="x" data-close="createMask">×</span></div>
+    <div class="body">
+      <div class="field full">
+        <label>窗口名称 *</label>
+        <input id="fName" placeholder="例如：店铺-菲律宾-01">
+      </div>
+      <div class="field">
+        <label>操作系统</label>
+        <select id="fOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
+      </div>
+      <div class="field">
+        <label>代理</label>
+        <select id="fProxy"><option value="">不使用代理</option></select>
+        <div class="hint">没有代理？先去左侧「代理 IP」添加</div>
+      </div>
+      <div class="field">
+        <label>分组</label>
+        <div class="input-row">
+          <select id="fGroup"><option value="">未分组</option></select>
+          <button class="btn small" id="newGroupBtn" type="button">新建</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>启动方式</label>
+        <select id="fHeadless"><option value="0">有头（显示窗口）</option><option value="1">无头（后台）</option></select>
+      </div>
+      <div class="field full">
+        <label>标签</label>
+        <input id="fTags" placeholder="用逗号分隔，例如：菲律宾, 店铺">
+      </div>
+      <div class="field full">
+        <label>备注</label>
+        <input id="fRemark" placeholder="可选">
+      </div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close="createMask">取消</button>
+      <button class="btn primary" id="confirmCreate">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- 代理管理 -->
+<div class="mask" id="proxyMask">
+  <div class="modal">
+    <div class="head">代理 IP <span class="x" data-close="proxyMask">×</span></div>
+    <div class="body">
+      <div class="field"><label>名称</label><input id="pName" placeholder="PH-01"></div>
+      <div class="field"><label>协议</label><select id="pProtocol"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option></select></div>
+      <div class="field"><label>主机</label><input id="pHost" placeholder="1.2.3.4"></div>
+      <div class="field"><label>端口</label><input id="pPort" placeholder="8080" type="number"></div>
+      <div class="field"><label>用户名</label><input id="pUser" placeholder="可选"></div>
+      <div class="field"><label>密码</label><input id="pPass" placeholder="可选" type="password"></div>
+      <div class="field full" style="flex-direction:row;justify-content:flex-end">
+        <button class="btn primary" id="addProxy">添加代理</button>
+      </div>
+      <div class="proxy-list" id="proxyList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 设置 -->
+<div class="mask" id="settingsMask">
+  <div class="modal">
+    <div class="head">设置 <span class="x" data-close="settingsMask">×</span></div>
+    <div class="body">
+      <div class="field"><label>最大同时运行</label><input id="sMax" type="number" min="1" max="100"></div>
+      <div class="field"><label>默认无头</label><select id="sHeadless"><option value="false">否</option><option value="true">是</option></select></div>
+      <div class="field"><label>启动时打开管理页</label><select id="sManager"><option value="true">是</option><option value="false">否</option></select>
+        <div class="hint">新环境启动后，首个标签页打开 Moltskin 管理页</div>
+      </div>
+      <div class="field"><label>代理巡检间隔（分钟）</label><input id="sProxyHealth" type="number" min="0" max="1440">
+        <div class="hint">0 = 关闭；后台会重新检测过期代理</div>
+      </div>
+      <div class="field full"><label>代理检测地址</label><input id="sProxyUrl"></div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close="settingsMask">取消</button>
+      <button class="btn primary" id="saveSettings">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 日志 -->
+<div class="mask" id="logsMask">
+  <div class="modal">
+    <div class="head">操作日志 <span class="x" data-close="logsMask">×</span></div>
+    <div class="body" style="display:block">
+      <div id="logList" class="muted">加载中…</div>
+    </div>
+  </div>
+</div>
+
+<!-- 环境详情 -->
+<div class="mask" id="detailMask">
+  <div class="modal detail-modal">
+    <div class="head">环境详情 <span class="x" data-close="detailMask">×</span></div>
+    <div class="body detail-body">
+      <div class="detail-header">
+        <div>
+          <div class="detail-name" id="detailName">—</div>
+          <div class="detail-sub" id="detailSub">—</div>
+        </div>
+        <span id="detailStatus"></span>
+      </div>
+
+      <section class="detail-section">
+        <h3>指纹预览</h3>
+        <div class="preview-grid" id="fingerprintPreview"></div>
+      </section>
+
+      <section class="detail-section">
+        <h3>启动前检查 <button class="btn small" id="recheckBtn">重新检查</button></h3>
+        <div id="consistency" class="check-list"><span class="muted">检查中…</span></div>
+      </section>
+
+      <section class="detail-section">
+        <h3>指纹自检</h3>
+        <p class="detail-hint">在 CreepJS 中打开该环境并截图。运行前需要先关闭环境。</p>
+        <button class="btn primary" id="selfTestBtn">运行自检</button>
+        <div id="selfTestResult" class="selftest-result"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const TOKEN = "__MOLTSKIN_TOKEN__";
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  profiles: [], proxies: [], groups: [], tab: "all", q: "",
+  busy: new Set(), selected: new Set(), loading: true, engine: null, refreshedAt: null,
+};
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[ch]);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch("/api/v1" + path, {
+    ...options,
+    headers: { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json", ...(options.headers || {}) },
+  });
+  let body = null;
+  try { body = await res.json(); } catch (_) {}
+  if (!res.ok || (body && body.error)) {
+    const msg = body?.error?.message || `请求失败 (${res.status})`;
+    throw new Error(msg);
+  }
+  return body?.data;
+}
+
+let toastTimer;
+function toast(msg, isErr = false) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.className = "toast show" + (isErr ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = "toast", 2200);
+}
+
+function fmtTime(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+const STATUS = {
+  ready: ["已停止", "s-ready"],
+  running: ["运行中", "s-running"],
+  crashed: ["异常", "s-crashed"],
+  draft: ["未配置", "s-draft"],
+  proxy_failed: ["代理异常", "s-crashed"],
+};
+
+function statusHtml(p) {
+  const st = STATUS[p.status] || [p.status, "s-ready"];
+  const title = p.status === "crashed" ? "上次会话异常退出" : "";
+  return `<span class="status" ${title ? `title="${title}"` : ""}><span class="dot-s ${st[1]}"></span>${st[0]}</span>`;
+}
+
+function actionHtml(p, compact = false) {
+  const running = p.status === "running";
+  const busy = state.busy.has(p.id);
+  return `<button class="open-btn ${running ? "stop" : ""}" data-action="${running ? "stop" : "start"}" data-id="${p.id}" ${busy ? "disabled" : ""}>
+      ${busy ? '<span class="spinner"></span>' : (running ? "关闭" : "打开")}
+    </button>
+    <button class="more" data-action="delete" data-id="${p.id}" aria-label="删除环境 ${esc(p.name)}" title="删除环境">⋮</button>`;
+}
+
+function proxyHtml(p) {
+  if (!p.proxy || !p.proxy.exit_ip) return `<span class="muted">未绑定</span>`;
+  const geo = [p.proxy.country, p.proxy.latency_ms != null ? `${p.proxy.latency_ms}ms` : ""]
+    .filter(Boolean).join(" · ");
+  return `<div class="ip"><span class="addr">${esc(p.proxy.exit_ip)}</span><span class="geo">${esc(geo)}</span></div>`;
+}
+
+function tagsHtml(p) {
+  return (p.tags || []).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
+}
+
+function rowHtml(p, index) {
+  return `<tr>
+    <td><input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}"></td>
+    <td class="muted">${index + 1}</td>
+    <td class="muted">${esc(p.group?.name || "未分组")}</td>
+    <td><div class="row-name" data-action="detail" data-id="${p.id}" title="查看详情">${esc(p.name)}</div></td>
+    <td>${proxyHtml(p)}</td>
+    <td>${tagsHtml(p)}</td>
+    <td class="muted" title="${esc(p.remark || "")}">${esc(p.remark || "")}</td>
+    <td class="muted">${fmtTime(p.created_at)}</td>
+    <td>${statusHtml(p)}</td>
+    <td><div class="actions">${actionHtml(p)}</div></td>
+  </tr>`;
+}
+
+function cardHtml(p) {
+  const meta = [
+    `<span>代理 <b>${p.proxy?.exit_ip ? esc(p.proxy.exit_ip) : "未绑定"}</b></span>`,
+    `<span>创建 ${fmtTime(p.created_at)}</span>`,
+  ];
+  if (p.remark) meta.push(`<span>备注 ${esc(p.remark)}</span>`);
+  return `<article class="card">
+    <div class="card-head">
+      <input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}">
+      <div>
+        <div class="card-name" data-action="detail" data-id="${p.id}" title="查看详情">${esc(p.name)}</div>
+        <div class="card-sub">${esc(p.group?.name || "未分组")}</div>
+      </div>
+      ${statusHtml(p)}
+    </div>
+    <div class="card-meta">${meta.join("")}</div>
+    ${p.tags && p.tags.length ? `<div class="card-meta">${tagsHtml(p)}</div>` : ""}
+    <div class="card-actions">${actionHtml(p, true)}</div>
+  </article>`;
+}
+
+function visibleProfiles() {
+  const q = state.q.trim().toLowerCase();
+  return state.profiles.filter((p) => {
+    if (state.tab === "running" && p.status !== "running") return false;
+    if (state.tab === "ready" && p.status === "running") return false;
+    if (!q) return true;
+    return [p.name, p.remark, p.proxy?.exit_ip]
+      .filter(Boolean)
+      .some((v) => String(v).toLowerCase().includes(q));
+  });
+}
+
+function render() {
+  const list = visibleProfiles();
+  const hasProfiles = state.profiles.length > 0;
+  const showEmpty = !state.loading && list.length === 0;
+
+  $("rows").innerHTML = list.map(rowHtml).join("");
+  $("cards").innerHTML = list.map(cardHtml).join("");
+
+  $("loading").style.display = state.loading ? "block" : "none";
+  $("profileTable").style.display = state.loading || showEmpty ? "none" : "";
+  $("cards").style.display = state.loading || showEmpty ? "none" : "";
+  $("empty").style.display = showEmpty ? "block" : "none";
+
+  const emptyTitle = $("empty").querySelector(".empty-title");
+  const emptyText = $("empty").querySelector("p");
+  const emptyBtn = $("emptyCreate");
+  if (showEmpty && hasProfiles) {
+    emptyTitle.textContent = "没有匹配的环境";
+    emptyText.textContent = "换一个关键词，或清除搜索条件。";
+    emptyBtn.style.display = "none";
+  } else {
+    emptyTitle.textContent = "还没有环境";
+    emptyText.textContent = "创建第一个独立浏览器环境，绑定代理后即可开始。";
+    emptyBtn.style.display = "";
+  }
+
+  $("listTotal").textContent = state.loading
+    ? "正在加载…"
+    : `共 ${list.length} 条${state.q ? `（筛选自 ${state.profiles.length} 条）` : ""}`;
+
+  for (const id of [...state.selected]) {
+    if (!state.profiles.some((p) => p.id === id)) state.selected.delete(id);
+  }
+  const all = list.length > 0 && list.every((p) => state.selected.has(p.id));
+  if ($("selectAll")) $("selectAll").checked = all;
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  const n = state.selected.size;
+  $("batchBar").hidden = n === 0;
+  $("selCount").textContent = n;
+}
+
+function handleSelect(e) {
+  const el = e.target.closest("[data-select]");
+  if (!el) return;
+  if (el.checked) state.selected.add(el.dataset.select);
+  else state.selected.delete(el.dataset.select);
+  const list = visibleProfiles();
+  $("selectAll").checked = list.length > 0 && list.every((p) => state.selected.has(p.id));
+  updateBatchBar();
+}
+
+async function runBatch(action) {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  if (action === "clear") {
+    state.selected.clear();
+    render();
+    return;
+  }
+
+  const body = { action, ids };
+  if (action === "move") {
+    const name = prompt("分组名称（留空 = 未分组）");
+    if (name === null) return;
+    let groupId = null;
+    if (name.trim()) {
+      const existing = state.groups.find((g) => g.name === name.trim());
+      if (existing) {
+        groupId = existing.id;
+      } else {
+        const group = await api("/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+        groupId = group.id;
+      }
+    }
+    body.group_id = groupId;
+  }
+  if (action === "tag") {
+    const value = prompt("标签，用逗号分隔（留空清除）");
+    if (value === null) return;
+    body.tags = value.split(",").map((x) => x.trim()).filter(Boolean);
+  }
+  if (action === "delete" && !confirm(`删除选中的 ${ids.length} 个环境？会删除 Cookie 和登录态。`)) return;
+
+  try {
+    const data = await api("/profiles/batch", { method: "POST", body: JSON.stringify(body) });
+    toast(`完成 ${data.ok} 个，失败 ${data.failed} 个`, data.failed > 0);
+    if (data.failed === 0) state.selected.clear();
+    await refresh();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+$("selectAll").addEventListener("change", (e) => {
+  const list = visibleProfiles();
+  if (e.target.checked) list.forEach((p) => state.selected.add(p.id));
+  else list.forEach((p) => state.selected.delete(p.id));
+  render();
+});
+$("rows").addEventListener("change", handleSelect);
+$("cards").addEventListener("change", handleSelect);
+$("batchBar").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-batch]");
+  if (btn) runBatch(btn.dataset.batch);
+});
+
+async function refresh({ silent = false } = {}) {
+  try {
+    const [profiles, stats, proxies, groups] = await Promise.all([
+      api("/profiles?page_size=200"),
+      api("/stats"),
+      api("/proxies"),
+      api("/groups"),
+    ]);
+    const sig = JSON.stringify({ p: profiles.items, r: stats.profiles_running, t: stats.profiles_total });
+    const firstLoad = !state.sig;
+    const changed = sig !== state.sig;
+    state.sig = sig;
+    state.profiles = profiles.items;
+    state.proxies = proxies;
+    state.groups = groups;
+    state.loading = false;
+    state.refreshedAt = new Date();
+    $("statTotal").textContent = stats.profiles_total;
+    $("statRunning").textContent = stats.profiles_running;
+    $("statMax").textContent = stats.max_concurrent;
+    if (!state.engine) {
+      const engine = await api("/engine");
+      const active = (engine.browsers || []).find(b => b.active) || (engine.browsers || [])[0];
+      state.engine = engine;
+      $("enginePill").textContent = `Camoufox ${engine.camoufox} · ${active ? active.version : "未安装内核"}`;
+    }
+    $("errorBanner").classList.remove("show");
+    if (firstLoad || changed) render();
+    fillSelects();
+  } catch (err) {
+    state.loading = false;
+    $("enginePill").textContent = "服务不可用";
+    $("errorBanner").classList.add("show");
+    render();
+    if (!silent) toast(err.message, true);
+  }
+}
+
+function fillSelects() {
+  const proxySel = $("fProxy");
+  const current = proxySel.value;
+  proxySel.innerHTML = '<option value="">不使用代理</option>' +
+    state.proxies.map(p => `<option value="${p.id}">${p.name} · ${p.host}:${p.port} (${p.status})</option>`).join("");
+  proxySel.value = current;
+  const groupSel = $("fGroup");
+  groupSel.innerHTML = '<option value="">未分组</option>' +
+    state.groups.map(g => `<option value="${g.id}">${g.name}</option>`).join("");
+}
+
+async function startProfile(id) {
+  state.busy.add(id); render();
+  try {
+    await api(`/profiles/${id}/launch`, { method: "POST" });
+    toast("已启动");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    state.busy.delete(id);
+    await refresh();
+  }
+}
+
+async function stopProfile(id) {
+  state.busy.add(id); render();
+  try {
+    await api(`/profiles/${id}/stop`, { method: "POST" });
+    toast("正在关闭…");
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    state.busy.delete(id);
+    setTimeout(refresh, 800);
+  }
+}
+
+async function handleRowAction(e) {
+  const el = e.target.closest("[data-action]");
+  if (!el) return;
+  const { action, id } = el.dataset;
+  if (action === "detail") return openDetail(id);
+  if (action === "start") return startProfile(id);
+  if (action === "stop") return stopProfile(id);
+  if (action === "delete") {
+    const p = state.profiles.find(x => x.id === id);
+    if (!confirm(`删除「${p?.name}」？会同时删除该环境的 Cookie 和登录态。`)) return;
+    try {
+      await api(`/profiles/${id}?delete_data=true`, { method: "DELETE" });
+      toast("已删除");
+      refresh();
+    } catch (err) { toast(err.message, true); }
+  }
+}
+let detailId = null;
+
+function openDetail(id) {
+  const p = state.profiles.find(x => x.id === id);
+  if (!p) return;
+  detailId = id;
+  $("detailName").textContent = p.name;
+  $("detailSub").textContent = `${p.group?.name || "未分组"} · ${p.os} · ${p.proxy?.exit_ip || "未绑定代理"}`;
+  $("detailStatus").innerHTML = statusHtml(p);
+
+  const preview = p.fingerprint_preview;
+  $("fingerprintPreview").innerHTML = preview
+    ? Object.entries({
+        "系统": preview.os,
+        "User-Agent": preview.user_agent,
+        "平台": preview.platform,
+        "CPU 核数": preview.hardware_concurrency,
+        "屏幕": `${preview.screen} @ ${preview.color_depth}bit`,
+        "WebGL 厂商": preview.webgl_vendor,
+        "WebGL 渲染器": preview.webgl_renderer,
+      }).map(([k, v]) => `<div class="preview-item"><div class="k">${k}</div><div class="v">${esc(v ?? "—")}</div></div>`).join("")
+    : '<span class="muted">尚未生成指纹</span>';
+
+  $("consistency").innerHTML = '<span class="muted">检查中…</span>';
+  $("selfTestResult").innerHTML = "";
+  $("selfTestBtn").disabled = false;
+  $("selfTestBtn").textContent = "运行自检";
+  openModal("detailMask");
+  runVerify(id);
+}
+
+async function runVerify(id) {
+  try {
+    const data = await api(`/profiles/${id}/verify`, { method: "POST" });
+    const rows = data.checks.map(check => `
+      <div class="check-row ${check.ok ? "ok" : "bad"}">
+        <span class="ico">${check.ok ? "✓" : "✕"}</span>
+        <div>${esc(check.name)}<div class="detail">${esc(check.detail)}</div></div>
+      </div>`).join("");
+    const warnings = data.warnings.length
+      ? `<div class="check-warning">${data.warnings.map(esc).join("<br>")}</div>` : "";
+    $("consistency").innerHTML = rows + warnings;
+  } catch (err) {
+    $("consistency").innerHTML = `<div class="check-warning">${esc(err.message)}</div>`;
+  }
+}
+
+async function runSelfTest() {
+  if (!detailId) return;
+  const btn = $("selfTestBtn");
+  btn.disabled = true;
+  btn.textContent = "运行中（约 20 秒）…";
+  $("selfTestResult").innerHTML = '<div class="muted">正在打开 CreepJS 并截图…</div>';
+  try {
+    const data = await api(`/profiles/${detailId}/self-test`, { method: "POST" });
+    $("selfTestResult").innerHTML = `
+      <img src="${data.image_url}" alt="CreepJS 自检截图">
+      <div class="selftest-meta">${esc(data.url)} · ${fmtTime(data.created_at)}</div>`;
+  } catch (err) {
+    $("selfTestResult").innerHTML = `<div class="check-warning">${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "重新自检";
+  }
+}
+
+$("recheckBtn").onclick = () => detailId && runVerify(detailId);
+$("selfTestBtn").onclick = runSelfTest;
+
+$("rows").addEventListener("click", handleRowAction);
+$("cards").addEventListener("click", handleRowAction);
+
+let lastFocused = null;
+function openModal(id) {
+  lastFocused = document.activeElement;
+  const mask = $(id);
+  mask.classList.add("show");
+  const first = mask.querySelector("input, select, button");
+  setTimeout(() => first?.focus(), 30);
+}
+function closeModal(id) {
+  $(id).classList.remove("show");
+  if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
+  lastFocused = null;
+}
+document.querySelectorAll(".mask").forEach((mask) => {
+  const dialog = mask.querySelector(".modal");
+  dialog?.setAttribute("role", "dialog");
+  dialog?.setAttribute("aria-modal", "true");
+  mask.querySelectorAll(".head .x").forEach((x) => {
+    x.setAttribute("role", "button");
+    x.setAttribute("aria-label", "关闭");
+    x.tabIndex = 0;
+    x.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") closeModal(mask.id);
+    });
+  });
+  mask.addEventListener("click", (e) => {
+    if (e.target === mask) closeModal(mask.id);
+  });
+});
+document.querySelectorAll("[data-close]").forEach((el) => {
+  el.onclick = () => closeModal(el.dataset.close);
+});
+$("createBtn").onclick = () => openModal("createMask");
+$("emptyCreate").onclick = () => openModal("createMask");
+$("refreshBtn").onclick = async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = "刷新中…";
+  await refresh();
+  btn.disabled = false;
+  btn.textContent = "刷新";
+};
+$("retryBtn").onclick = () => refresh();
+
+$("newGroupBtn").onclick = async () => {
+  const name = prompt("新分组名称");
+  if (!name || !name.trim()) return;
+  try {
+    const group = await api("/groups", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+    await refresh();
+    $("fGroup").value = group.id;
+    toast("分组已创建");
+  } catch (err) { toast(err.message, true); }
+};
+
+$("exportBtn").onclick = async () => {
+  try {
+    const res = await fetch("/api/v1/export/profiles", { headers: { Authorization: "Bearer " + TOKEN } });
+    if (!res.ok) throw new Error("导出失败");
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "moltskin-profiles.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("已导出");
+  } catch (err) { toast(err.message, true); }
+};
+
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const profiles = Array.isArray(data) ? data : data.profiles;
+    if (!Array.isArray(profiles)) throw new Error("文件格式不正确");
+    const result = await api("/import/profiles", { method: "POST", body: JSON.stringify({ profiles }) });
+    toast(`导入 ${result.created} 个${result.skipped.length ? `，跳过 ${result.skipped.length}` : ""}`);
+    await refresh();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    e.target.value = "";
+  }
+});
+
+$("confirmCreate").onclick = async () => {
+  const name = $("fName").value.trim();
+  if (!name) return toast("请填写窗口名称", true);
+  const payload = {
+    name,
+    os: $("fOs").value,
+    proxy_id: $("fProxy").value || null,
+    group_id: $("fGroup").value || null,
+    headless: $("fHeadless").value === "1",
+    remark: $("fRemark").value.trim(),
+    tags: $("fTags").value.split(",").map((x) => x.trim()).filter(Boolean),
+  };
+  const btn = $("confirmCreate");
+  btn.disabled = true;
+  try {
+    await api("/profiles", { method: "POST", body: JSON.stringify(payload) });
+    closeModal("createMask");
+    $("fName").value = ""; $("fRemark").value = ""; $("fTags").value = "";
+    toast("创建成功");
+    refresh();
+  } catch (err) { toast(err.message, true); }
+  finally { btn.disabled = false; }
+};
+
+$("addProxy").onclick = async () => {
+  const payload = {
+    name: $("pName").value.trim(),
+    protocol: $("pProtocol").value,
+    host: $("pHost").value.trim(),
+    port: Number($("pPort").value),
+    username: $("pUser").value.trim() || null,
+    password: $("pPass").value || null,
+  };
+  if (!payload.name || !payload.host || !payload.port) return toast("名称/主机/端口必填", true);
+  try {
+    await api("/proxies", { method: "POST", body: JSON.stringify(payload) });
+    $("pName").value = ""; $("pHost").value = ""; $("pPort").value = "";
+    $("pUser").value = ""; $("pPass").value = "";
+    toast("已添加，点「检测」验证");
+    await refreshProxies();
+  } catch (err) { toast(err.message, true); }
+};
+
+function renderProxies() {
+  $("proxyList").innerHTML = state.proxies.length ? state.proxies.map(p => `
+    <div class="proxy-row">
+      <div class="info">
+        <div><b>${p.name}</b> <span class="muted">${p.protocol}://${p.host}:${p.port}</span></div>
+        <div class="sub">${p.exit_ip ? `${p.exit_ip} · ${p.country || ""} · ${p.latency_ms}ms` : "尚未检测"}</div>
+      </div>
+      <span class="st ${p.status === "ok" ? "ok" : p.status === "failed" ? "failed" : ""}">${p.status}</span>
+      <button class="btn small" data-check="${p.id}">检测</button>
+      <button class="btn small danger" data-del="${p.id}">删除</button>
+    </div>
+  `).join("") : '<div class="muted">还没有代理</div>';
+}
+
+async function refreshProxies() {
+  state.proxies = await api("/proxies");
+  renderProxies(); fillSelects();
+}
+
+$("proxyList").addEventListener("click", async (e) => {
+  const check = e.target.closest("[data-check]");
+  const del = e.target.closest("[data-del]");
+  if (check) {
+    check.disabled = true; check.textContent = "检测中…";
+    try {
+      const r = await api(`/proxies/${check.dataset.check}/check`, { method: "POST" });
+      toast(r.status === "ok" ? `可用：${r.exit_ip} (${r.latency_ms}ms)` : `不可用：${r.error || r.status}`, r.status !== "ok");
+    } catch (err) { toast(err.message, true); }
+    finally { await refreshProxies(); check.disabled = false; check.textContent = "检测"; }
+  }
+  if (del) {
+    if (!confirm("删除该代理？绑定的环境会被解绑。")) return;
+    await api(`/proxies/${del.dataset.del}`, { method: "DELETE" });
+    toast("已删除"); refreshProxies(); refresh();
+  }
+});
+
+$("nav").addEventListener("click", async (e) => {
+  const item = e.target.closest(".nav-item");
+  if (!item) return;
+  document.querySelectorAll(".nav-item").forEach(n => {
+    n.classList.remove("active");
+    n.removeAttribute("aria-current");
+  });
+  item.classList.add("active");
+  item.setAttribute("aria-current", "page");
+  const page = item.dataset.page;
+  if (page === "proxy") { openModal("proxyMask"); await refreshProxies(); }
+  else if (page === "settings") {
+    const s = await api("/settings");
+    $("sMax").value = s.max_concurrent;
+    $("sHeadless").value = String(s.headless);
+    $("sManager").value = String(s.open_manager_on_launch);
+    $("sProxyHealth").value = s.proxy_health_check_minutes ?? 30;
+    $("sProxyUrl").value = s.proxy_check_url;
+    openModal("settingsMask");
+  }
+  else if (page === "logs") {
+    $("logList").textContent = "加载中…";
+    const logs = await api("/logs?page_size=100");
+    $("logList").innerHTML = logs.map(l =>
+      `<div style="padding:6px 0;border-bottom:1px solid #262626"><span class="muted">${fmtTime(l.created_at)}</span>　<b>${l.action}</b>　${l.target_id || ""}</div>`
+    ).join("") || "暂无日志";
+    openModal("logsMask");
+  }
+  else if (page === "help") {
+    toast("提示：创建环境 → 绑定代理 → 打开窗口");
+  }
+});
+
+$("saveSettings").onclick = async () => {
+  try {
+    await api("/settings", { method: "PUT", body: JSON.stringify({
+      max_concurrent: Number($("sMax").value),
+      headless: $("sHeadless").value === "true",
+      open_manager_on_launch: $("sManager").value === "true",
+      proxy_health_check_minutes: Number($("sProxyHealth").value) || 0,
+      proxy_check_url: $("sProxyUrl").value.trim(),
+    })});
+    closeModal("settingsMask");
+    toast("已保存");
+    refresh();
+  } catch (err) { toast(err.message, true); }
+};
+
+document.querySelectorAll(".tab").forEach(tab => tab.onclick = () => {
+  document.querySelectorAll(".tab").forEach(t => {
+    t.classList.remove("active");
+    t.setAttribute("aria-selected", "false");
+  });
+  tab.classList.add("active");
+  tab.setAttribute("aria-selected", "true");
+  state.tab = tab.dataset.tab;
+  render();
+});
+
+$("searchInput").addEventListener("input", (e) => { state.q = e.target.value; render(); });
+
+document.addEventListener("keydown", (e) => {
+  const meta = e.metaKey || e.ctrlKey;
+  if (meta && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    $("searchInput").focus();
+  }
+  if (meta && e.key.toLowerCase() === "n") {
+    e.preventDefault();
+    openModal("createMask");
+  }
+  if (e.key === "Escape") {
+    document.querySelectorAll(".mask.show").forEach(m => closeModal(m.id));
+  }
+});
+
+function canAutoRefresh() {
+  if (document.querySelector(".mask.show")) return false;
+  const active = document.activeElement;
+  if (active && (active.closest("#rows") || active.closest("#cards"))) return false;
+  return true;
+}
+
+(async function init() {
+  render();
+  await refresh({ silent: true });
+  await refreshProxies().catch(() => {});
+  setInterval(async () => {
+    if (document.hidden || !canAutoRefresh()) return;
+    await refresh({ silent: true });
+  }, 3000);
+})();
+</script>
+</body>
+</html>

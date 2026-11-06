@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an idea or a missing capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      placeholder: I run 30 profiles and need to...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Profiles / fingerprints
+        - Proxies / GeoIP
+        - Auto-launch / concurrency
+        - API / MCP / SDK
+        - UI / UX
+        - Packaging / Docker
+        - Other
+    validations:
+      required: true

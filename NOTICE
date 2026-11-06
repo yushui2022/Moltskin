@@ -1,0 +1,16 @@
+Moltskin
+Copyright 2026 Moltskin contributors
+
+This product depends on and redistributes the Camoufox browser build.
+
+Camoufox
+https://github.com/daijro/camoufox
+Licensed under the Mozilla Public License 2.0 (MPL-2.0).
+Moltskin invokes Camoufox as a separate runtime and does not modify its
+source code. Any redistribution of a modified Camoufox build must comply
+with the MPL-2.0.
+
+Noto Sans SC
+https://fonts.google.com/noto/specimen/Noto+Sans+SC
+Licensed under the SIL Open Font License 1.1.
+See moltskin/web/fonts/OFL.txt.

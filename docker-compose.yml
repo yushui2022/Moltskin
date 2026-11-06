@@ -1,0 +1,20 @@
+services:
+  moltskin:
+    build:
+      context: .
+    container_name: moltskin
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./data:/app/data
+    environment:
+      MOLTSKIN_DATA_DIR: /app/data
+      MOLTSKIN_HEADLESS: "1"
+      MOLTSKIN_OPEN_MANAGER: "0"
+    shm_size: "2gb"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/v1/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
