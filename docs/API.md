@@ -148,6 +148,88 @@ Each group carries `profile_count`. Deleting a group moves its environments to
 
 Each proxy includes `used_by`, the number of environments bound to it.
 
+## Cookies
+
+Cookies are read from and written to each profile's Firefox `cookies.sqlite`,
+so importing does not require launching the browser. The profile must be
+stopped to write.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/profiles/{id}/cookies?domain=` | List cookies |
+| PUT | `/profiles/{id}/cookies` | Import |
+| GET | `/profiles/{id}/cookies/export?format=json\|netscape` | Download |
+| POST | `/profiles/{id}/cookies/copy-from/{source_id}` | Merge from another profile |
+| DELETE | `/profiles/{id}/cookies` | Clear |
+
+```bash
+# Netscape cookies.txt
+curl -X PUT .../profiles/pf_1/cookies -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "# Netscape HTTP Cookie File\n.example.com\tTRUE\t/\tFALSE\t1893456000\tsid\tabc", "mode": "replace"}'
+
+# JSON array or Playwright storage_state
+curl -X PUT .../profiles/pf_1/cookies -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cookies": [{"name": "sid", "value": "abc", "domain": ".example.com", "path": "/"}], "mode": "merge"}'
+```
+
+`mode` is `merge` (default) or `replace`.
+
+## Extensions
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/extensions` | List uploaded extensions |
+| POST | `/extensions` | Upload `{filename, content(base64)}` |
+| PATCH | `/extensions/{id}` | Toggle `enabled` |
+| DELETE | `/extensions/{id}` | Delete |
+| GET | `/profiles/{id}/extensions` | Assigned extension ids |
+| PUT | `/profiles/{id}/extensions` | `{ids: [...]}`, profile must be stopped |
+
+Uploads are unpacked to `data/extensions/<id>/` and passed to Camoufox as
+temporary add-ons on launch. A `browser_specific_settings.gecko.id` is injected
+when the manifest has none.
+
+## Schedules
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/schedules` | List with `next_run_at` |
+| POST | `/schedules` | Create |
+| PATCH | `/schedules/{id}` | Update / enable / disable |
+| DELETE | `/schedules/{id}` | Delete |
+| POST | `/schedules/{id}/run` | Run now |
+
+```json
+{
+  "name": "早班自动开机",
+  "action": "launch",
+  "time_of_day": "09:00",
+  "weekdays": [1, 2, 3, 4, 5],
+  "target_type": "all",
+  "target_ids": []
+}
+```
+
+`action`: `launch` | `stop`. `target_type`: `all` | `group` | `ids`.
+The scheduler runs on the service, catches up tasks missed by up to 10 minutes,
+and records `last_run_at` / `last_result`.
+
+## Batch progress
+
+`POST /profiles/batch` stays synchronous. For long batches use:
+
+```bash
+curl -X POST .../profiles/batch-async -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "launch", "ids": ["pf_1", "pf_2"]}'
+# -> {"data": {"id": "job_...", "total": 2, "state": "running", ...}}
+
+curl .../jobs/job_... -H "Authorization: Bearer $TOKEN"
+# -> per-environment state: pending / running / done / failed + error
+```
+
 ## Import / export
 
 ```bash
@@ -214,8 +296,11 @@ Start the service, then configure your MCP client:
 
 Tools: `list_profiles`, `get_profile`, `create_profile`, `launch_profile`,
 `stop_profile`, `profile_status`, `verify_profile`, `run_self_test`,
-`reset_fingerprint`, `list_proxies`, `create_proxy`, `check_proxy`,
-`list_groups`, `create_group`, `batch_profiles`, `engine_info`.
+`reset_fingerprint`, `get_cookies`, `set_cookies`, `copy_cookies`,
+`list_extensions`, `set_profile_extensions`, `list_schedules`,
+`create_schedule`, `run_schedule`, `list_proxies`, `create_proxy`,
+`check_proxy`, `list_groups`, `create_group`, `batch_profiles`, `list_tags`,
+`stats`, `engine_info`.
 
 ## Python SDK
 

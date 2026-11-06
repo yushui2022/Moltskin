@@ -159,6 +159,92 @@ class MoltskinClient:
     def self_test(self, profile_id: str) -> dict[str, Any]:
         return self._request("POST", f"/profiles/{profile_id}/self-test")
 
+    # Cookies -----------------------------------------------------------------
+
+    def get_cookies(self, profile_id: str, domain: str = "") -> list[dict[str, Any]]:
+        data = self._request("GET", f"/profiles/{profile_id}/cookies", params={"domain": domain})
+        return data["cookies"]
+
+    def set_cookies(self, profile_id: str, cookies: Any, mode: str = "merge") -> dict[str, Any]:
+        """cookies 可以是列表、storage_state dict 或 Netscape cookies.txt 文本。"""
+        payload = {"text": cookies, "mode": mode} if isinstance(cookies, str) else {"cookies": cookies, "mode": mode}
+        return self._request("PUT", f"/profiles/{profile_id}/cookies", json=payload)
+
+    def export_cookies(self, profile_id: str, format: str = "json") -> str:
+        response = self._client.get(f"/profiles/{profile_id}/cookies/export", params={"format": format})
+        response.raise_for_status()
+        return response.text
+
+    def copy_cookies(self, profile_id: str, source_id: str, mode: str = "merge") -> dict[str, Any]:
+        return self._request(
+            "POST", f"/profiles/{profile_id}/cookies/copy-from/{source_id}", params={"mode": mode}
+        )
+
+    def clear_cookies(self, profile_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/profiles/{profile_id}/cookies")
+
+    # Extensions --------------------------------------------------------------
+
+    def list_extensions(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/extensions")
+
+    def upload_extension(self, filename: str, content: bytes) -> dict[str, Any]:
+        import base64
+
+        return self._request(
+            "POST",
+            "/extensions",
+            json={"filename": filename, "content": base64.b64encode(content).decode()},
+        )
+
+    def delete_extension(self, ext_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/extensions/{ext_id}")
+
+    def get_profile_extensions(self, profile_id: str) -> list[str]:
+        return self._request("GET", f"/profiles/{profile_id}/extensions")["ids"]
+
+    def set_profile_extensions(self, profile_id: str, ids: list[str]) -> list[str]:
+        return self._request("PUT", f"/profiles/{profile_id}/extensions", json={"ids": ids})["ids"]
+
+    # Schedules ---------------------------------------------------------------
+
+    def list_schedules(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/schedules")
+
+    def create_schedule(
+        self,
+        name: str,
+        action: str = "launch",
+        time_of_day: str = "09:00",
+        weekdays: list[int] | None = None,
+        target_type: str = "all",
+        target_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/schedules",
+            json={
+                "name": name,
+                "action": action,
+                "time_of_day": time_of_day,
+                "weekdays": weekdays or [1, 2, 3, 4, 5, 6, 7],
+                "target_type": target_type,
+                "target_ids": target_ids or [],
+            },
+        )
+
+    def run_schedule(self, schedule_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/schedules/{schedule_id}/run")
+
+    def delete_schedule(self, schedule_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/schedules/{schedule_id}")
+
+    def batch_async(self, action: str, ids: list[str]) -> dict[str, Any]:
+        return self._request("POST", "/profiles/batch-async", json={"action": action, "ids": ids})
+
+    def job(self, job_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/jobs/{job_id}")
+
     def batch(
         self,
         action: str,

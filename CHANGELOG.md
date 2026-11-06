@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.3.0 — 2026-11-06
+
+The four gaps that mattered most for daily multi-account work.
+
+### Added
+
+- **Cookie 导入 / 导出** — read and write each profile's `cookies.sqlite`
+  without launching the browser. Accepts a JSON array, Playwright
+  `storage_state`, or Netscape `cookies.txt`; merge or replace; export JSON or
+  `cookies.txt`; copy cookies from another profile; clear all.
+- **扩展中心** — upload `.xpi` / `.zip`, unpacked into `data/extensions/`,
+  assigned per profile and loaded by Camoufox on launch
+  (`browser_specific_settings.gecko.id` is injected when missing, otherwise
+  Firefox silently drops the add-on).
+- **批量进度** — batch open/close now returns a job id and the UI polls
+  `/jobs/{id}`, showing per-environment state and failure reasons instead of a
+  single toast.
+- **定时任务** — daily launch/stop tasks with weekday selection and target
+  (all / group / environments), a background scheduler with a 10-minute grace
+  window, "run now", enable toggle and last-run result.
+- Profile detail now has 扩展 and Cookie sections alongside the fingerprint
+  checks.
+
+### API
+
+- `GET|PUT|DELETE /profiles/{id}/cookies`,
+  `GET /profiles/{id}/cookies/export?format=json|netscape`,
+  `POST /profiles/{id}/cookies/copy-from/{source_id}`.
+- `GET|POST /extensions`, `PATCH|DELETE /extensions/{id}`,
+  `GET|PUT /profiles/{id}/extensions`.
+- `POST /profiles/batch-async`, `GET /jobs`, `GET /jobs/{id}`.
+- `GET|POST /schedules`, `PATCH|DELETE /schedules/{id}`,
+  `POST /schedules/{id}/run`.
+- SDK: cookies / extensions / schedules / jobs helpers.
+- MCP: `get_cookies`, `set_cookies`, `copy_cookies`, `list_extensions`,
+  `set_profile_extensions`, `list_schedules`, `create_schedule`, `run_schedule`.
+
+### Fixed
+
+- 配置列在 Camoufox 随机字体下出现乱码：混排中文不再使用等宽字体，
+  等宽字体链补齐中文回退。
+- 窄窗口下表格操作列固定在右侧，工具栏与筛选条件分两行，不再挤压。
+
+
 ## 0.2.0 — 2026-11-06
 
 Management-console pass: the UI now has the density and control surface of a

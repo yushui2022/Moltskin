@@ -185,7 +185,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
 .field-row { display: flex; gap: 8px; align-items: center; }
 
 /* ---------------- tabs / toolbar ---------------- */
-.toolbar { display: flex; align-items: center; gap: 8px; padding: 0 24px 10px; flex: none; }
+.toolbar { display: flex; align-items: center; gap: 8px; padding: 0 24px 10px; flex: none; flex-wrap: wrap; }
 .toolbar .spacer { margin-left: auto; }
 
 .segmented { display: flex; align-items: center; gap: 2px; background: var(--panel-2);
@@ -228,7 +228,7 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
   margin: 0 24px; overflow: hidden; }
 .list-scroll { flex: 1; overflow: auto; min-height: 0; }
 
-table.grid { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0; }
+table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-spacing: 0; }
 .grid thead th {
   position: sticky; top: 0; z-index: 3; background: #fbfbfb; color: var(--dim);
   font-weight: 500; font-size: 11px; text-align: left; padding: 9px 12px;
@@ -250,11 +250,15 @@ table.grid { width: 100%; min-width: 1080px; border-collapse: separate; border-s
 .grid tbody tr:last-child td { border-bottom: 0; }
 .grid tbody tr:hover td { background: #fafafb; }
 .grid tbody tr.selected td { background: #f6f8ff; }
-.grid .col-actions { text-align: right; }
+.grid .col-actions { text-align: right; position: sticky; right: 0; background: var(--panel);
+  box-shadow: -10px 0 12px -12px rgba(0,0,0,.22); }
+.grid thead th.col-actions { background: #fbfbfb; z-index: 4; }
+.grid tbody tr:hover td.col-actions { background: #fafafb; }
+.grid tbody tr.selected td.col-actions { background: #f6f8ff; }
 .grid th.col-actions { text-align: right; }
 .muted { color: var(--muted); }
 .dim { color: var(--dim); }
-.mono { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.mono { font-family: "SF Mono", ui-monospace, Menlo, Consolas, "Inter", "Moltskin Sans", "PingFang SC", "Microsoft YaHei", monospace; font-size: 12px; }
 .nowrap { white-space: nowrap; }
 .ellipsis { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -502,6 +506,49 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 /* settings */
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .settings-grid .panel-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+/* extensions */
+.ext-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.ext-card { display: flex; gap: 12px; padding: 13px; border: 1px solid var(--border);
+  border-radius: var(--r-lg); background: var(--panel); box-shadow: var(--shadow-sm); }
+.ext-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--panel-2);
+  display: grid; place-items: center; flex: none; overflow: hidden; color: var(--dim); }
+.ext-icon img { width: 100%; height: 100%; object-fit: cover; }
+.ext-body { flex: 1; min-width: 0; }
+.ext-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ext-meta { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+.ext-actions { display: flex; gap: 4px; margin-top: 8px; }
+.ext-picker { display: flex; flex-direction: column; gap: 6px; }
+.ext-option { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 12.5px; }
+.ext-option .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* schedules */
+.weekdays { display: flex; gap: 6px; flex-wrap: wrap; }
+.weekdays label { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px;
+  border: 1px solid #dcdcdc; border-radius: var(--r-sm); font-size: 12.5px; cursor: pointer; }
+.weekdays label:has(input:checked) { border-color: var(--accent); color: var(--accent-strong);
+  background: var(--accent-soft); }
+.switch { position: relative; display: inline-flex; width: 32px; height: 18px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch span { position: absolute; inset: 0; background: #dcdcdc; border-radius: 999px;
+  cursor: pointer; transition: background .15s; }
+.switch span::after { content: ""; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; top: 2px; left: 2px; transition: transform .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(14px); }
+
+/* job progress */
+.job-bar { height: 6px; border-radius: 3px; background: #ececec; overflow: hidden; }
+.job-bar span { display: block; height: 100%; width: 0; background: var(--accent);
+  transition: width .25s; }
+.job-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
+.job-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 5px 7px;
+  border-radius: var(--r-sm); background: var(--panel-2); }
+.job-row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-row .st { font-size: 10.5px; }
+.job-row.failed .st { background: #fdf0ef; color: var(--err); }
+.job-row.done .st { background: #e9f7ef; color: var(--ok); }
 .settings-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 @media (max-width: 1200px) {
@@ -574,6 +621,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v6c0 4-3 7-7 8.5C8 19 5 16 5 12V6z"/></symbol>
   <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 15V4M8 7.5 12 3.5l4 4M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></symbol>
   <symbol id="i-import" viewBox="0 0 24 24"><path d="M12 3v11M8 10.5 12 14.5l4-4M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></symbol>
+  <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M10 4.5a1.8 1.8 0 1 1 3.6 0V6h3a1 1 0 0 1 1 1v3h1.5a1.8 1.8 0 1 1 0 3.6H18v3a1 1 0 0 1-1 1h-3v1.1a1.8 1.8 0 1 1-3.6 0V17H7a1 1 0 0 1-1-1v-3H4.6a1.8 1.8 0 1 1 0-3.6H6V7a1 1 0 0 1 1-1h3z"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/></symbol>
+  <symbol id="i-cookie" viewBox="0 0 24 24"><path d="M20.5 12.5A8.5 8.5 0 1 1 11.5 3.5a3.4 3.4 0 0 0 4 4 3.4 3.4 0 0 0 5 5z"/><circle cx="9" cy="10" r=".9" fill="currentColor" stroke="none"/><circle cx="13" cy="15" r=".9" fill="currentColor" stroke="none"/><circle cx="16" cy="10.5" r=".9" fill="currentColor" stroke="none"/></symbol>
 </svg>
 
 <div class="shell">
@@ -581,7 +631,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
     <div class="brand">
       <img src="/logo.svg" width="30" height="30" alt="Moltskin">
       <div class="brand-name">Moltskin</div>
-      <span class="brand-ver">v0.2</span>
+      <span class="brand-ver">v0.3</span>
     </div>
 
     <nav class="nav" id="nav">
@@ -599,6 +649,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <a class="nav-item" href="#/proxies" data-page="proxies">
         <svg class="i"><use href="#i-globe"/></svg><span>代理 IP</span>
         <span class="count" id="navProxies">0</span>
+      </a>
+      <a class="nav-item" href="#/extensions" data-page="extensions">
+        <svg class="i"><use href="#i-puzzle"/></svg><span>扩展中心</span>
+        <span class="count" id="navExtensions">0</span>
+      </a>
+      <a class="nav-item" href="#/schedules" data-page="schedules">
+        <svg class="i"><use href="#i-calendar"/></svg><span>定时任务</span>
+        <span class="count" id="navSchedules">0</span>
       </a>
       <a class="nav-item" href="#/logs" data-page="logs">
         <svg class="i"><use href="#i-log"/></svg><span>操作日志</span>
@@ -688,35 +746,36 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         </div>
         <div class="spacer"></div>
 
+        <div class="segmented" role="group" aria-label="视图">
+          <button id="viewTable" class="active" title="表格视图"><svg class="i"><use href="#i-list"/></svg></button>
+          <button id="viewGrid" title="卡片视图"><svg class="i"><use href="#i-grid"/></svg></button>
+        </div>
+        <button class="btn icon" id="columnsBtn" title="显示列"><svg class="i"><use href="#i-columns"/></svg></button>
+      </div>
+
+      <div class="filter-bar" id="filterBar">
+        <button class="btn" id="groupFilterBtn"><svg class="i"><use href="#i-folder"/></svg>分组</button>
+        <button class="btn" id="tagFilterBtn"><svg class="i"><use href="#i-tag"/></svg>标签</button>
         <div class="field-row">
-          <select class="select" id="searchField" style="height:32px;width:104px" aria-label="搜索字段">
+          <select class="select" id="searchField" style="width:104px" aria-label="搜索字段">
             <option value="all">全部字段</option>
             <option value="name">窗口名称</option>
             <option value="remark">备注</option>
             <option value="proxy">代理 IP</option>
             <option value="group">分组</option>
           </select>
-          <select class="select" id="searchOp" style="height:32px;width:88px" aria-label="匹配方式">
+          <select class="select" id="searchOp" style="width:88px" aria-label="匹配方式">
             <option value="contains">包含</option>
             <option value="not_contains">不包含</option>
             <option value="equals">等于</option>
           </select>
           <label style="position:relative;display:block">
             <svg class="i" style="position:absolute;left:9px;top:8px;color:#aaa"><use href="#i-search"/></svg>
-            <input class="input" id="searchInput" placeholder="搜索" style="width:200px;padding-left:30px" aria-label="搜索环境">
+            <input class="input" id="searchInput" placeholder="搜索窗口名称 / 备注 / IP" style="width:220px;padding-left:30px" aria-label="搜索环境">
           </label>
         </div>
-
-        <div class="segmented" role="group" aria-label="视图">
-          <button id="viewTable" class="active" title="表格视图"><svg class="i"><use href="#i-list"/></svg></button>
-          <button id="viewGrid" title="卡片视图"><svg class="i"><use href="#i-grid"/></svg></button>
-        </div>
-        <button class="btn icon" id="columnsBtn" title="显示列"><svg class="i"><use href="#i-columns"/></svg></button>
-        <button class="btn" id="groupFilterBtn"><svg class="i"><use href="#i-folder"/></svg>分组</button>
-        <button class="btn" id="tagFilterBtn"><svg class="i"><use href="#i-tag"/></svg>标签</button>
+        <span id="filterChips" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></span>
       </div>
-
-      <div class="filter-bar" id="filterBar"></div>
 
       <div class="batch-bar" id="batchBar" hidden>
         <span>已选 <b id="selCount">0</b> 个环境</span>
@@ -836,6 +895,76 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <div class="empty-title">还没有代理</div>
             <p>添加 HTTP / SOCKS5 代理后，可以绑定到环境并校验出口地区。</p>
             <button class="btn primary" id="emptyProxyAdd"><svg class="i"><use href="#i-plus"/></svg>添加代理</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 扩展中心 ============ -->
+    <section class="page" id="page-extensions" data-page="extensions">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>扩展中心</h1>
+          <p>上传 Firefox 扩展（.xpi / .zip），按环境分配，启动时自动加载</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn icon" id="refreshExtensions" title="刷新"><svg class="i"><use href="#i-refresh"/></svg></button>
+          <button class="btn primary" id="uploadExtBtn"><svg class="i"><use href="#i-plus"/></svg>上传扩展</button>
+        </div>
+      </header>
+      <div class="scroll">
+        <div class="ext-grid" id="extGrid"></div>
+        <div class="empty" id="extEmpty" style="display:none">
+          <div class="empty-ico"><svg class="i"><use href="#i-puzzle"/></svg></div>
+          <div class="empty-title">还没有扩展</div>
+          <p>上传解压后的 .xpi / .zip，然后在环境详情里勾选启用。</p>
+          <button class="btn primary" id="emptyExtAdd"><svg class="i"><use href="#i-plus"/></svg>上传扩展</button>
+        </div>
+        <div class="panel" style="margin-top:12px">
+          <div class="panel-head">说明</div>
+          <div class="panel-body" style="padding:12px 16px;color:var(--muted);font-size:12.5px;line-height:1.7">
+            扩展存储在本机 <span class="mono">data/extensions/</span>，不会上传到任何服务。<br>
+            Camoufox 每次启动会把这些目录作为临时扩展加载；环境运行时修改扩展需要重启窗口生效。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 定时任务 ============ -->
+    <section class="page" id="page-schedules" data-page="schedules">
+      <header class="page-head">
+        <div class="page-title">
+          <h1>定时任务</h1>
+          <p>每天固定时间自动打开或关闭环境</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn icon" id="refreshSchedules" title="刷新"><svg class="i"><use href="#i-refresh"/></svg></button>
+          <button class="btn primary" id="newScheduleBtn"><svg class="i"><use href="#i-plus"/></svg>新建任务</button>
+        </div>
+      </header>
+      <div class="scroll" style="padding-bottom:24px">
+        <div class="card">
+          <table class="grid" style="min-width:940px">
+            <thead>
+              <tr>
+                <th style="width:200px">名称</th>
+                <th style="width:110px">动作</th>
+                <th style="width:90px">时间</th>
+                <th style="width:150px">星期</th>
+                <th style="width:150px">目标</th>
+                <th style="width:150px">下次运行</th>
+                <th style="width:120px">上次结果</th>
+                <th style="width:70px">启用</th>
+                <th class="col-actions" style="width:150px">操作</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleRows"></tbody>
+          </table>
+          <div class="empty" id="scheduleEmpty" style="display:none">
+            <div class="empty-ico"><svg class="i"><use href="#i-calendar"/></svg></div>
+            <div class="empty-title">还没有定时任务</div>
+            <p>例如每天早上 9:00 自动打开某组环境。</p>
+            <button class="btn primary" id="emptyScheduleAdd"><svg class="i"><use href="#i-plus"/></svg>新建任务</button>
           </div>
         </div>
       </div>
@@ -1062,6 +1191,86 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   </div>
 </div>
 
+<!-- 导入 Cookie -->
+<div class="mask" id="cookieMask">
+  <div class="modal" style="width:600px">
+    <div class="head">导入 Cookie<button class="x" data-close="cookieMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="body single">
+      <div class="field">
+        <label>粘贴 Cookie</label>
+        <textarea class="input" id="cookieText" rows="8" spellcheck="false"
+          placeholder='支持三种格式：&#10;1) JSON 数组 [{"name":"sid","value":"...","domain":".example.com"}]&#10;2) Playwright storage_state {"cookies":[...]}&#10;3) Netscape cookies.txt（制表符分隔）'></textarea>
+        <div class="hint">或选择文件：<input type="file" id="cookieFile" accept=".json,.txt,text/plain,application/json" style="margin-top:6px"></div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>写入方式</label>
+        <select class="select" id="cookieMode">
+          <option value="merge">合并（同名 Cookie 覆盖，其余保留）</option>
+          <option value="replace">替换（先清空现有 Cookie）</option>
+        </select>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close="cookieMask">取消</button>
+      <button class="btn primary" id="cookieImportOk">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 新建 / 编辑定时任务 -->
+<div class="mask" id="scheduleMask">
+  <div class="modal" style="width:560px">
+    <div class="head"><span id="scheduleModalTitle">新建定时任务</span><button class="x" data-close="scheduleMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="body">
+      <div class="field full"><label>名称</label><input class="input" id="scName" placeholder="例如：早班自动开机"></div>
+      <div class="field"><label>动作</label>
+        <select class="select" id="scAction"><option value="launch">打开环境</option><option value="stop">关闭环境</option></select>
+      </div>
+      <div class="field"><label>时间</label><input class="input" id="scTime" type="time" value="09:00"></div>
+      <div class="field full"><label>星期</label>
+        <div class="weekdays" id="scWeekdays">
+          <label><input type="checkbox" value="1" checked>一</label>
+          <label><input type="checkbox" value="2" checked>二</label>
+          <label><input type="checkbox" value="3" checked>三</label>
+          <label><input type="checkbox" value="4" checked>四</label>
+          <label><input type="checkbox" value="5" checked>五</label>
+          <label><input type="checkbox" value="6">六</label>
+          <label><input type="checkbox" value="7">日</label>
+        </div>
+      </div>
+      <div class="field"><label>目标</label>
+        <select class="select" id="scTarget">
+          <option value="all">全部环境</option>
+          <option value="group">指定分组</option>
+          <option value="ids">指定环境</option>
+        </select>
+      </div>
+      <div class="field" id="scTargetWrap" style="display:none"><label id="scTargetLabel">选择</label>
+        <select class="select" id="scTargetValue"></select>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="btn" data-close="scheduleMask">取消</button>
+      <button class="btn primary" id="saveSchedule">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 任务进度 -->
+<div class="mask" id="jobMask">
+  <div class="modal" style="width:520px">
+    <div class="head"><span id="jobTitle">批量操作</span><button class="x" data-close="jobMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="body single">
+      <div class="job-bar"><span id="jobBarFill"></span></div>
+      <div class="hint" id="jobSummary" style="margin:10px 0 6px">准备中…</div>
+      <div class="job-list" id="jobList"></div>
+    </div>
+    <div class="foot">
+      <button class="btn" id="jobClose" data-close="jobMask">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 环境详情 -->
 <div class="mask" id="detailMask">
   <div class="modal wide">
@@ -1082,6 +1291,23 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <h3>启动前检查<button class="btn small" id="recheckBtn">重新检查</button></h3>
         <div id="consistency" class="check-list"><span class="muted">检查中…</span></div>
       </section>
+      <section class="section">
+        <h3>扩展<button class="btn small" id="reloadExtBtn">刷新</button></h3>
+        <div id="detailExtensions" class="ext-picker"><span class="muted">加载中…</span></div>
+      </section>
+
+      <section class="section">
+        <h3>Cookie<button class="btn small" id="cookieRefresh">刷新</button></h3>
+        <div id="cookieSummary" class="hint">加载中…</div>
+        <div class="field-row" style="flex-wrap:wrap">
+          <button class="btn small" id="cookieImportBtn">导入</button>
+          <button class="btn small" id="cookieExportJson">导出 JSON</button>
+          <button class="btn small" id="cookieExportNetscape">导出 cookies.txt</button>
+          <button class="btn small" id="cookieCopyBtn">从其他环境复制</button>
+          <button class="btn small danger" id="cookieClearBtn">清空</button>
+        </div>
+      </section>
+
       <section class="section">
         <h3>指纹自检</h3>
         <p class="hint">在 CreepJS 中打开该环境并截图，运行前需要先关闭环境。</p>
@@ -1135,6 +1361,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 </div>
 
 <input type="file" id="importFile" accept="application/json,.json" hidden>
+<input type="file" id="extFile" accept=".xpi,.zip,application/zip,application/x-xpinstall" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -1144,6 +1371,7 @@ const $ = (id) => document.getElementById(id);
 const state = {
   page: "windows",
   profiles: [], proxies: [], groups: [], stats: null, tags: [], engine: null,
+  extensions: [], schedules: [],
   tab: "all", q: "", field: "all", op: "contains", groupId: "", tag: "",
   sort: "last_opened", order: "desc",
   pageNo: 1, pageSize: 10,
@@ -1393,6 +1621,8 @@ function go(page) {
   if (page === "groups") renderGroups();
   if (page === "settings") loadSettings();
   if (page === "home") renderHome();
+  if (page === "extensions") { renderExtensions(); loadExtensions(); }
+  if (page === "schedules") { renderSchedules(); loadSchedules(); }
   if (location.hash !== "#/" + page) history.replaceState(null, "", "#/" + page);
 }
 document.querySelectorAll(".nav-item").forEach((n) => {
@@ -1527,7 +1757,7 @@ function rowHtml(p, index) {
       <div class="cfg">
         ${icon("finger")}
         <div class="stack">
-          <span class="mono" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(cfg)}</span>
+          <span style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(cfg)}</span>
           <span class="sub">打开 ${p.open_count || 0} 次 · ${esc(relTime(p.last_opened_at))}</span>
         </div>
       </div>
@@ -1665,10 +1895,9 @@ function renderFilterBar() {
   if (state.q) {
     chips.push(`<span class="chip">${state.op === "not_contains" ? "排除" : "关键词"}：${esc(state.q)}<button data-clear="q" aria-label="清除关键词">${icon("x")}</button></span>`);
   }
-  $("filterBar").innerHTML = chips.length
+  $("filterChips").innerHTML = chips.length
     ? chips.join("") + `<button class="btn small ghost" data-clear="all">清除全部</button>`
     : "";
-  $("filterBar").style.display = chips.length ? "" : "none";
 }
 
 function setTab(tab) {
@@ -1682,7 +1911,7 @@ $("tabs").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-tab]");
   if (btn) setTab(btn.dataset.tab);
 });
-$("filterBar").addEventListener("click", (e) => {
+$("filterChips").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-clear]");
   if (!btn) return;
   const what = btn.dataset.clear;
@@ -1907,6 +2136,11 @@ async function runBatch(action) {
   if (!ids.length) return;
   if (action === "clear") { state.selected.clear(); renderList(); return; }
   if (action === "export") return exportProfiles(ids);
+
+  if (action === "launch" || action === "stop") {
+    await runBatchJob(action, ids);
+    return;
+  }
 
   if (action === "delete") {
     const ok = await askConfirm({
@@ -2233,6 +2467,8 @@ function openDetail(id) {
   $("selfTestBtn").textContent = "运行自检";
   openModal("detailMask");
   runVerify(id);
+  loadDetailExtensions(id);
+  loadCookieSummary(id);
 }
 
 async function runVerify(id) {
@@ -2672,15 +2908,508 @@ $("homeRunning").addEventListener("click", (e) => {
   if (btn.dataset.action === "stop") stopProfile(btn.dataset.id);
 });
 
-/* ---------------- 数据刷新 ---------------- */
+/* ---------------- 扩展中心 ---------------- */
+async function loadExtensions() {
+  try {
+    state.extensions = await api("/extensions");
+    renderExtensions();
+    $("navExtensions").textContent = state.extensions.length;
+  } catch (err) { toast(err.message, true); }
+}
+
+function renderExtensions() {
+  const list = state.extensions || [];
+  $("extEmpty").style.display = list.length ? "none" : "block";
+  $("extGrid").innerHTML = list.map((e) => {
+    const size = e.size > 1024 * 1024 ? `${(e.size / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(e.size / 1024))} KB`;
+    return `<article class="ext-card">
+      <div class="ext-icon">${e.icon ? `<img src="${e.icon}" alt="">` : icon("puzzle")}</div>
+      <div class="ext-body">
+        <div class="ext-name" title="${esc(e.name)}">${esc(e.name)}</div>
+        <div class="ext-meta">${e.version ? `v${esc(e.version)} · ` : ""}${size} · ${e.profiles} 个环境在用</div>
+        ${e.description ? `<div class="ext-meta ellipsis" title="${esc(e.description)}">${esc(e.description)}</div>` : ""}
+        <div class="ext-actions">
+          <button class="btn small" data-ext-assign="${e.id}">分配环境</button>
+          <button class="btn small danger" data-ext-del="${e.id}">删除</button>
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function readFileBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+    reader.onerror = () => reject(new Error("读取文件失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+$("uploadExtBtn").onclick = () => $("extFile").click();
+$("emptyExtAdd").onclick = () => $("extFile").click();
+$("extFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const btn = $("uploadExtBtn");
+  btn.disabled = true;
+  btn.textContent = "上传中…";
+  try {
+    const content = await readFileBase64(file);
+    const created = await api("/extensions", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, content }),
+    });
+    toast(`已上传：${created.name}`);
+    await loadExtensions();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `${'<svg class="i"><use href="#i-plus"/></svg>'}上传扩展`;
+    e.target.value = "";
+  }
+});
+
+$("refreshExtensions").onclick = () => loadExtensions();
+
+$("extGrid").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-ext-del]");
+  const assign = e.target.closest("[data-ext-assign]");
+  if (del) {
+    const ext = state.extensions.find((x) => x.id === del.dataset.extDel);
+    const ok = await askConfirm({
+      title: "删除扩展",
+      text: `删除「<b>${esc(ext?.name || "")}</b>」？已分配该扩展的环境将不再加载它。`,
+      okText: "删除", danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/extensions/${ext.id}`, { method: "DELETE" });
+      toast("已删除");
+      await loadExtensions();
+      await refresh();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
+  if (assign) {
+    const ext = state.extensions.find((x) => x.id === assign.dataset.extAssign);
+    const res = await askChoose({
+      title: "分配到环境",
+      label: "选择环境（会覆盖该环境原有的扩展选择）",
+      options: [{ value: "", label: "不分配" }, ...state.profiles.map((p) => ({ value: p.id, label: p.name }))],
+    });
+    if (!res || !res.value) return;
+    try {
+      await api(`/profiles/${res.value}/extensions`, {
+        method: "PUT",
+        body: JSON.stringify({ ids: [ext.id] }),
+      });
+      toast("已分配");
+      await loadExtensions();
+      await refresh();
+    } catch (err) { toast(err.message, true); }
+  }
+});
+
+/* 环境详情里的扩展选择 */
+async function loadDetailExtensions(id) {
+  const box = $("detailExtensions");
+  box.innerHTML = '<span class="muted">加载中…</span>';
+  try {
+    const [all, current] = await Promise.all([
+      Promise.resolve(state.extensions.length ? state.extensions : api("/extensions")),
+      api(`/profiles/${id}/extensions`),
+    ]);
+    state.extensions = all;
+    if (!all.length) {
+      box.innerHTML = '<span class="muted">还没有扩展，先去「扩展中心」上传</span>';
+      return;
+    }
+    const selected = new Set(current.ids);
+    box.innerHTML = all.map((e) => `<label class="ext-option">
+      <input type="checkbox" data-ext-toggle="${e.id}" ${selected.has(e.id) ? "checked" : ""}>
+      <span class="grow">${esc(e.name)}${e.version ? ` · v${esc(e.version)}` : ""}</span>
+    </label>`).join("");
+  } catch (err) {
+    box.innerHTML = `<div class="check-warning">${esc(err.message)}</div>`;
+  }
+}
+
+$("reloadExtBtn").onclick = () => detailId && loadDetailExtensions(detailId);
+$("detailExtensions").addEventListener("change", async (e) => {
+  const box = e.target.closest("[data-ext-toggle]");
+  if (!box || !detailId) return;
+  const ids = [...$("detailExtensions").querySelectorAll("[data-ext-toggle]")]
+    .filter((el) => el.checked)
+    .map((el) => el.dataset.extToggle);
+  try {
+    await api(`/profiles/${detailId}/extensions`, { method: "PUT", body: JSON.stringify({ ids }) });
+    toast("扩展已更新，重启窗口后生效");
+    await loadExtensions();
+  } catch (err) {
+    toast(err.message, true);
+    box.checked = !box.checked;
+  }
+});
+
+/* ---------------- Cookie ---------------- */
+async function loadCookieSummary(id) {
+  const box = $("cookieSummary");
+  try {
+    const data = await api(`/profiles/${id}/cookies`);
+    const domains = new Set(data.cookies.map((c) => c.domain));
+    box.textContent = data.total
+      ? `共 ${data.total} 条，覆盖 ${domains.size} 个域名`
+      : "该环境还没有 Cookie";
+  } catch (err) {
+    box.textContent = err.message;
+  }
+}
+
+$("cookieRefresh").onclick = () => detailId && loadCookieSummary(detailId);
+
+$("cookieImportBtn").onclick = () => {
+  if (!detailId) return;
+  $("cookieText").value = "";
+  $("cookieMode").value = "merge";
+  openModal("cookieMask");
+};
+
+$("cookieFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  $("cookieText").value = await file.text();
+  e.target.value = "";
+});
+
+$("cookieImportOk").onclick = async () => {
+  if (!detailId) return;
+  const text = $("cookieText").value.trim();
+  if (!text) return toast("请粘贴或选择 Cookie", true);
+  const btn = $("cookieImportOk");
+  btn.disabled = true;
+  try {
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch (_) {
+      payload = text;
+    }
+    const body = typeof payload === "string"
+      ? { text: payload, mode: $("cookieMode").value }
+      : { cookies: payload, mode: $("cookieMode").value };
+    const result = await api(`/profiles/${detailId}/cookies`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    toast(`已写入 ${result.applied} 条 Cookie`);
+    closeModal("cookieMask");
+    await loadCookieSummary(detailId);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+async function exportCookies(format) {
+  if (!detailId) return;
+  const p = state.profiles.find((x) => x.id === detailId);
+  try {
+    const res = await fetch(`/api/v1/profiles/${detailId}/cookies/export?format=${format}`, {
+      headers: { Authorization: "Bearer " + TOKEN },
+    });
+    if (!res.ok) throw new Error("导出失败");
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `cookies-${(p?.name || detailId).replace(/[^\w\-]+/g, "_")}.${format === "netscape" ? "txt" : "json"}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("已导出");
+  } catch (err) { toast(err.message, true); }
+}
+$("cookieExportJson").onclick = () => exportCookies("json");
+$("cookieExportNetscape").onclick = () => exportCookies("netscape");
+
+$("cookieCopyBtn").onclick = async () => {
+  if (!detailId) return;
+  const others = state.profiles.filter((p) => p.id !== detailId);
+  if (!others.length) return toast("没有其他环境", true);
+  const res = await askChoose({
+    title: "从其他环境复制 Cookie",
+    label: "源环境（会合并到当前环境）",
+    options: others.map((p) => ({ value: p.id, label: `${p.name} · ${p.group?.name || "未分组"}` })),
+  });
+  if (!res || !res.value) return;
+  try {
+    const result = await api(`/profiles/${detailId}/cookies/copy-from/${res.value}`, { method: "POST" });
+    toast(`已复制 ${result.applied} 条 Cookie`);
+    await loadCookieSummary(detailId);
+  } catch (err) { toast(err.message, true); }
+};
+
+$("cookieClearBtn").onclick = async () => {
+  if (!detailId) return;
+  const ok = await askConfirm({
+    title: "清空 Cookie",
+    text: "删除该环境的全部 Cookie？下次打开需要重新登录。",
+    okText: "清空", danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api(`/profiles/${detailId}/cookies`, { method: "DELETE" });
+    toast("已清空");
+    await loadCookieSummary(detailId);
+  } catch (err) { toast(err.message, true); }
+};
+
+/* ---------------- 定时任务 ---------------- */
+async function loadSchedules() {
+  try {
+    state.schedules = await api("/schedules");
+    renderSchedules();
+    $("navSchedules").textContent = state.schedules.filter((s) => s.enabled).length;
+  } catch (err) { toast(err.message, true); }
+}
+
+const WEEK_NAMES = ["", "一", "二", "三", "四", "五", "六", "日"];
+
+function scheduleTargetLabel(s) {
+  if (s.target_type === "all") return "全部环境";
+  if (s.target_type === "group") {
+    const names = s.target_ids.map((id) => state.groups.find((g) => g.id === id)?.name).filter(Boolean);
+    return names.length ? `分组：${names.join("、")}` : "分组：已删除";
+  }
+  const names = s.target_ids.map((id) => state.profiles.find((p) => p.id === id)?.name).filter(Boolean);
+  return names.length ? `${names.length} 个环境` : "环境：已删除";
+}
+
+function renderSchedules() {
+  const list = state.schedules || [];
+  $("scheduleEmpty").style.display = list.length ? "none" : "block";
+  $("scheduleRows").innerHTML = list.map((s) => {
+    const days = s.weekdays.length === 7 ? "每天" : s.weekdays.map((d) => WEEK_NAMES[d]).join(" ");
+    const result = s.last_result
+      ? `成功 ${s.last_result.ok}${s.last_result.failed ? ` / 失败 ${s.last_result.failed}` : ""}`
+      : "—";
+    return `<tr>
+      <td><div class="cell-name"><span class="txt" data-sch-edit="${s.id}">${esc(s.name)}</span></div></td>
+      <td><span class="st ${s.action === "launch" ? "ok" : ""}">${s.action === "launch" ? "打开" : "关闭"}</span></td>
+      <td class="mono">${esc(s.time_of_day)}</td>
+      <td class="muted">${esc(days)}</td>
+      <td class="muted ellipsis" title="${esc(scheduleTargetLabel(s))}">${esc(scheduleTargetLabel(s))}</td>
+      <td class="muted nowrap">${s.enabled && s.next_run_at ? fmtTime(s.next_run_at) : "—"}</td>
+      <td class="muted nowrap">${esc(result)}</td>
+      <td><label class="switch"><input type="checkbox" data-sch-toggle="${s.id}" ${s.enabled ? "checked" : ""}><span></span></label></td>
+      <td><div class="action-cell">
+        <button class="btn small" data-sch-run="${s.id}">执行</button>
+        <button class="icon-btn" data-sch-edit="${s.id}" aria-label="编辑">${icon("edit")}</button>
+        <button class="icon-btn danger" data-sch-del="${s.id}" aria-label="删除">${icon("trash")}</button>
+      </div></td>
+    </tr>`;
+  }).join("");
+}
+
+let editingSchedule = null;
+function openScheduleModal(schedule = null) {
+  editingSchedule = schedule ? schedule.id : null;
+  $("scheduleModalTitle").textContent = schedule ? "编辑定时任务" : "新建定时任务";
+  $("scName").value = schedule?.name || "";
+  $("scAction").value = schedule?.action || "launch";
+  $("scTime").value = schedule?.time_of_day || "09:00";
+  const days = new Set(schedule?.weekdays || [1, 2, 3, 4, 5]);
+  $("scWeekdays").querySelectorAll("input").forEach((el) => { el.checked = days.has(Number(el.value)); });
+  $("scTarget").value = schedule?.target_type || "all";
+  renderScheduleTarget(schedule?.target_type || "all", schedule?.target_ids || []);
+  openModal("scheduleMask");
+}
+
+function renderScheduleTarget(type, selected = []) {
+  const wrap = $("scTargetWrap");
+  if (type === "all") { wrap.style.display = "none"; return; }
+  wrap.style.display = "";
+  const sel = $("scTargetValue");
+  if (type === "group") {
+    $("scTargetLabel").textContent = "选择分组";
+    sel.multiple = false;
+    sel.innerHTML = state.groups.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join("")
+      || '<option value="">还没有分组</option>';
+    if (selected[0]) sel.value = selected[0];
+  } else {
+    $("scTargetLabel").textContent = "选择环境（可多选）";
+    sel.multiple = true;
+    sel.size = Math.min(6, Math.max(3, state.profiles.length));
+    sel.innerHTML = state.profiles.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+    [...sel.options].forEach((opt) => { opt.selected = selected.includes(opt.value); });
+  }
+}
+
+$("scTarget").addEventListener("change", (e) => renderScheduleTarget(e.target.value, []));
+
+$("newScheduleBtn").onclick = () => openScheduleModal();
+$("emptyScheduleAdd").onclick = () => openScheduleModal();
+$("refreshSchedules").onclick = () => loadSchedules();
+
+$("saveSchedule").onclick = async () => {
+  const name = $("scName").value.trim();
+  if (!name) return toast("请填写任务名称", true);
+  const weekdays = [...$("scWeekdays").querySelectorAll("input")]
+    .filter((el) => el.checked)
+    .map((el) => Number(el.value));
+  if (!weekdays.length) return toast("至少选择一天", true);
+  const targetType = $("scTarget").value;
+  const sel = $("scTargetValue");
+  const targetIds = targetType === "all"
+    ? []
+    : [...sel.selectedOptions].map((o) => o.value).filter(Boolean);
+  if (targetType !== "all" && !targetIds.length) return toast("请选择目标", true);
+  const payload = {
+    name,
+    action: $("scAction").value,
+    time_of_day: $("scTime").value,
+    weekdays,
+    target_type: targetType,
+    target_ids: targetIds,
+  };
+  const btn = $("saveSchedule");
+  btn.disabled = true;
+  try {
+    if (editingSchedule) {
+      await api(`/schedules/${editingSchedule}`, { method: "PATCH", body: JSON.stringify(payload) });
+    } else {
+      await api("/schedules", { method: "POST", body: JSON.stringify(payload) });
+    }
+    toast("已保存");
+    closeModal("scheduleMask");
+    await loadSchedules();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$("scheduleRows").addEventListener("change", async (e) => {
+  const toggle = e.target.closest("[data-sch-toggle]");
+  if (!toggle) return;
+  try {
+    await api(`/schedules/${toggle.dataset.schToggle}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: toggle.checked }),
+    });
+    await loadSchedules();
+  } catch (err) {
+    toast(err.message, true);
+    toggle.checked = !toggle.checked;
+  }
+});
+
+$("scheduleRows").addEventListener("click", async (e) => {
+  const run = e.target.closest("[data-sch-run]");
+  const edit = e.target.closest("[data-sch-edit]");
+  const del = e.target.closest("[data-sch-del]");
+  if (run) {
+    run.disabled = true;
+    run.textContent = "执行中…";
+    try {
+      const result = await api(`/schedules/${run.dataset.schRun}/run`, { method: "POST" });
+      toast(`成功 ${result.ok}${result.failed ? `，失败 ${result.failed}` : ""}${result.skipped ? `，跳过 ${result.skipped}` : ""}`, result.failed > 0);
+    } catch (err) {
+      toast(err.message, true);
+    }
+    await loadSchedules();
+    await refresh();
+    return;
+  }
+  if (edit) {
+    const schedule = state.schedules.find((s) => s.id === edit.dataset.schEdit);
+    if (schedule) openScheduleModal(schedule);
+    return;
+  }
+  if (del) {
+    const schedule = state.schedules.find((s) => s.id === del.dataset.schDel);
+    const ok = await askConfirm({
+      title: "删除定时任务",
+      text: `删除「<b>${esc(schedule?.name || "")}</b>」？`,
+      okText: "删除", danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api(`/schedules/${schedule.id}`, { method: "DELETE" });
+      toast("已删除");
+      await loadSchedules();
+    } catch (err) { toast(err.message, true); }
+  }
+});
+
+/* ---------------- 批量任务进度 ---------------- */
+let jobTimer = null;
+async function runBatchJob(action, ids) {
+  const names = new Map(state.profiles.map((p) => [p.id, p.name]));
+  $("jobTitle").textContent = action === "launch" ? "批量打开" : "批量关闭";
+  $("jobSummary").textContent = `准备中…（${ids.length} 个环境）`;
+  $("jobBarFill").style.width = "0%";
+  $("jobList").innerHTML = ids.map((id) => `<div class="job-row" data-job="${id}">
+    <span class="grow">${esc(names.get(id) || id)}</span><span class="st">等待</span></div>`).join("");
+  openModal("jobMask");
+
+  let job;
+  try {
+    job = await api("/profiles/batch-async", {
+      method: "POST",
+      body: JSON.stringify({ action, ids }),
+    });
+  } catch (err) {
+    toast(err.message, true);
+    closeModal("jobMask");
+    return;
+  }
+
+  const tick = async () => {
+    let current;
+    try {
+      current = await api(`/jobs/${job.id}`);
+    } catch (_) {
+      return;
+    }
+    const pct = current.total ? Math.round((current.done / current.total) * 100) : 100;
+    $("jobBarFill").style.width = pct + "%";
+    $("jobSummary").textContent = `完成 ${current.done}/${current.total} · 成功 ${current.ok} · 失败 ${current.failed}`;
+    for (const item of current.items) {
+      const row = $("jobList").querySelector(`[data-job="${item.id}"]`);
+      if (!row) continue;
+      row.className = "job-row " + item.state;
+      const st = row.querySelector(".st");
+      st.textContent = { pending: "等待", running: "进行中", done: "完成", failed: "失败" }[item.state] || item.state;
+      if (item.error) row.title = item.error;
+    }
+    if (current.state === "finished") {
+      clearInterval(jobTimer);
+      jobTimer = null;
+      toast(`批量${action === "launch" ? "打开" : "关闭"}完成：成功 ${current.ok}${current.failed ? `，失败 ${current.failed}` : ""}`, current.failed > 0);
+      await refresh();
+    }
+  };
+  await tick();
+  clearInterval(jobTimer);
+  jobTimer = setInterval(tick, 800);
+}
+$("jobMask").querySelectorAll("[data-close]").forEach((el) =>
+  el.addEventListener("click", () => { if (jobTimer) { clearInterval(jobTimer); jobTimer = null; } }));
+
+
 async function refresh({ silent = false } = {}) {
   try {
-    const [profiles, stats, proxies, groups, tags] = await Promise.all([
+    const [profiles, stats, proxies, groups, tags, extensions, schedules] = await Promise.all([
       api("/profiles?page_size=200"),
       api("/stats"),
       api("/proxies"),
       api("/groups"),
       api("/tags"),
+      api("/extensions"),
+      api("/schedules"),
     ]);
     const sig = JSON.stringify({ p: profiles.items, r: stats.profiles_running, t: stats.profiles_total });
     const changed = sig !== state.sig;
@@ -2690,6 +3419,8 @@ async function refresh({ silent = false } = {}) {
     state.proxies = proxies;
     state.groups = groups;
     state.tags = tags;
+    state.extensions = extensions;
+    state.schedules = schedules;
     state.loading = false;
 
     if (!state.engine) {
@@ -2699,9 +3430,13 @@ async function refresh({ silent = false } = {}) {
     $("errorBanner").style.display = "none";
     fillSelects();
     renderList();
+    $("navExtensions").textContent = extensions.length;
+    $("navSchedules").textContent = schedules.filter((s) => s.enabled).length;
     if (state.page === "home") renderHome();
     if (state.page === "groups") renderGroups();
     if (state.page === "proxies") renderProxies();
+    if (state.page === "extensions") renderExtensions();
+    if (state.page === "schedules") renderSchedules();
   } catch (err) {
     state.loading = false;
     $("errorBanner").style.display = "flex";

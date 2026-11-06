@@ -104,6 +104,10 @@ def main() -> int:
     if plan.get("fingerprint_preset"):
         kwargs["fingerprint_preset"] = plan["fingerprint_preset"]
 
+    addons = plan.get("addons") or []
+    if addons:
+        kwargs["addons"] = addons
+
     fingerprint = plan.get("fingerprint") or {}
     if fingerprint.get("locale"):
         kwargs["locale"] = fingerprint["locale"]

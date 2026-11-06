@@ -142,6 +142,79 @@ def reset_fingerprint(profile_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def get_cookies(profile_id: str, domain: str = "") -> dict[str, Any]:
+    """Read a profile's cookies from its Firefox profile (works while stopped)."""
+    return _request("GET", f"/profiles/{profile_id}/cookies", params={"domain": domain})
+
+
+@mcp.tool()
+def set_cookies(profile_id: str, cookies_json: str, mode: str = "merge") -> dict[str, Any]:
+    """Import cookies from a JSON array, storage_state or Netscape cookies.txt text."""
+    import json as _json
+
+    try:
+        cookies = _json.loads(cookies_json)
+        payload: dict[str, Any] = {"cookies": cookies, "mode": mode}
+    except _json.JSONDecodeError:
+        payload = {"text": cookies_json, "mode": mode}
+    return _request("PUT", f"/profiles/{profile_id}/cookies", json=payload)
+
+
+@mcp.tool()
+def copy_cookies(target_profile_id: str, source_profile_id: str) -> dict[str, Any]:
+    """Copy cookies from one profile to another (merge)."""
+    return _request("POST", f"/profiles/{target_profile_id}/cookies/copy-from/{source_profile_id}")
+
+
+@mcp.tool()
+def list_extensions() -> list[dict[str, Any]]:
+    """List uploaded browser extensions."""
+    return _request("GET", "/extensions")
+
+
+@mcp.tool()
+def set_profile_extensions(profile_id: str, extension_ids: list[str]) -> dict[str, Any]:
+    """Choose which extensions a stopped profile loads on next launch."""
+    return _request("PUT", f"/profiles/{profile_id}/extensions", json={"ids": extension_ids})
+
+
+@mcp.tool()
+def list_schedules() -> list[dict[str, Any]]:
+    """List scheduled launch/stop tasks."""
+    return _request("GET", "/schedules")
+
+
+@mcp.tool()
+def create_schedule(
+    name: str,
+    action: str = "launch",
+    time_of_day: str = "09:00",
+    weekdays: list[int] | None = None,
+    target_type: str = "all",
+    target_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Create a daily task. action: launch|stop; target_type: all|group|ids."""
+    return _request(
+        "POST",
+        "/schedules",
+        json={
+            "name": name,
+            "action": action,
+            "time_of_day": time_of_day,
+            "weekdays": weekdays or [1, 2, 3, 4, 5, 6, 7],
+            "target_type": target_type,
+            "target_ids": target_ids or [],
+        },
+    )
+
+
+@mcp.tool()
+def run_schedule(schedule_id: str) -> dict[str, Any]:
+    """Run a scheduled task immediately."""
+    return _request("POST", f"/schedules/{schedule_id}/run")
+
+
+@mcp.tool()
 def list_tags() -> list[dict[str, Any]]:
     """List every tag with the number of profiles using it."""
     return _request("GET", "/tags")

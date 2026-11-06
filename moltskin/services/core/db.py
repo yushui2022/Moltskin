@@ -94,6 +94,38 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS extensions (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  version     TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  filename    TEXT NOT NULL DEFAULT '',
+  size        INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS profile_extensions (
+  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  ext_id     TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
+  PRIMARY KEY (profile_id, ext_id)
+);
+
+CREATE TABLE IF NOT EXISTS schedules (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  action      TEXT NOT NULL CHECK (action IN ('launch','stop')),
+  time_of_day TEXT NOT NULL,
+  weekdays    TEXT NOT NULL DEFAULT '[1,2,3,4,5,6,7]',
+  target_type TEXT NOT NULL DEFAULT 'all',
+  target_ids  TEXT NOT NULL DEFAULT '[]',
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  last_result TEXT,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
 """
 
 

@@ -16,7 +16,11 @@ and exposes them through a web UI and a local REST API.
 |---|---|---|
 | ![Home](docs/screenshots/home.png) | ![Create](docs/screenshots/create-profile.png) | ![Batch](docs/screenshots/batch-create.png) |
 
-> Status: **v0.2.0 alpha**. The core create → launch → reuse loop works; expect breaking changes. [Changelog](CHANGELOG.md)
+| Extensions | Schedules | Profile detail |
+|---|---|---|
+| ![Extensions](docs/screenshots/extensions.png) | ![Schedules](docs/screenshots/schedules.png) | ![Detail](docs/screenshots/profile-detail.png) |
+
+> Status: **v0.3.0 alpha**. The core create → launch → reuse loop works; expect breaking changes. [Changelog](CHANGELOG.md)
 
 ---
 
@@ -50,6 +54,10 @@ and exposes them through a web UI and a local REST API.
 | Orphan browser cleanup on startup | ✅ |
 | Scheduled proxy health checks | ✅ |
 | Groups, tags, JSON import/export | ✅ |
+| Cookie import / export (JSON, Netscape), copy between profiles | ✅ |
+| Extension center: upload, assign per profile, loaded on launch | ✅ |
+| Batch open/stop with per-environment progress | ✅ |
+| Scheduled launch / stop tasks | ✅ |
 | MCP server, Python SDK | ✅ |
 | Desktop app | 🚧 |
 

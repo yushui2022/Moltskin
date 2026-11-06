@@ -25,7 +25,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from . import config, db, launcher, proxy_checker, selftest
+from . import config, db, extensions, jobs, launcher, proxy_checker, scheduler, selftest
+from . import cookies as cookie_store
 from .security import get_token
 
 # ---------------------------------------------------------------------------
@@ -93,6 +94,32 @@ class BatchRequest(BaseModel):
 
 class ImportRequest(BaseModel):
     profiles: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CookiePayload(BaseModel):
+    cookies: Any = None
+    mode: str = "merge"
+    text: str | None = None
+
+
+class ScheduleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    action: str = "launch"
+    time_of_day: str = "09:00"
+    weekdays: list[int] = Field(default_factory=lambda: [1, 2, 3, 4, 5, 6, 7])
+    target_type: str = "all"
+    target_ids: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class ScheduleUpdate(BaseModel):
+    name: str | None = None
+    action: str | None = None
+    time_of_day: str | None = None
+    weekdays: list[int] | None = None
+    target_type: str | None = None
+    target_ids: list[str] | None = None
+    enabled: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -279,13 +306,14 @@ async def lifespan(app: FastAPI):
     stop_event = Event()
     health_thread = Thread(target=proxy_health_loop, args=(stop_event,), daemon=True)
     health_thread.start()
+    scheduler.start(stop_event)
     try:
         yield
     finally:
         stop_event.set()
 
 
-app = FastAPI(title="Moltskin", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Moltskin", version="0.3.0", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -359,7 +387,7 @@ def font(name: str):
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "version": "0.2.0"}
+    return {"status": "ok", "version": "0.3.0"}
 
 
 @app.get("/api/v1/export/profiles")
@@ -1278,3 +1306,360 @@ def list_logs(response: Response, page: int = 1, page_size: int = 50, action: st
     response.headers["X-Page"] = str(page)
     response.headers["X-Page-Size"] = str(page_size)
     return {"data": [dict(row) for row in rows]}
+
+
+# ---------------------------------------------------------------------------
+# Cookie
+# ---------------------------------------------------------------------------
+
+
+def _require_stopped(row: sqlite3.Row, action: str = "修改") -> None:
+    if row["status"] == "running":
+        raise HTTPException(
+            409, detail={"code": "PROFILE_RUNNING", "message": f"请先关闭环境再{action} Cookie"}
+        )
+
+
+@app.get("/api/v1/profiles/{profile_id}/cookies")
+def list_cookies(profile_id: str, domain: str = ""):
+    row = get_profile_row(profile_id)
+    try:
+        items = cookie_store.read_cookies(row["user_data_dir"], domain)
+    except FileNotFoundError:
+        items = []
+    return {"data": {"cookies": items, "total": len(items)}}
+
+
+@app.get("/api/v1/profiles/{profile_id}/cookies/export")
+def export_cookies(profile_id: str, format: str = "json"):
+    row = get_profile_row(profile_id)
+    try:
+        items = cookie_store.read_cookies(row["user_data_dir"])
+    except FileNotFoundError:
+        items = []
+    safe_name = re.sub(r"[^\w\-.]+", "_", row["name"])[:40] or profile_id
+    if format == "netscape":
+        body = cookie_store.to_netscape(items)
+        media, suffix = "text/plain", "txt"
+    else:
+        body = json.dumps({"cookies": items, "exported_at": db.now()}, ensure_ascii=False, indent=2)
+        media, suffix = "application/json", "json"
+    return Response(
+        content=body,
+        media_type=media,
+        headers={
+            "Content-Disposition": f'attachment; filename="cookies-{safe_name}.{suffix}"'
+        },
+    )
+
+
+@app.put("/api/v1/profiles/{profile_id}/cookies")
+def import_cookies(profile_id: str, payload: CookiePayload):
+    row = get_profile_row(profile_id)
+    _require_stopped(row, "导入")
+    raw = payload.cookies if payload.cookies is not None else payload.text
+    if raw is None:
+        raise HTTPException(422, detail={"code": "EMPTY_PAYLOAD", "message": "没有 Cookie 内容"})
+    items, source = cookie_store.parse_payload(raw)
+    if not items:
+        raise HTTPException(422, detail={"code": "NO_COOKIES", "message": "没有解析到有效 Cookie"})
+    mode = "replace" if payload.mode == "replace" else "merge"
+    result = cookie_store.write_cookies(row["user_data_dir"], items, mode)
+    db.log("profile.cookies_import", profile_id, {"count": result["applied"], "mode": mode, "source": source})
+    return {"data": {**result, "parsed": len(items), "source": source}}
+
+
+@app.post("/api/v1/profiles/{profile_id}/cookies/copy-from/{source_id}")
+def copy_cookies(profile_id: str, source_id: str, mode: str = "merge"):
+    target = get_profile_row(profile_id)
+    source = get_profile_row(source_id)
+    _require_stopped(target, "导入")
+    try:
+        items = cookie_store.read_cookies(source["user_data_dir"])
+    except FileNotFoundError:
+        items = []
+    if not items:
+        raise HTTPException(422, detail={"code": "NO_COOKIES", "message": "源环境没有 Cookie"})
+    result = cookie_store.write_cookies(target["user_data_dir"], items, mode)
+    db.log("profile.cookies_copy", profile_id, {"from": source_id, "count": result["applied"]})
+    return {"data": result}
+
+
+@app.delete("/api/v1/profiles/{profile_id}/cookies")
+def clear_cookies(profile_id: str):
+    row = get_profile_row(profile_id)
+    _require_stopped(row, "清除")
+    result = cookie_store.write_cookies(row["user_data_dir"], [], mode="replace")
+    db.log("profile.cookies_clear", profile_id, {})
+    return {"data": result}
+
+
+# ---------------------------------------------------------------------------
+# 扩展
+# ---------------------------------------------------------------------------
+
+
+def _serialize_extension(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "version": row["version"],
+        "description": row["description"],
+        "filename": row["filename"],
+        "size": row["size"],
+        "enabled": bool(row["enabled"]),
+        "created_at": row["created_at"],
+        "icon": extensions.icon_data_url(row["id"]),
+        "profiles": row["profiles"] if "profiles" in row.keys() else 0,
+    }
+
+
+@app.get("/api/v1/extensions")
+def list_extensions():
+    with db.session() as conn:
+        rows = conn.execute(
+            "SELECT e.*, (SELECT COUNT(*) FROM profile_extensions pe WHERE pe.ext_id = e.id) AS profiles "
+            "FROM extensions e ORDER BY e.created_at DESC"
+        ).fetchall()
+    return {"data": [_serialize_extension(row) for row in rows]}
+
+
+@app.post("/api/v1/extensions", status_code=201)
+def upload_extension(payload: dict[str, Any]):
+    filename = str(payload.get("filename") or "extension.zip")
+    content = payload.get("content") or payload.get("content_base64")
+    if not content:
+        raise HTTPException(422, detail={"code": "EMPTY_FILE", "message": "没有文件内容"})
+    try:
+        import base64
+
+        archive = base64.b64decode(content.split(",")[-1])
+    except Exception:  # noqa: BLE001
+        raise HTTPException(422, detail={"code": "BAD_BASE64", "message": "文件内容无法解码"})
+    ext_id = new_id("ext")
+    try:
+        info = extensions.install(ext_id, archive, filename)
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": "BAD_EXTENSION", "message": str(exc)})
+    ts = db.now()
+    with db.session() as conn:
+        conn.execute(
+            "INSERT INTO extensions(id, name, version, description, filename, size, enabled, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+            (ext_id, info["name"], info["version"], info["description"], filename,
+             extensions.size_of(ext_id), ts),
+        )
+    db.log("extension.upload", ext_id, {"name": info["name"]})
+    row = None
+    with db.session() as conn:
+        row = conn.execute("SELECT * FROM extensions WHERE id=?", (ext_id,)).fetchone()
+    return {"data": _serialize_extension(row)}
+
+
+@app.patch("/api/v1/extensions/{ext_id}")
+def update_extension(ext_id: str, payload: dict[str, Any]):
+    if "enabled" in payload:
+        with db.session() as conn:
+            conn.execute(
+                "UPDATE extensions SET enabled=? WHERE id=?",
+                (1 if payload["enabled"] else 0, ext_id),
+            )
+    return {"data": {"id": ext_id}}
+
+
+@app.delete("/api/v1/extensions/{ext_id}")
+def delete_extension(ext_id: str):
+    extensions.remove(ext_id)
+    with db.session() as conn:
+        conn.execute("DELETE FROM profile_extensions WHERE ext_id=?", (ext_id,))
+        conn.execute("DELETE FROM extensions WHERE id=?", (ext_id,))
+    db.log("extension.delete", ext_id, {})
+    return {"data": {"id": ext_id, "deleted": True}}
+
+
+@app.get("/api/v1/profiles/{profile_id}/extensions")
+def profile_extensions(profile_id: str):
+    get_profile_row(profile_id)
+    with db.session() as conn:
+        ids = [
+            row["ext_id"]
+            for row in conn.execute(
+                "SELECT ext_id FROM profile_extensions WHERE profile_id=?", (profile_id,)
+            ).fetchall()
+        ]
+    return {"data": {"ids": ids}}
+
+
+@app.put("/api/v1/profiles/{profile_id}/extensions")
+def set_profile_extensions(profile_id: str, payload: dict[str, Any]):
+    row = get_profile_row(profile_id)
+    if row["status"] == "running":
+        raise HTTPException(
+            409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改扩展"}
+        )
+    ids = [str(x) for x in (payload.get("ids") or [])]
+    with db.session() as conn:
+        valid = {
+            item["id"]
+            for item in conn.execute(
+                f"SELECT id FROM extensions WHERE id IN ({','.join('?' for _ in ids)})", ids
+            ).fetchall()
+        } if ids else set()
+        conn.execute("DELETE FROM profile_extensions WHERE profile_id=?", (profile_id,))
+        for ext_id in valid:
+            conn.execute(
+                "INSERT INTO profile_extensions(profile_id, ext_id) VALUES (?, ?)",
+                (profile_id, ext_id),
+            )
+    db.log("profile.extensions", profile_id, {"ids": sorted(valid)})
+    return {"data": {"ids": sorted(valid)}}
+
+
+# ---------------------------------------------------------------------------
+# 批量任务进度
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/jobs")
+def list_jobs():
+    return {"data": jobs.latest(8)}
+
+
+@app.get("/api/v1/jobs/{job_id}")
+def get_job(job_id: str):
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, detail={"code": "JOB_NOT_FOUND", "message": "任务不存在或已过期"})
+    return {"data": job}
+
+
+@app.post("/api/v1/profiles/batch-async")
+def batch_async(payload: BatchRequest):
+    """批量打开/关闭并返回 job_id，前端轮询进度。"""
+    if payload.action not in ("launch", "stop"):
+        raise HTTPException(422, detail={"code": "INVALID_ACTION", "message": "只有打开/关闭支持进度"})
+    names = {}
+    with db.session() as conn:
+        rows = conn.execute(
+            f"SELECT id, name FROM profiles WHERE id IN ({','.join('?' for _ in payload.ids)})",
+            payload.ids,
+        ).fetchall()
+        names = {row["id"]: row["name"] for row in rows}
+    items = [{"id": pid, "name": names.get(pid, pid)} for pid in payload.ids]
+
+    def worker(profile_id: str) -> None:
+        if payload.action == "launch":
+            launcher.launch(profile_id)
+        else:
+            launcher.stop_profile(profile_id)
+
+    workers = max(1, int(db.get_setting("batch_concurrency", 5)))
+    job = jobs.create(payload.action, items, worker, workers=workers)
+    return {"data": job}
+
+
+# ---------------------------------------------------------------------------
+# 定时任务
+# ---------------------------------------------------------------------------
+
+
+def _serialize_schedule(row: sqlite3.Row) -> dict[str, Any]:
+    data = dict(row)
+    data["weekdays"] = json.loads(data.get("weekdays") or "[]")
+    data["target_ids"] = json.loads(data.get("target_ids") or "[]")
+    data["enabled"] = bool(data["enabled"])
+    try:
+        data["last_result"] = json.loads(data["last_result"]) if data.get("last_result") else None
+    except json.JSONDecodeError:
+        data["last_result"] = None
+    data["next_run_at"] = scheduler.next_run(data) if data["enabled"] else None
+    return data
+
+
+def _validate_schedule(fields: dict[str, Any]) -> None:
+    if "action" in fields and fields["action"] not in ("launch", "stop"):
+        raise HTTPException(422, detail={"code": "INVALID_ACTION", "message": "动作必须是 launch 或 stop"})
+    if "time_of_day" in fields:
+        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", str(fields["time_of_day"])):
+            raise HTTPException(422, detail={"code": "INVALID_TIME", "message": "时间格式应为 HH:MM"})
+    if "target_type" in fields and fields["target_type"] not in ("all", "group", "ids"):
+        raise HTTPException(422, detail={"code": "INVALID_TARGET", "message": "目标类型无效"})
+
+
+@app.get("/api/v1/schedules")
+def list_schedules():
+    with db.session() as conn:
+        rows = conn.execute("SELECT * FROM schedules ORDER BY time_of_day, created_at").fetchall()
+    return {"data": [_serialize_schedule(row) for row in rows]}
+
+
+@app.post("/api/v1/schedules", status_code=201)
+def create_schedule(payload: ScheduleCreate):
+    fields = payload.model_dump()
+    _validate_schedule(fields)
+    schedule_id = new_id("sch")
+    ts = db.now()
+    with db.session() as conn:
+        conn.execute(
+            "INSERT INTO schedules(id, name, action, time_of_day, weekdays, target_type, "
+            "target_ids, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                schedule_id,
+                fields["name"],
+                fields["action"],
+                fields["time_of_day"],
+                json.dumps(sorted(set(fields["weekdays"] or [1, 2, 3, 4, 5, 6, 7]))),
+                fields["target_type"],
+                json.dumps(fields["target_ids"] or []),
+                1 if fields["enabled"] else 0,
+                ts,
+                ts,
+            ),
+        )
+    db.log("schedule.create", schedule_id, {"name": fields["name"]})
+    with db.session() as conn:
+        row = conn.execute("SELECT * FROM schedules WHERE id=?", (schedule_id,)).fetchone()
+    return {"data": _serialize_schedule(row)}
+
+
+@app.patch("/api/v1/schedules/{schedule_id}")
+def update_schedule(schedule_id: str, payload: ScheduleUpdate):
+    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    _validate_schedule(fields)
+    if not fields:
+        raise HTTPException(422, detail={"code": "EMPTY_PAYLOAD", "message": "没有要更新的字段"})
+    if "weekdays" in fields:
+        fields["weekdays"] = json.dumps(sorted(set(fields["weekdays"])))
+    if "target_ids" in fields:
+        fields["target_ids"] = json.dumps(fields["target_ids"])
+    if "enabled" in fields:
+        fields["enabled"] = 1 if fields["enabled"] else 0
+    fields["updated_at"] = db.now()
+    assignments = ", ".join(f"{key}=?" for key in fields)
+    with db.session() as conn:
+        conn.execute(
+            f"UPDATE schedules SET {assignments} WHERE id=?", (*fields.values(), schedule_id)
+        )
+        row = conn.execute("SELECT * FROM schedules WHERE id=?", (schedule_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, detail={"code": "SCHEDULE_NOT_FOUND", "message": "定时任务不存在"})
+    return {"data": _serialize_schedule(row)}
+
+
+@app.delete("/api/v1/schedules/{schedule_id}")
+def delete_schedule(schedule_id: str):
+    with db.session() as conn:
+        conn.execute("DELETE FROM schedules WHERE id=?", (schedule_id,))
+    db.log("schedule.delete", schedule_id, {})
+    return {"data": {"id": schedule_id, "deleted": True}}
+
+
+@app.post("/api/v1/schedules/{schedule_id}/run")
+def run_schedule_now(schedule_id: str):
+    with db.session() as conn:
+        row = conn.execute("SELECT * FROM schedules WHERE id=?", (schedule_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, detail={"code": "SCHEDULE_NOT_FOUND", "message": "定时任务不存在"})
+    schedule = _serialize_schedule(row)
+    result = scheduler.run_schedule(schedule)
+    return {"data": result}

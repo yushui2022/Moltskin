@@ -14,7 +14,7 @@ from threading import Thread
 
 from camoufox.fingerprints import get_random_preset
 
-from . import config, db
+from . import config, db, extensions
 
 ACTIVE_STATES = ("starting", "running", "stopping")
 
@@ -151,6 +151,15 @@ def launch(profile_id: str, actor: str = "local") -> dict:
     plan_path = config.RUN_DIR / f"{session_id}.plan.json"
     log_path = config.RUN_DIR / f"{session_id}.log"
 
+    with db.session() as conn:
+        ext_ids = [
+            row["ext_id"]
+            for row in conn.execute(
+                "SELECT ext_id FROM profile_extensions WHERE profile_id=?", (profile_id,)
+            ).fetchall()
+        ]
+    addon_paths = extensions.paths_for(ext_ids)
+
     plan = {
         "profile_id": profile_id,
         "session_id": session_id,
@@ -161,6 +170,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         or bool(db.get_setting("headless", False)),
         "fingerprint": fingerprint,
         "fingerprint_preset": fingerprint.get("preset"),
+        "addons": addon_paths,
         "proxy": proxy,
         "manager_url": config.MANAGER_URL
         if config.OPEN_MANAGER and db.get_setting("open_manager_on_launch", True)
@@ -237,6 +247,19 @@ def launch(profile_id: str, actor: str = "local") -> dict:
 
     db.log("profile.launch", profile_id, {"session_id": session_id}, actor=actor)
     return {"session_id": session_id, "profile_id": profile_id, "state": "running"}
+
+
+def stop_profile(profile_id: str, actor: str = "local") -> dict:
+    """按环境关闭：找到该环境当前活跃的会话再停。"""
+    with db.session() as conn:
+        row = conn.execute(
+            "SELECT id FROM sessions WHERE profile_id=? AND state IN ('starting','running','stopping') "
+            "ORDER BY started_at DESC LIMIT 1",
+            (profile_id,),
+        ).fetchone()
+    if row is None:
+        raise LaunchError("NOT_RUNNING", "该环境未在运行", 409)
+    return stop(row["id"], actor=actor)
 
 
 def stop(session_id: str, actor: str = "local") -> dict:
