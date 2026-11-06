@@ -318,7 +318,29 @@ def index():
 
 @app.get("/favicon.ico")
 def favicon():
-    return Response(status_code=204)
+    return FileResponse(config.WEB_DIR / "favicon-32.png", media_type="image/png")
+
+
+@app.get("/logo.svg")
+def logo():
+    return FileResponse(config.WEB_DIR / "logo.svg", media_type="image/svg+xml")
+
+
+@app.get("/logo.png")
+def logo_png():
+    return FileResponse(config.WEB_DIR / "logo.png", media_type="image/png")
+
+
+@app.get("/apple-touch-icon.png")
+def apple_touch_icon():
+    return FileResponse(config.WEB_DIR / "apple-touch-icon.png", media_type="image/png")
+
+
+@app.get("/favicon-16.png")
+@app.get("/favicon-32.png")
+def favicon_png(request: Request):
+    name = request.url.path.lstrip("/")
+    return FileResponse(config.WEB_DIR / name, media_type="image/png")
 
 
 @app.get("/fonts/{name}")

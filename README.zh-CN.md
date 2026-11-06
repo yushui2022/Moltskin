@@ -1,5 +1,7 @@
 # Moltskin
 
+<p align="center"><img src="docs/logo.svg" width="76" alt="Moltskin logo"></p>
+
 基于 Camoufox 的本地多环境指纹浏览器。
 
 [English](README.md)

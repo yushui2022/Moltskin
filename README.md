@@ -1,5 +1,7 @@
 # Moltskin
 
+<p align="center"><img src="docs/logo.svg" width="76" alt="Moltskin logo"></p>
+
 **Self-hosted multi-profile browser with stable fingerprints, proxies, and a local API.**
 
 Moltskin is an open-source, local-first alternative to commercial anti-detect browsers.

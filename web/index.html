@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>Moltskin · 指纹浏览器</title>
 <style>
 @font-face {
@@ -91,9 +95,7 @@ body {
 .brand { display: flex; align-items: center; gap: 9px; padding: 6px 8px 18px; }
 .brand .logo {
   width: 28px; height: 28px; border-radius: 6px;
-  background: #1a1a1a; color: #fff;
-  display: grid; place-items: center;
-  font-weight: 600; font-size: 15px;
+  display: block; object-fit: contain;
 }
 .brand-name { font-size: 14px; font-weight: 600; letter-spacing: -.1px; }
 .nav { display: flex; flex-direction: column; gap: 2px; }
@@ -449,7 +451,7 @@ button, input, select { font: inherit; }
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="logo">M</div><div class="brand-name">Moltskin</div></div>
+    <div class="brand"><img class="logo" src="/logo.svg" width="28" height="28" alt="Moltskin logo"><div class="brand-name">Moltskin</div></div>
     <nav class="nav" id="nav">
       <a class="nav-item active" data-page="windows" title="浏览器窗口" aria-current="page">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
