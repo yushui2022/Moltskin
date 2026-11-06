@@ -14,8 +14,6 @@ and exposes them through a web UI and a local REST API.
 
 ---
 
-Chinese design notes: [docs/PLAN.md](docs/PLAN.md).
-
 ## Why Moltskin
 
 - **Local-first** — profiles, cookies and logs stay on your machine. No cloud account.
@@ -226,6 +224,12 @@ comply with the target platform's terms and applicable law.
 It does not provide, and must not be used for, bulk account registration,
 identity fraud, captcha farming, or bypassing platform KYC. Fingerprint
 detection is an ongoing arms race; no tool can guarantee 100% undetectability.
+
+## Credits
+
+The interface design language is inspired by [Twenty](https://github.com/twentyhq/twenty).
+Only visual tokens and layout patterns were reimplemented for this project; no
+Twenty source code is included.
 
 ## License
 
