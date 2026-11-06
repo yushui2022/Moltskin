@@ -50,35 +50,11 @@ body {
 .app {
   display: grid;
   grid-template-columns: 208px 1fr;
-  grid-template-rows: 44px 1fr;
+  grid-template-rows: 1fr;
   height: 100vh;
   min-width: 0;
   background: transparent;
 }
-
-/* 标题栏：复刻浏览器顶部的紫黑渐变 */
-.titlebar {
-  grid-column: 1 / -1;
-  background: linear-gradient(100deg, #2b263a 0%, #171518 42%, #171518 68%, #3e2122 100%);
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  padding: 0 14px;
-  gap: 12px;
-  position: relative;
-  user-select: none;
-  border-bottom: 1px solid rgba(156, 133, 221, .16);
-}
-.traffic { display: flex; gap: 8px; }
-.dot { width: 11px; height: 11px; border-radius: 50%; }
-.dot.r { background: #ff5f57; }
-.dot.y { background: #febc2e; }
-.dot.g { background: #28c840; }
-.titlebar .name {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  font-size: 12px; font-weight: 500; color: rgba(243, 240, 248, .72);
-}
-.titlebar .right { margin-left: auto; display: flex; gap: 14px; font-size: 11px; color: rgba(243, 240, 248, .5); }
 
 /* 侧边栏 */
 .sidebar {
@@ -511,11 +487,6 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 @media (max-width: 620px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { display: none; }
-  .titlebar .right { display: none; }
-  .titlebar .name {
-    position: static; transform: none; margin-left: 8px;
-    font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -547,12 +518,6 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 </head>
 <body>
 <div class="app">
-  <div class="titlebar">
-    <div class="traffic"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
-    <div class="name">Moltskin 0.1.0 · Camoufox 158</div>
-    <div class="right"><span>本地服务</span><span class="sep">|</span><span>简体中文</span></div>
-  </div>
-
   <aside class="sidebar">
     <div class="brand"><div class="logo">M</div><div class="brand-name">Moltskin</div></div>
     <nav class="nav" id="nav">
