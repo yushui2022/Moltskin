@@ -253,8 +253,11 @@ Twenty source code is included.
 
 ## License
 
-Moltskin is licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+Moltskin is licensed under the Apache License 2.0 — see [LICENSE](LICENSE).
+Commercial use, closed-source forks and redistribution are allowed.
 
-Camoufox is a separate project licensed under MPL-2.0. See [NOTICE](NOTICE).
-The bundled Noto Sans SC font is licensed under SIL OFL 1.1
-(`web/fonts/OFL.txt`).
+It builds on Camoufox: the Python package is MIT, the patched Firefox browser
+build is MPL-2.0. Moltskin runs both unmodified, so nothing in this repository
+becomes MPL-covered. See [NOTICE](NOTICE) for the full third-party list, the
+bundled Noto Sans SC / Inter fonts (SIL OFL 1.1) and what redistribution of the
+browser binary requires.

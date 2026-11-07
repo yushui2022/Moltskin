@@ -1,21 +1,44 @@
 Moltskin
 Copyright 2026 Moltskin contributors
+Licensed under the Apache License 2.0 (see LICENSE).
 
-This product depends on and redistributes the Camoufox browser build.
+This product builds on Camoufox and ships its browser binary in the Docker
+image and in release bundles. The components and their licenses:
 
-Camoufox
-https://github.com/daijro/camoufox
-Licensed under the Mozilla Public License 2.0 (MPL-2.0).
-Moltskin invokes Camoufox as a separate runtime and does not modify its
-source code. Any redistribution of a modified Camoufox build must comply
-with the MPL-2.0.
+Camoufox (Python package)
+  https://github.com/daijro/camoufox
+  MIT License. Imported as a dependency; Moltskin does not modify or vendor
+  its source.
+
+Camoufox browser build (patched Firefox)
+  https://github.com/daijro/camoufox
+  Mozilla Public License 2.0 (MPL-2.0), inherited from Firefox.
+  Moltskin launches this build unmodified as a separate process. When the
+  binary is redistributed (Docker image, installer), recipients must be able
+  to obtain the corresponding source; see the Camoufox and Mozilla
+  repositories. If you patch any MPL-2.0 covered file, those files must be
+  made available under the MPL-2.0.
+
+GeoIP database
+  Downloaded at first run into the user's cache directory and not bundled by
+  Moltskin. The combined MaxMind-format database is published by the Camoufox
+  project; the underlying data is subject to MaxMind GeoLite2 terms
+  (CC BY-SA 4.0). Redistributing the database requires attribution.
+
+Playwright          Apache-2.0
+FastAPI             MIT
+Uvicorn             BSD-3-Clause
+HTTPX               BSD-3-Clause
+MCP Python SDK      MIT
+Pydantic            MIT
 
 Noto Sans SC
-https://fonts.google.com/noto/specimen/Noto+Sans+SC
-Licensed under the SIL Open Font License 1.1.
-See moltskin/web/fonts/OFL.txt.
+  https://fonts.google.com/noto/specimen/Noto+Sans+SC
+  SIL Open Font License 1.1. See web/fonts/OFL.txt.
 
 Inter
-https://rsms.me/inter/
-Licensed under the SIL Open Font License 1.1.
-See web/fonts/OFL-Inter.txt.
+  https://rsms.me/inter/
+  SIL Open Font License 1.1. See web/fonts/OFL-Inter.txt.
+
+The interface design language is inspired by Twenty
+(https://github.com/twentyhq/twenty); no Twenty source code is included.
