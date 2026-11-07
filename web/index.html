@@ -631,7 +631,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
     <div class="brand">
       <img src="/logo.svg" width="30" height="30" alt="Moltskin">
       <div class="brand-name">Moltskin</div>
-      <span class="brand-ver">v0.4</span>
+      <span class="brand-ver">v0.4.1</span>
     </div>
 
     <nav class="nav" id="nav">
@@ -2455,7 +2455,10 @@ $("importFile").addEventListener("change", async (e) => {
     const profiles = Array.isArray(data) ? data : (data.profiles || data?.data?.profiles);
     if (!Array.isArray(profiles)) throw new Error("文件格式不正确");
     const result = await api("/import/profiles", { method: "POST", body: JSON.stringify({ profiles }) });
-    toast(`导入 ${result.created} 个${result.skipped?.length ? `，跳过 ${result.skipped.length}` : ""}`);
+    const notes = [];
+    if (result.skipped?.length) notes.push(`跳过 ${result.skipped.length}`);
+    if (result.renamed?.length) notes.push(`${result.renamed.length} 个重名已自动加序号`);
+    toast(`导入 ${result.created} 个${notes.length ? `，${notes.join("，")}` : ""}`);
     await refresh();
   } catch (err) {
     toast(err.message, true);

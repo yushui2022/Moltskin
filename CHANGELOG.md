@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.4.1 — 2026-11-07
+
+Hardening pass driven by end-to-end testing. 90 checks across four suites
+(`tests/test_e2e.py`, `test_edge.py`, `test_runtime.py` + unit tests).
+
+### Fixed
+
+- **无法解绑代理 / 移出分组**：`PATCH` 把 `null` 当成"没传"，在编辑弹窗里选
+  「不使用代理」或「未分组」实际不会生效。改用 `exclude_unset` 区分两者。
+  代理的用户名密码、分组的 parent_id 同样受益。
+- **`require_proxy_ok` 是死设置**：从来没有被读取。现在严格模式会拦下未检测的
+  代理；坏代理始终拦截（避免带坏代理启动暴露本机 IP）。
+- **环境上限 / 每日打开上限只显示不生效**：现在创建超限返回 409，打开超限返回
+  429，错误码 `PROFILE_LIMIT` / `DAILY_LIMIT`。
+- **"今日打开"跨时区算错**：本地 0 点直接和 UTC 时间戳比字符串，UTC+8 会漏算。
+  改为把本地 0 点换算成 UTC 再比较。
+- **定时任务可能重复触发**：用 `last_run_at[:10]`（UTC 日期）判断"今天跑过没"，
+  本地凌晨的任务会重复执行整个 10 分钟宽限窗口。改为按本地日期比较。
+- **改操作系统不换指纹预设**：`os` 变了但预设还是旧的，UA 与系统对不上。
+  现在换系统会自动重新生成预设。
+- **运行中导出 Cookie 可能读到旧数据**：只读连接用了 `immutable=1`，会忽略
+  WAL。现在优先普通只读，失败才退回。
+- **备份临时目录泄漏**：只删了 zip，父目录留在 /tmp。现在随响应一起清理。
+- **导入重名静默改名**：现在返回 `renamed` 列表并在提示里说明。
+
+### Tests
+
+- `tests/test_e2e.py` — 全链路 34 项
+- `tests/test_edge.py` — 边界与回归 31 项
+- `tests/test_runtime.py` — 真实浏览器身份一致、进程回收、调度触发 10 项
+
+
 ## 0.4.0 — 2026-11-06
 
 ### Added

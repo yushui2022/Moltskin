@@ -27,8 +27,7 @@ def _due_daily(schedule: dict[str, Any]) -> bool:
         hour, minute = (int(part) for part in str(schedule["time_of_day"]).split(":"))
     except (ValueError, AttributeError):
         return False
-    today = _today()
-    if (schedule.get("last_run_at") or "")[:10] == today:
+    if db.local_date(schedule.get("last_run_at")) == datetime.now().astimezone().date():
         return False
     weekdays = schedule.get("weekdays") or [1, 2, 3, 4, 5, 6, 7]
     if datetime.now().astimezone().isoweekday() not in weekdays:

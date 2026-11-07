@@ -135,6 +135,25 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def today_start_utc() -> str:
+    """本地“今天 0 点”对应的 UTC 时间。
+
+    数据库里存的是 UTC ISO 字符串，直接用本地 0 点去比会错开时区，
+    导致“今日打开”少算或调度任务重复触发。
+    """
+    local_midnight = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    return local_midnight.astimezone(timezone.utc).isoformat()
+
+
+def local_date(iso: str | None):
+    if not iso:
+        return None
+    try:
+        return datetime.fromisoformat(iso).astimezone().date()
+    except ValueError:
+        return None
+
+
 def connect() -> sqlite3.Connection:
     config.ensure_dirs()
     conn = sqlite3.connect(config.DB_PATH, timeout=15)

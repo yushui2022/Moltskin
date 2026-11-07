@@ -330,7 +330,7 @@ async def lifespan(app: FastAPI):
         stop_event.set()
 
 
-app = FastAPI(title="Moltskin", version="0.4.0", lifespan=lifespan)
+app = FastAPI(title="Moltskin", version="0.4.1", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -404,7 +404,7 @@ def font(name: str):
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "version": "0.4.0"}
+    return {"status": "ok", "version": "0.4.1"}
 
 
 @app.get("/api/v1/export/profiles")
@@ -445,6 +445,7 @@ def import_profiles(payload: ImportRequest):
     if not payload.profiles:
         raise HTTPException(422, detail={"code": "NOTHING_TO_IMPORT", "message": "没有可导入的环境"})
     created = 0
+    renamed: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []
     with db.session() as conn:
         existing_names = {row["name"] for row in conn.execute("SELECT name FROM profiles").fetchall()}
@@ -463,6 +464,8 @@ def import_profiles(payload: ImportRequest):
             while final_name in existing_names:
                 final_name = f"{name} ({suffix})"
                 suffix += 1
+            if final_name != name:
+                renamed.append({"from": name, "to": final_name})
 
             group_id = None
             group_name = str(item.get("group") or "").strip()
@@ -512,16 +515,15 @@ def import_profiles(payload: ImportRequest):
             )
             existing_names.add(final_name)
             created += 1
-    db.log("profiles.import", None, {"created": created, "skipped": len(skipped)})
-    return {"data": {"created": created, "skipped": skipped}}
+    db.log("profiles.import", None, {"created": created, "renamed": len(renamed),
+                                     "skipped": len(skipped)})
+    return {"data": {"created": created, "renamed": renamed, "skipped": skipped}}
 
 
 @app.get("/api/v1/stats")
 def stats():
     launcher.reap_stale()
-    today_start = (
-        datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    )
+    today_start = db.today_start_utc()
     with db.session() as conn:
         total = conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"]
         running = conn.execute(
@@ -716,6 +718,18 @@ def list_profiles(q: str = "", status: str = "", group_id: str = "",
 
 @app.post("/api/v1/profiles", status_code=201)
 def create_profile(payload: ProfileCreate):
+    limit = int(db.get_setting("profile_limit", 200) or 0)
+    if limit > 0:
+        with db.session() as conn:
+            total = conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"]
+        if total >= limit:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "PROFILE_LIMIT",
+                    "message": f"环境数量已达上限（{limit}），可在设置中调整",
+                },
+            )
     profile_id = new_id("pf")
     user_data_dir = config.PROFILES_DIR / profile_id
     user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -756,12 +770,16 @@ def get_profile(profile_id: str):
 @app.patch("/api/v1/profiles/{profile_id}")
 def update_profile(profile_id: str, payload: ProfileUpdate):
     row = get_profile_row(profile_id)
+    # exclude_unset 才能区分“字段没传”和“显式传 null（解绑代理 / 移出分组）”
+    provided = payload.model_dump(exclude_unset=True)
     fields: dict[str, Any] = {}
     for key in ("name", "group_id", "proxy_id", "remark", "os", "headless"):
-        value = getattr(payload, key)
-        if value is not None:
+        if key in provided:
+            value = provided[key]
+            if key in ("group_id", "proxy_id") and value == "":
+                value = None
             fields[key] = value
-    if payload.tags is not None:
+    if "tags" in provided and payload.tags is not None:
         fields["tags"] = json.dumps(payload.tags, ensure_ascii=False)
     if payload.fingerprint is not None:
         if row["status"] == "running":
@@ -769,6 +787,13 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
                 409, detail={"code": "PROFILE_RUNNING", "message": "运行中的环境不能修改指纹"}
             )
         fields["fingerprint"] = json.dumps(payload.fingerprint, ensure_ascii=False)
+    elif "os" in fields and fields["os"] != row["os"]:
+        # 换了系统就必须换预设，否则 UA / 平台与系统对不上
+        fingerprint = json.loads(row["fingerprint"] or "{}")
+        preset = get_random_preset(os=fields["os"])
+        if preset:
+            fingerprint["preset"] = preset
+            fields["fingerprint"] = json.dumps(fingerprint, ensure_ascii=False)
     if not fields:
         return {"data": serialize_profile(row)}
 
@@ -1114,7 +1139,7 @@ def create_group(payload: GroupCreate):
 
 @app.patch("/api/v1/groups/{group_id}")
 def update_group(group_id: str, payload: GroupUpdate):
-    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    fields = payload.model_dump(exclude_unset=True)
     if fields:
         fields["updated_at"] = db.now()
         assignments = ", ".join(f"{k}=?" for k in fields)
@@ -1224,7 +1249,7 @@ def bulk_create_proxies(payload: dict[str, Any]):
 
 @app.patch("/api/v1/proxies/{proxy_id}")
 def update_proxy(proxy_id: str, payload: ProxyUpdate):
-    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    fields = payload.model_dump(exclude_unset=True)
     if fields:
         fields["updated_at"] = db.now()
         fields["status"] = "unchecked"
@@ -1759,7 +1784,7 @@ def download_backup(include_profiles: bool = False):
         path,
         media_type="application/zip",
         filename=f"moltskin-backup-{stamp}.zip",
-        background=BackgroundTask(lambda: path.unlink(missing_ok=True)),
+        background=BackgroundTask(lambda: shutil.rmtree(path.parent, ignore_errors=True)),
     )
 
 

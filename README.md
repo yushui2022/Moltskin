@@ -251,6 +251,15 @@ The interface design language is inspired by [Twenty](https://github.com/twentyh
 Only visual tokens and layout patterns were reimplemented for this project; no
 Twenty source code is included.
 
+## Testing
+
+```bash
+pytest tests -q                       # unit / smoke
+python tests/test_e2e.py              # full loop against a running service
+python tests/test_edge.py             # input limits, quotas, error paths
+python tests/test_runtime.py          # real browser identity, reaper, scheduler
+```
+
 ## License
 
 Moltskin is licensed under the Apache License 2.0 — see [LICENSE](LICENSE).

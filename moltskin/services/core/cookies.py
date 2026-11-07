@@ -48,8 +48,13 @@ def _connect(user_data_dir: str | Path, writable: bool = False) -> sqlite3.Conne
         return conn
     if not path.exists():
         raise FileNotFoundError(str(path))
-    # 只读并忽略锁，环境运行中也能导出
-    conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True, timeout=5)
+    # 优先按普通只读打开，这样能看到 WAL 里刚写入但未 checkpoint 的 Cookie；
+    # 打不开（例如被完全锁住）再退回 immutable，至少能导出旧数据。
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        conn.execute("SELECT 1 FROM moz_cookies LIMIT 1")
+    except sqlite3.Error:
+        conn = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True, timeout=5)
     conn.row_factory = sqlite3.Row
     return conn
 

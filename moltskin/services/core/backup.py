@@ -35,8 +35,9 @@ def _snapshot_db(dest: Path) -> None:
 
 
 def create(include_profiles: bool = False) -> Path:
-    """生成备份文件，返回临时路径。"""
-    tmp = Path(tempfile.mkdtemp(prefix="moltskin-backup-")) / "moltskin-backup.zip"
+    """生成备份文件，返回临时路径（同目录会在响应结束后删除）。"""
+    workdir = Path(tempfile.mkdtemp(prefix="moltskin-backup-"))
+    tmp = workdir / "moltskin-backup.zip"
     db_copy = tmp.parent / DB_NAME
     _snapshot_db(db_copy)
 
@@ -71,7 +72,7 @@ def create(include_profiles: bool = False) -> Path:
             json.dumps(
                 {
                     "app": "moltskin",
-                    "version": "0.4.0",
+                    "version": "0.4.1",
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "include_profiles": include_profiles,
                     "profiles": profiles,

@@ -126,13 +126,31 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 429,
             )
 
+        daily_limit = int(db.get_setting("daily_open_limit", 20000))
+        if daily_limit > 0:
+            opened_today = conn.execute(
+                "SELECT COUNT(*) AS n FROM sessions WHERE started_at >= ?",
+                (db.today_start_utc(),),
+            ).fetchone()["n"]
+            if opened_today >= daily_limit:
+                raise LaunchError(
+                    "DAILY_LIMIT",
+                    f"今日打开次数已达上限（{daily_limit}），可在设置中调整",
+                    429,
+                )
+
         proxy = None
         if profile["proxy_id"]:
             row = conn.execute("SELECT * FROM proxies WHERE id=?", (profile["proxy_id"],)).fetchone()
             if row is None:
                 raise LaunchError("PROXY_FAILED", "绑定的代理不存在", 422)
+            # 坏代理一定要拦：带着坏代理打开环境会直接暴露本机 IP
             if row["status"] in ("failed", "mismatch"):
                 raise LaunchError("PROXY_FAILED", "代理不可用，请先重新检测", 422)
+            if db.get_setting("require_proxy_ok", False) and row["status"] not in ("ok", "slow"):
+                raise LaunchError(
+                    "PROXY_UNCHECKED", "严格模式下代理必须先检测通过", 422
+                )
             proxy = dict(row)
 
     fingerprint = json.loads(profile["fingerprint"] or "{}")
