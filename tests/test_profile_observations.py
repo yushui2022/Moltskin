@@ -21,10 +21,7 @@ PRESET = {
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    for name in ("DB_PATH", "PROFILES_DIR", "RUN_DIR", "LOG_DIR", "SELFTEST_DIR", "TOKEN_PATH"):
-        monkeypatch.setattr(config, name, tmp_path / getattr(config, name).name)
-    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+def client(data_dir, monkeypatch):
     monkeypatch.setattr(config, "FORCE_HEADLESS", False)
     db.init_db()
     monkeypatch.setattr(main, "installed_verstr", lambda: "158.0")

@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import hmac
-import os
 import sys
-import tempfile
 from pathlib import Path
+
+import pytest
 
 # Make `import moltskin` work when running from the repository root.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ.setdefault("MOLTSKIN_DATA_DIR", tempfile.mkdtemp(prefix="moltskin-test-"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 from moltskin.services.core import main  # noqa: E402
 from moltskin.services.core.main import _ua_os, fingerprint_preview  # noqa: E402
 from moltskin.services.core.security import get_token  # noqa: E402
+
+
+pytestmark = pytest.mark.usefixtures("data_dir")
 
 
 def _client() -> TestClient:

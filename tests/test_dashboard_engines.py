@@ -15,17 +15,6 @@ RESTRICT_FONTS = "--moltskin-disable-local-font-access"
 
 
 @pytest.fixture
-def data_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("MOLTSKIN_DATA_DIR", str(tmp_path))
-    from moltskin.services.core import config
-
-    for name in ("DB_PATH", "PROFILES_DIR", "RUN_DIR", "LOG_DIR", "SELFTEST_DIR", "TOKEN_PATH"):
-        monkeypatch.setattr(config, name, tmp_path / getattr(config, name).name)
-    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
-    return tmp_path
-
-
-@pytest.fixture
 def client(data_dir, monkeypatch):
     from moltskin.services.core import main
     from moltskin.services.core.security import get_token

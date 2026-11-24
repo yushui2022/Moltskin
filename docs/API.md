@@ -83,6 +83,8 @@ curl -X POST .../profiles/pf_.../launch -H "Authorization: Bearer $TOKEN"
 curl -X POST .../profiles/pf_.../stop   -H "Authorization: Bearer $TOKEN"
 ```
 
+The stop response reports the saved session state. After a service restart, Moltskin checks process ownership before stopping a browser and uses the Camoufox runner's recorded outcome when available. If a Chromium process ended while its supervisor was offline, session history reports `stopped` with `EXIT_UNCONFIRMED` because its exit code was unavailable.
+
 ### Verify
 
 ```bash
@@ -209,7 +211,7 @@ curl -X POST .../profiles/pf_b/sync-from/pf_a?parts=cookies,storage \
 
 A database-only backup uses SQLite's online snapshot, so profiles may keep
 running. `include_profiles=true` requires everything stopped. It includes Camoufox login state. The manifest lists Chromium profiles under `profile_data_excluded`. Their settings are included in the database snapshot. Restore keeps the
-previous database as `moltskin.db.bak`.
+previous database as `moltskin.db.bak`, including its committed WAL changes. Restored environments use the current installation's profile directory. Sessions that were active when the backup was taken are archived as stopped, and historical session records remain available.
 
 ## Schedules
 
@@ -239,9 +241,7 @@ previous database as `moltskin.db.bak`.
 
 ## In-browser console button
 
-Every profile loads a built-in extension (`moltskin/builtin/manager-button`) that
-adds a sidebar entry, a toolbar button and `Alt+Shift+M`. Toggle it with the
-`manager_button` setting.
+Camoufox profiles can load the built-in `moltskin/builtin/manager-button` extension with the `manager_button` setting. It adds a sidebar entry, a toolbar button and `Alt+Shift+M`. In Moltskin Chromium the native chameleon button beside the address bar opens the local dashboard home.
 The scheduler runs on the service, catches up tasks missed by up to 10 minutes,
 and records `last_run_at` / `last_result`.
 
@@ -263,13 +263,17 @@ curl .../jobs/job_... -H "Authorization: Bearer $TOKEN"
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" .../export/profiles -o profiles.json
+curl -X POST .../export/profiles -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ids":["pf_example"]}' -o selected-profiles.json
 curl -X POST .../import/profiles -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"profiles": [...]}'
 ```
 
-Export includes groups, tags, fingerprint presets and proxy metadata; proxy
-passwords are not exported.
+GET exports every environment. POST exports only the requested profile IDs in the same file format. A rename preserves the selection. If an ID no longer exists, the server returns HTTP 409 with `PROFILE_SELECTION_CHANGED` and `missing_ids` so the caller can refresh the selection.
+
+The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font policy and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.
 
 ## Settings and logs
 

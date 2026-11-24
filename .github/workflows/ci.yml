@@ -15,8 +15,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
       - name: Lint
-        run: ruff check --select E9,F moltskin tests
+        run: ruff check --select E9,F chromium moltskin tests
       - name: Byte-compile
-        run: python -m compileall -q moltskin tests
-      - name: Smoke tests
-        run: pytest -q tests/test_smoke.py tests/test_profile_observations.py
+        run: python -m compileall -q chromium moltskin tests
+      - name: Offline regression tests
+        run: python -m pytest -q tests

@@ -12,8 +12,9 @@ import shutil
 import sqlite3
 import tempfile
 import zipfile
+from contextlib import closing
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from . import config
@@ -22,16 +23,10 @@ MANIFEST = "manifest.json"
 DB_NAME = "moltskin.db"
 
 
-def _snapshot_db(dest: Path) -> None:
-    source = sqlite3.connect(config.DB_PATH)
-    try:
-        target = sqlite3.connect(dest)
-        try:
-            source.backup(target)
-        finally:
-            target.close()
-    finally:
-        source.close()
+def _copy_database(source: Path, destination: Path) -> None:
+    with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src:
+        with closing(sqlite3.connect(destination)) as dst:
+            src.backup(dst)
 
 
 def create(include_profiles: bool = False) -> Path:
@@ -39,7 +34,7 @@ def create(include_profiles: bool = False) -> Path:
     workdir = Path(tempfile.mkdtemp(prefix="moltskin-backup-"))
     tmp = workdir / "moltskin-backup.zip"
     db_copy = tmp.parent / DB_NAME
-    _snapshot_db(db_copy)
+    _copy_database(config.DB_PATH.resolve(), db_copy)
 
     with sqlite3.connect(db_copy) as conn:
         conn.row_factory = sqlite3.Row
@@ -91,6 +86,38 @@ def create(include_profiles: bool = False) -> Path:
     return tmp
 
 
+def _prepare_incoming(incoming: Path) -> set[str]:
+    """Rebase a private backup copy before changing the live database."""
+    camoufox_ids = set()
+    with closing(sqlite3.connect(incoming)) as conn, conn:
+        conn.execute("PRAGMA trusted_schema=OFF")
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(profiles)")}
+        engine = "engine" if "engine" in columns else "'camoufox'"
+        profiles = conn.execute(f"SELECT id, {engine} FROM profiles").fetchall()
+        root = config.PROFILES_DIR.resolve()
+        for profile_id, engine_name in profiles:
+            if (not isinstance(profile_id, str) or not profile_id or profile_id in (".", "..")
+                    or "/" in profile_id or "\\" in profile_id or "\x00" in profile_id
+                    or PureWindowsPath(profile_id).drive):
+                raise ValueError("备份包含无效的环境 ID")
+            dest = root / profile_id
+            if dest.is_symlink() or (dest.exists() and not dest.is_dir()):
+                raise ValueError("恢复位置已有同名文件或环境目录链接")
+            conn.execute("UPDATE profiles SET user_data_dir=? WHERE id=?", (str(dest), profile_id))
+            if engine_name == "camoufox":
+                camoufox_ids.add(profile_id)
+
+        conn.execute("UPDATE profiles SET status='ready' WHERE status='running'")
+        conn.execute("UPDATE profiles SET last_session_id=NULL")
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone():
+            conn.execute(
+                "UPDATE sessions SET state='stopped', pid=NULL, ended_at=COALESCE(ended_at, ?) "
+                "WHERE state IN ('starting', 'running', 'stopping')",
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+    return camoufox_ids
+
+
 def restore(archive: bytes) -> dict[str, Any]:
     """从备份包恢复。会先校验、再把当前数据库备份成 .bak。"""
     try:
@@ -112,25 +139,16 @@ def restore(archive: bytes) -> dict[str, Any]:
         zf.extractall(workdir)
         incoming = workdir / DB_NAME
 
-        # 校验即将替换的数据库能打开且有 profiles 表
         try:
-            conn = sqlite3.connect(f"file:{incoming}?mode=ro", uri=True)
-            columns = {col[1] for col in conn.execute("PRAGMA table_info(profiles)")}
-            profile_query = "SELECT id FROM profiles"
-            if "engine" in columns:
-                profile_query += " WHERE engine='camoufox'"
-            camoufox_ids = {row[0] for row in conn.execute(profile_query)}
-            conn.close()
+            camoufox_ids = _prepare_incoming(incoming)
         except sqlite3.Error as exc:
-            raise ValueError(f"备份中的数据库不可用：{exc}")
+            raise ValueError(f"备份中的数据库不可用：{exc}") from exc
 
         config.ensure_dirs()
-        for suffix in ("-wal", "-shm"):
-            Path(str(config.DB_PATH) + suffix).unlink(missing_ok=True)
         backup_path = config.DB_PATH.with_suffix(".db.bak")
         if config.DB_PATH.exists():
-            shutil.copy2(config.DB_PATH, backup_path)
-        shutil.copy2(incoming, config.DB_PATH)
+            _copy_database(config.DB_PATH.resolve(), backup_path)
+        _copy_database(incoming.resolve(), config.DB_PATH)
 
         ext_in = workdir / "extensions"
         if ext_in.exists():

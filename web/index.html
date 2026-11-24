@@ -1466,6 +1466,19 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   </div>
 </div>
 
+<!-- 环境配置导入结果 -->
+<div class="mask" id="importReportMask">
+  <div class="modal" aria-labelledby="importReportTitle">
+    <div class="head"><span id="importReportTitle">环境配置导入结果</span></div>
+    <div class="body single">
+      <p id="importReportSummary"></p>
+      <section class="section" id="importSkipped"><h3>已跳过</h3><ul></ul></section>
+      <section class="section" id="importRenamed"><h3>已重命名</h3><ul></ul></section>
+    </div>
+    <div class="foot"><button class="btn primary" data-close="importReportMask">完成</button></div>
+  </div>
+</div>
+
 <!-- 任务进度 -->
 <div class="mask" id="jobMask">
   <div class="modal" style="width:520px">
@@ -2715,21 +2728,29 @@ $("confirmBatch").onclick = async () => {
 /* ---------------- 导入导出 ---------------- */
 async function exportProfiles(ids = null) {
   try {
-    const res = await fetch("/api/v1/export/profiles", { headers: { Authorization: "Bearer " + TOKEN } });
-    if (!res.ok) throw new Error("导出失败");
-    const data = await res.json();
-    let payload = data;
-    if (ids && Array.isArray(data?.profiles)) {
-      const names = new Set(ids.map((id) => state.profiles.find((p) => p.id === id)?.name).filter(Boolean));
-      payload = { ...data, profiles: data.profiles.filter((p) => names.has(p.name)) };
+    const options = { headers: { Authorization: "Bearer " + TOKEN } };
+    if (ids !== null) {
+      options.method = "POST";
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify({ ids });
     }
+    const res = await fetch("/api/v1/export/profiles", options);
+    const payload = await res.json();
+    if (!res.ok) {
+      if (payload.error?.code === "PROFILE_SELECTION_CHANGED") {
+        for (const id of payload.error.missing_ids) state.selected.delete(id);
+        await refresh({ silent: true });
+      }
+      throw new Error(payload.error?.message || `导出失败 (${res.status})`);
+    }
+    if (!Array.isArray(payload.profiles)) throw new Error("导出文件缺少环境列表");
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `moltskin-profiles-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
-    toast(ids ? `已导出 ${ids.length} 个环境` : "已导出");
+    toast(`已导出 ${payload.profiles.length} 个环境`);
   } catch (err) { toast(err.message, true); }
 }
 
@@ -2738,13 +2759,22 @@ $("importFile").addEventListener("change", async (e) => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    const profiles = Array.isArray(data) ? data : (data.profiles || data?.data?.profiles);
+    const profiles = Array.isArray(data) ? data : (data?.profiles ?? data?.data?.profiles);
     if (!Array.isArray(profiles)) throw new Error("文件格式不正确");
     const result = await api("/import/profiles", { method: "POST", body: JSON.stringify({ profiles }) });
-    const notes = [];
-    if (result.skipped?.length) notes.push(`跳过 ${result.skipped.length}`);
-    if (result.renamed?.length) notes.push(`${result.renamed.length} 个重名已自动加序号`);
-    toast(`导入 ${result.created} 个${notes.length ? `，${notes.join("，")}` : ""}`);
+    const { created, skipped = [], renamed = [] } = result;
+    if (skipped.length || renamed.length) {
+      $("importReportSummary").textContent = `已导入 ${created} 个环境，跳过 ${skipped.length} 条。`;
+      $("importSkipped").hidden = !skipped.length;
+      $("importSkipped").querySelector("ul").innerHTML = skipped.map((item) =>
+        `<li>${item.row ? `第 ${esc(item.row)} 条 · ` : ""}${esc(item.name || "未命名")} — ${esc(item.reason)}</li>`).join("");
+      $("importRenamed").hidden = !renamed.length;
+      $("importRenamed").querySelector("ul").innerHTML = renamed.map((item) =>
+        `<li>${esc(item.from)} → ${esc(item.to)}</li>`).join("");
+      openModal("importReportMask");
+    } else {
+      toast(`已导入 ${created} 个环境`);
+    }
     await refresh();
   } catch (err) {
     toast(err.message, true);

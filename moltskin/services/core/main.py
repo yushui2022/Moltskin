@@ -17,7 +17,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from importlib.metadata import version as pkg_version
 from typing import Any, Literal
 
@@ -27,7 +27,7 @@ from camoufox.pkgman import installed_verstr
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from chromium import native as chromium_native
 
@@ -108,7 +108,25 @@ class BatchRequest(BaseModel):
 
 
 class ImportRequest(BaseModel):
-    profiles: list[dict[str, Any]] = Field(default_factory=list)
+    # Each row is validated separately so one invalid entry can be reported by row number.
+    profiles: list[Any] = Field(default_factory=list)
+
+
+class ImportedProxy(BaseModel):
+    name: str | None = None
+    protocol: Literal["http", "https", "socks5"] = "http"
+    host: str = Field(min_length=1)
+    port: int = Field(gt=0, lt=65536)
+    username: str | None = None
+
+
+class ImportedProfile(ProfileCreate):
+    group: str | None = None
+    proxy: ImportedProxy | None = None
+
+
+class ProfileSelection(BaseModel):
+    ids: list[str] = Field(min_length=1)
 
 
 class CookiePayload(BaseModel):
@@ -448,15 +466,35 @@ def health(panel_challenge: str | None = None):
 
 @app.get("/api/v1/export/profiles")
 def export_profiles():
+    return _profile_export()
+
+
+@app.post("/api/v1/export/profiles")
+def export_selected_profiles(selection: ProfileSelection):
+    return _profile_export(selection.ids)
+
+
+def _profile_export(ids: list[str] | None = None):
+    query = """
+        SELECT p.*, g.name AS group_name, px.name AS proxy_name,
+               px.protocol, px.host, px.port, px.username
+        FROM profiles p
+        LEFT JOIN groups g ON g.id = p.group_id
+        LEFT JOIN proxies px ON px.id = p.proxy_id
+    """
+    params = ()
+    if ids is not None:
+        query += " WHERE p.id IN (SELECT value FROM json_each(?))"
+        params = (json.dumps(ids),)
     with db.session() as conn:
-        rows = conn.execute(profile_query() + " ORDER BY p.created_at").fetchall()
-        groups = {row["id"]: row["name"] for row in conn.execute("SELECT id, name FROM groups").fetchall()}
-        proxies = {}
-        for row in conn.execute("SELECT * FROM proxies").fetchall():
-            proxies[row["id"]] = {
-                "name": row["name"], "protocol": row["protocol"], "host": row["host"],
-                "port": row["port"], "username": row["username"],
-            }
+        rows = conn.execute(query + " ORDER BY p.created_at, p.id", params).fetchall()
+    if ids is not None:
+        missing = sorted(set(ids) - {row["id"] for row in rows})
+        if missing:
+            raise HTTPException(409, detail={
+                "code": "PROFILE_SELECTION_CHANGED", "missing_ids": missing,
+                "message": f"选中的环境有 {len(missing)} 个已不存在，请刷新后重新选择",
+            })
     items = []
     for row in rows:
         fingerprint = json.loads(row["fingerprint"] or "{}")
@@ -464,13 +502,16 @@ def export_profiles():
             "name": row["name"],
             "engine": row["engine"],
             "local_fonts": row["local_fonts"],
-            "group": groups.get(row["group_id"]),
+            "group": row["group_name"],
             "tags": json.loads(row["tags"] or "[]"),
             "remark": row["remark"],
             "os": row["os"],
             "headless": bool(row["headless"]),
             "fingerprint": fingerprint,
-            "proxy": proxies.get(row["proxy_id"]),
+            "proxy": {
+                "name": row["proxy_name"], "protocol": row["protocol"], "host": row["host"],
+                "port": row["port"], "username": row["username"],
+            } if row["proxy_name"] is not None else None,
         })
     payload = {"version": 1, "exported_at": db.now(), "profiles": items}
     body = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -481,93 +522,118 @@ def export_profiles():
     )
 
 
+def _read_import_profile(raw: Any) -> ImportedProfile:
+    item = ImportedProfile.model_validate(raw)
+    item.name = item.name.strip()
+    if not item.name:
+        raise ValueError("名称为空")
+    _check_engine_options(item.engine, item.local_fonts, item.proxy, item.fingerprint)
+    if item.engine == "chromium":
+        if "os" in item.model_fields_set and item.os != "native":
+            raise ValueError("Chromium 使用本机操作系统")
+        item.os = "native"
+    else:
+        if item.os not in ("windows", "macos", "linux"):
+            raise ValueError("不支持的环境操作系统")
+        preset = item.fingerprint.get("preset")
+        if preset is not None:
+            if not isinstance(preset, dict) or any(
+                key in preset and not isinstance(preset[key], dict) for key in ("navigator", "screen", "webgl")
+            ):
+                raise ValueError("指纹预设格式不正确")
+        item.fingerprint = _fingerprint_with_preset(item.fingerprint, item.os)
+    return item
+
+
+def _store_import_profile(item: ImportedProfile) -> str:
+    ts = db.now()
+    profile_id = new_id("pf")
+    user_data_dir = config.PROFILES_DIR / profile_id
+    with ExitStack() as cleanup:
+        with db.session() as conn:
+            # Name allocation, shared references and the profile commit together for each row.
+            conn.execute("BEGIN IMMEDIATE")
+            name = item.name
+            suffix = 2
+            while conn.execute("SELECT 1 FROM profiles WHERE name=?", (name,)).fetchone():
+                ending = f" ({suffix})"
+                name = item.name[:120 - len(ending)] + ending
+                suffix += 1
+
+            group_id = None
+            group_name = (item.group or "").strip()
+            if group_name:
+                group = conn.execute("SELECT id FROM groups WHERE name=?", (group_name,)).fetchone()
+                if group:
+                    group_id = group["id"]
+                else:
+                    group_id = new_id("grp")
+                    conn.execute(
+                        "INSERT INTO groups(id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                        (group_id, group_name, ts, ts),
+                    )
+
+            proxy_id = None
+            proxy = item.proxy
+            if proxy is not None:
+                match = conn.execute(
+                    "SELECT id FROM proxies WHERE protocol=? AND host=? AND port=? AND COALESCE(username,'')=? "
+                    "ORDER BY (name=?) DESC, id LIMIT 1",
+                    (proxy.protocol, proxy.host, proxy.port, proxy.username or "", proxy.name or proxy.host),
+                ).fetchone()
+                if match:
+                    proxy_id = match["id"]
+                else:
+                    proxy_id = new_id("px")
+                    conn.execute(
+                        "INSERT INTO proxies(id, name, protocol, host, port, username, password, status, created_at, updated_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, '', 'unchecked', ?, ?)",
+                        (proxy_id, proxy.name or proxy.host, proxy.protocol, proxy.host, proxy.port, proxy.username, ts, ts),
+                    )
+
+            conn.execute(
+                "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
+                "user_data_dir, headless, status, created_at, updated_at, engine, local_fonts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
+                (profile_id, name, group_id, proxy_id, json.dumps(item.tags, ensure_ascii=False), item.remark,
+                 item.os, json.dumps(item.fingerprint, ensure_ascii=False), str(user_data_dir),
+                 int(item.headless), ts, ts, item.engine, item.local_fonts),
+            )
+            user_data_dir.mkdir(mode=0o700)
+            cleanup.callback(user_data_dir.rmdir)
+        cleanup.pop_all()
+    return name
+
+
 @app.post("/api/v1/import/profiles")
 def import_profiles(payload: ImportRequest):
     if not payload.profiles:
         raise HTTPException(422, detail={"code": "NOTHING_TO_IMPORT", "message": "没有可导入的环境"})
     created = 0
-    renamed: list[dict[str, str]] = []
-    skipped: list[dict[str, str]] = []
-    with db.session() as conn:
-        existing_names = {row["name"] for row in conn.execute("SELECT name FROM profiles").fetchall()}
-        groups = {row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM groups").fetchall()}
-        proxies: dict[tuple, str] = {}
-        for row in conn.execute("SELECT id, host, port, username FROM proxies").fetchall():
-            proxies[(row["host"], row["port"], row["username"] or "")] = row["id"]
-
-        for item in payload.profiles:
-            name = str(item.get("name") or "").strip()
-            if not name:
-                skipped.append({"name": "", "reason": "名称为空"})
-                continue
-            engine = item.get("engine", "camoufox")
-            local_fonts = item.get("local_fonts", "standard")
-            try:
-                _check_engine_options(engine, local_fonts, item.get("proxy"), item.get("fingerprint"))
-            except HTTPException as exc:
-                skipped.append({"name": name, "reason": exc.detail["message"]})
-                continue
-            final_name = name
-            suffix = 2
-            while final_name in existing_names:
-                final_name = f"{name} ({suffix})"
-                suffix += 1
-            if final_name != name:
-                renamed.append({"from": name, "to": final_name})
-
-            group_id = None
-            group_name = str(item.get("group") or "").strip()
-            if group_name:
-                if group_name not in groups:
-                    gid = new_id("grp")
-                    ts = db.now()
-                    conn.execute(
-                        "INSERT INTO groups(id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                        (gid, group_name, ts, ts),
-                    )
-                    groups[group_name] = gid
-                group_id = groups[group_name]
-
-            proxy_id = None
-            proxy = item.get("proxy") or {}
-            if proxy.get("host") and proxy.get("port"):
-                key = (proxy["host"], int(proxy["port"]), proxy.get("username") or "")
-                proxy_id = proxies.get(key)
-                if proxy_id is None:
-                    proxy_id = new_id("px")
-                    ts = db.now()
-                    conn.execute(
-                        "INSERT INTO proxies(id, name, protocol, host, port, username, password, status, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, '', 'unchecked', ?, ?)",
-                        (proxy_id, proxy.get("name") or proxy["host"], proxy.get("protocol") or "http",
-                         proxy["host"], int(proxy["port"]), proxy.get("username"), ts, ts),
-                    )
-                    proxies[key] = proxy_id
-
-            profile_id = new_id("pf")
-            user_data_dir = config.PROFILES_DIR / profile_id
-            user_data_dir.mkdir(parents=True, exist_ok=True)
-            fingerprint = {}
-            os_name = "native" if engine == "chromium" else item.get("os") or "windows"
-            if engine == "camoufox":
-                fingerprint = _fingerprint_with_preset(item.get("fingerprint") or {}, os_name)
-            ts = db.now()
-            conn.execute(
-                "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
-                "user_data_dir, headless, status, created_at, updated_at, engine, local_fonts) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
-                (
-                    profile_id, final_name, group_id, proxy_id,
-                    json.dumps(item.get("tags") or [], ensure_ascii=False),
-                    str(item.get("remark") or ""), os_name,
-                    json.dumps(fingerprint, ensure_ascii=False), str(user_data_dir),
-                    int(bool(item.get("headless"))), ts, ts, engine, local_fonts,
-                ),
-            )
-            existing_names.add(final_name)
+    renamed = []
+    skipped = []
+    for index, raw in enumerate(payload.profiles, start=1):
+        try:
+            item = _read_import_profile(raw)
+            name = _store_import_profile(item)
+        except ValidationError as exc:
+            fields = [".".join(map(str, err["loc"])) or "环境" for err in exc.errors()]
+            reason = f"格式不正确的字段：{'、'.join(fields)}"
+        except HTTPException as exc:
+            reason = exc.detail["message"]
+        except ValueError as exc:
+            reason = str(exc)
+        except (OSError, sqlite3.Error) as exc:
+            reason = f"无法保存环境：{exc}"
+        else:
             created += 1
-    db.log("profiles.import", None, {"created": created, "renamed": len(renamed),
-                                     "skipped": len(skipped)})
+            if name != item.name:
+                renamed.append({"from": item.name, "to": name})
+            continue
+        label = raw.get("name") if isinstance(raw, dict) else None
+        skipped.append({"row": index, "name": label if isinstance(label, str) else "", "reason": reason})
+
+    db.log("profiles.import", None, {"created": created, "renamed": len(renamed), "skipped": len(skipped)})
     return {"data": {"created": created, "renamed": renamed, "skipped": skipped}}
 
 

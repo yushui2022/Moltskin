@@ -64,7 +64,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 - Camoufox 环境详情并排显示预设值与最近一次启动的浏览器实测值，可核对 CPU 核数、屏幕、UA 和 WebGL 等字段。缺少读数时显示「未验证」。
 - CreepJS 指纹自检 + 截图
 - 分组、标签、批量打开/关闭/删除/移动
-- JSON 导入 / 导出
+- 环境配置可全部导出，也可勾选后单独导出。导入结果列出重名后的名称，以及每条跳过记录的原因。
 - MCP Server（15 个工具）
 - Python SDK
 - 一键关闭，状态自动回收

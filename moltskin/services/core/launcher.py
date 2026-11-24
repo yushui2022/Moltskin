@@ -29,13 +29,14 @@ class LaunchError(Exception):
 
 def _read_status(path: Path) -> dict | None:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return None
 
 
 def _pid_alive(pid: int | None) -> bool:
-    if not pid:
+    if not isinstance(pid, int) or not 0 < pid <= 2**31 - 1:
         return False
     try:
         os.kill(pid, 0)
@@ -55,7 +56,15 @@ def _session_alive(session) -> bool:
         return False
     if session["engine"] == "chromium":
         return chromium.matches_process(Path(session["user_data_dir"]), session["pid"])
-    return True
+    # A runner is launched with a unique plan per session. A live PID alone
+    # is not evidence that the process still belongs to this session.
+    expected = f" -m moltskin.services.core.runner --plan {config.RUN_DIR / (session['id'] + '.plan.json')}"
+    try:
+        proc = subprocess.run(["ps", "-ww", "-p", str(session["pid"]), "-o", "command="],
+                              capture_output=True, text=True, errors="replace", timeout=3)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LaunchError("PROCESS_CHECK_FAILED", "无法确认浏览器进程归属，请稍后重试", 503) from exc
+    return proc.returncode == 0 and proc.stdout.rstrip("\n").endswith(expected)
 
 
 def _active_session(conn, profile_id: str):
@@ -68,12 +77,12 @@ def _active_session(conn, profile_id: str):
 
 
 def _finish_session(session_id: str, profile_id: str, state: str, code: str | None = None,
-                    message: str | None = None) -> None:
+                    message: str | None = None, *, observed_exit: bool = False) -> None:
     with db.session() as conn:
         changed = conn.execute(
-            "UPDATE sessions SET state=?, error_code=?, error_message=?, ended_at=? "
-            "WHERE id=? AND state IN ('starting','running','stopping')",
-            (state, code, message, db.now(), session_id),
+            "UPDATE sessions SET state=?, error_code=?, error_message=?, ended_at=COALESCE(ended_at, ?) "
+            "WHERE id=? AND (state IN ('starting','running','stopping') OR (? AND error_code='EXIT_UNCONFIRMED'))",
+            (state, code, message, db.now(), session_id, observed_exit),
         )
         if not changed.rowcount:
             return
@@ -82,6 +91,26 @@ def _finish_session(session_id: str, profile_id: str, state: str, code: str | No
             "UPDATE profiles SET status=?, updated_at=? WHERE id=? AND last_session_id=?",
             (profile_status, db.now(), profile_id, session_id),
         )
+
+
+def _recover_exit(session, code: str, message: str) -> None:
+    sid, profile_id = session["id"], session["profile_id"]
+    if session["engine"] == "camoufox" and re.fullmatch(r"ss_[a-f0-9]{12}", sid):
+        report = _read_status(config.RUN_DIR / f"{sid}.json") or {}
+        if report.get("state") == "failed":
+            _finish_session(sid, profile_id, "failed", report.get("error_code") or "LAUNCH_FAILED",
+                            report.get("error_message"))
+            return
+        if report.get("state") == "stopped":
+            _finish_session(sid, profile_id, "stopped")
+            return
+    if session["state"] == "stopping":
+        _finish_session(sid, profile_id, "stopped")
+    elif session["engine"] == "chromium":
+        # A restarted service cannot wait() on a browser started by its predecessor.
+        _finish_session(sid, profile_id, "stopped", "EXIT_UNCONFIRMED", "浏览器进程已退出，未取得退出码")
+    else:
+        _finish_session(sid, profile_id, "crashed", code, message)
 
 
 def _monitor(session_id: str, profile_id: str, proc: subprocess.Popen,
@@ -93,8 +122,13 @@ def _monitor(session_id: str, profile_id: str, proc: subprocess.Popen,
                         final.get("error_message"))
     else:
         state = "stopped" if code in (0, -signal.SIGTERM) else "crashed"
+        if code in (-signal.SIGKILL, -signal.SIGINT):
+            with db.session() as conn:
+                session = conn.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
+            if session and session["state"] == "stopping":
+                state = "killed" if code == -signal.SIGKILL else "stopped"
         _finish_session(session_id, profile_id, state, None,
-                        None if state == "stopped" else f"进程退出码 {code}")
+                        f"进程退出码 {code}" if state == "crashed" else None, observed_exit=True)
 
 
 def _camoufox_command(profile, proxy, session_id, headless, manager_url, status_path):
@@ -153,8 +187,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         if session:
             if _session_alive(session):
                 raise LaunchError("PROFILE_LOCKED", "该环境正在运行", 409)
-            _finish_session(session["id"], profile_id, "crashed", "STALE_SESSION",
-                            "上次会话已失效")
+            _recover_exit(session, "STALE_SESSION", "上次会话已失效")
 
         proxy = None
         if profile["proxy_id"]:
@@ -320,7 +353,8 @@ def stop(session_id: str, actor: str = "local") -> dict:
         if session["state"] not in ACTIVE_STATES:
             return {"session_id": session_id, "state": session["state"]}
         pid = session["pid"]
-        if session["engine"] == "chromium" and _session_alive(session):
+        alive = _session_alive(session)
+        if session["engine"] == "chromium" and alive:
             if not chromium.owns_lock(Path(session["user_data_dir"]), pid):
                 if session["state"] == "starting":
                     raise LaunchError("PROFILE_STARTING", "浏览器正在初始化，请稍后再关闭")
@@ -328,9 +362,13 @@ def stop(session_id: str, actor: str = "local") -> dict:
                     return {"session_id": session_id, "state": "stopping"}
                 # An old session PID can belong to an unrelated process after restart.
                 raise LaunchError("PROCESS_CHANGED", "进程与当前环境不匹配，未发送关闭信号")
-        conn.execute("UPDATE sessions SET state='stopping' WHERE id=?", (session_id,))
+        if alive:
+            conn.execute("UPDATE sessions SET state='stopping' WHERE id=?", (session_id,))
 
-    if _session_alive(session):
+    forced = False
+    if not alive:
+        _recover_exit(session, "PROCESS_GONE", "进程已退出")
+    elif _session_alive(session):
         try:
             # Chromium treats SIGTERM as an OS logout and skips some storage writes.
             # SIGINT uses its normal browser exit path on Linux and macOS.
@@ -346,13 +384,16 @@ def stop(session_id: str, actor: str = "local") -> dict:
             if session["engine"] != "chromium" or chromium.owns_lock(Path(session["user_data_dir"]), pid):
                 try:
                     os.kill(pid, signal.SIGKILL)
+                    forced = True
                 except ProcessLookupError:
                     pass
 
-    if not _session_alive(session):
-        _finish_session(session_id, session["profile_id"], "stopped")
+    if alive and not _session_alive(session):
+        _finish_session(session_id, session["profile_id"], "killed" if forced else "stopped")
     db.log("session.stop", session["profile_id"], {"session_id": session_id}, actor=actor)
-    return {"session_id": session_id, "state": "stopping"}
+    with db.session() as conn:
+        result = conn.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
+    return {"session_id": session_id, "state": result["state"] if result else "stopped"}
 
 
 def status(profile_id: str) -> dict:
@@ -362,8 +403,7 @@ def status(profile_id: str) -> dict:
             raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
         session = _active_session(conn, profile_id)
         if session and not _session_alive(session):
-            state = "stopped" if session["state"] == "stopping" else "crashed"
-            _finish_session(session["id"], profile_id, state, "PROCESS_GONE", "进程已退出")
+            _recover_exit(session, "PROCESS_GONE", "进程已退出")
             profile = conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
             session = None
     return {
@@ -385,37 +425,42 @@ def cleanup_browser_orphans() -> int:
     if os.name == "nt":
         return 0
     try:
-        output = subprocess.check_output(["ps", "-axo", "pid=,command="], text=True, timeout=10)
+        output = subprocess.check_output(["ps", "-ww", "-axo", "pid=,command="], text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
         return 0
 
-    profiles_root = str(config.PROFILES_DIR)
+    # A Playwright-launched main browser has both flags. Child processes may
+    # also carry -profile, and data roots can have spaces.
+    owned_profile = re.compile(r" -profile (" + re.escape(str(config.PROFILES_DIR)) +
+                               r"/[^/\s]+) -juggler-pipe(?: |$)")
     cleaned = 0
     for line in output.splitlines():
-        match = re.search(r"-profile\s+(\S+)", line)
+        match = owned_profile.search(line)
         if not match:
             continue
         profile_dir = match.group(1)
-        if not profile_dir.startswith(profiles_root):
-            continue
-        profile_id = Path(profile_dir).name
         try:
             pid = int(line.strip().split()[0])
         except (ValueError, IndexError):
             continue
         with db.session() as conn:
-            active = conn.execute(
-                "SELECT 1 FROM sessions WHERE profile_id=? AND state IN ('starting','running','stopping')",
-                (profile_id,),
-            ).fetchone()
-            profile = conn.execute("SELECT status FROM profiles WHERE id=?", (profile_id,)).fetchone()
-        if active or (profile and profile["status"] == "running"):
-            continue
-        try:
-            os.kill(pid, signal.SIGTERM)
-            cleaned += 1
-        except OSError:
-            pass
+            conn.execute("BEGIN IMMEDIATE")
+            profile = conn.execute("SELECT id FROM profiles WHERE engine='camoufox' AND user_data_dir=?",
+                                   (profile_dir,)).fetchone()
+            if not profile or _active_session(conn, profile["id"]):
+                continue
+            try:
+                executable = subprocess.check_output(["ps", "-p", str(pid), "-o", "comm="], text=True, timeout=3)
+                if Path(executable.strip()).name not in ("camoufox", "camoufox-bin"):
+                    continue
+                current = subprocess.check_output(["ps", "-ww", "-p", str(pid), "-o", "command="],
+                                                  text=True, timeout=3)
+                if current.strip() != line.strip().split(None, 1)[1]:
+                    continue
+                os.kill(pid, signal.SIGTERM)
+                cleaned += 1
+            except (OSError, subprocess.SubprocessError):
+                continue
     return cleaned
 
 
@@ -425,10 +470,7 @@ def _reap_missing(code: str, message: str) -> int:
     cleaned = 0
     for row in rows:
         if not _session_alive(row):
-            if row["state"] == "stopping":
-                _finish_session(row["id"], row["profile_id"], "stopped")
-            else:
-                _finish_session(row["id"], row["profile_id"], "crashed", code, message)
+            _recover_exit(row, code, message)
             cleaned += 1
     return cleaned
 

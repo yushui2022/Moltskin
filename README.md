@@ -173,6 +173,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 | POST | `/profiles/{id}/self-test` | Open CreepJS, screenshot, save report |
 | POST | `/profiles/batch` | Batch launch / stop / delete / move / tag |
 | GET | `/export/profiles` | Export profiles as JSON |
+| POST | `/export/profiles` | Export selected profile IDs in the same JSON format |
 | POST | `/import/profiles` | Import profiles from JSON |
 | GET/PUT | `/settings` | Settings |
 | GET | `/engine` | Camoufox builds and local Moltskin Chromium availability |
