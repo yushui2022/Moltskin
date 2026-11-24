@@ -8,9 +8,7 @@ Moltskin 是可自行部署的多环境指纹浏览器。当前仓库的 **0.4.1
 
 ## Chromium 开发路线
 
-我们计划基于 Chromium 上游源码构建 Moltskin 自己的浏览器发行版。内核版本、补丁、构建脚本和回归测试都将在本仓库维护，与启动浏览器的控制面板一起开发。下表各项均为待实现目标。
-
-首个源码版本和原生构建步骤已放入 [Chromium 模块](chromium/README.md)。Linux 和 macOS 的全量构建仍待实机验收。
+Moltskin 的 Chromium 开发预览已在 Apple Silicon 上从源码编译。每个环境可独立设置是否允许网页通过 Local Font Access API 枚举本机字体。现可从命令行启动，面板接入和 Linux x86-64 实机验收仍在计划中。[构建、启动与双环境测试](chromium/README.md)
 
 | 里程碑 | 交付时怎样验证 |
 |---|---|

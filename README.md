@@ -8,9 +8,7 @@ Moltskin is a self-hosted browser for managing isolated profiles. In the **0.4.1
 
 ## Chromium roadmap
 
-We plan to build Moltskin's own Chromium distribution from upstream source. This repository will hold the version pins, patches, build scripts and regression tests alongside the dashboard that launches the browser. All milestones below are planned.
-
-The first source pin and native build instructions are available in [the Chromium module](chromium/README.md). The Linux and macOS builds still need verification.
+Moltskin's Chromium developer preview builds from source on Apple Silicon. Each profile can allow the usual site permission flow or block enumeration through the Local Font Access API. The preview launches from the command line. Dashboard integration and verification on Linux x86-64 are planned. [Build, launch and test two profiles](chromium/README.md)
 
 | Milestone | What we will verify |
 |---|---|

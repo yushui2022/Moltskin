@@ -1,0 +1,101 @@
+"""Exercise the preview CLI with a local stand-in for the native executable."""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+
+CLI = Path(__file__).resolve().parents[1] / "chromium" / "launch_preview.py"
+SWITCH = "--moltskin-disable-local-font-access"
+
+
+@unittest.skipUnless(fcntl is not None and sys.platform in {"darwin", "linux"}, "macOS/Linux preview")
+class ChromiumPreviewTest(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.data = Path(temporary.name).resolve()
+        self.binary = self.data / "Chromium.app" / "Contents" / "MacOS" / "Chromium"
+        self.binary.parent.mkdir(parents=True)
+        self.binary.write_text(
+            f"#!{sys.executable}\n" + '''
+import json, os, sys
+from pathlib import Path
+if sys.argv[1:] == ["--version", "--moltskin-capabilities"]:
+    print("Chromium Preview")
+    print(os.environ.get("TEST_CAPABILITY", "moltskin-disable-local-font-access"))
+else:
+    (Path(os.environ["MOLTSKIN_DATA_DIR"]) / "last-launch").write_text(json.dumps(sys.argv[1:]))
+''', encoding="utf-8"
+        )
+        self.binary.chmod(0o700)
+
+    def run_cli(self, *args, **env):
+        return subprocess.run(
+            [sys.executable, CLI, *args, "--binary", self.binary.parents[2]],
+            env={**os.environ, "MOLTSKIN_DATA_DIR": str(self.data), **env},
+            capture_output=True, text=True, timeout=20,
+        )
+
+    def browser_args(self, *args):
+        result = self.run_cli(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads((self.data / "last-launch").read_text())
+
+    def test_per_profile_switch_and_restart(self):
+        a = self.browser_args("one", "--local-fonts", "restricted")
+        b = self.browser_args("two")
+        self.assertIn(SWITCH, a)
+        self.assertNotIn(SWITCH, b)
+        base = self.data / "chromium-preview"
+        self.assertIn(f"--user-data-dir={base / 'one/browser'}", a)
+        self.assertIn(f"--user-data-dir={base / 'two/browser'}", b)
+        self.assertEqual(self.browser_args("one"), a)
+        self.assertNotIn(SWITCH, self.browser_args("one", "--local-fonts", "standard"))
+        self.assertNotIn(SWITCH, self.browser_args("one"))
+
+    def test_rejects_unpatched_build_before_saving_or_launching(self):
+        self.browser_args("one")
+        last = self.data / "last-launch"
+        last.unlink()
+        result = self.run_cli("one", "--local-fonts", "restricted", TEST_CAPABILITY="unsupported")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not report", result.stderr)
+        self.assertFalse(last.exists())
+        self.assertNotIn(SWITCH, self.browser_args("one"))
+
+    def test_active_launches_cannot_change_saved_mode(self):
+        self.browser_args("one")
+        profile = self.data / "chromium-preview" / "one"
+        with (profile / "preview.lock").open() as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.assertIn("already open", self.run_cli("one", "--local-fonts", "restricted").stderr)
+        user_data = profile / "browser"
+        user_data.mkdir()
+        native_lock = user_data / "SingletonLock"
+        native_lock.symlink_to(f"{socket.gethostname()}-{os.getpid()}")
+        self.assertIn("already open", self.run_cli("one", "--local-fonts", "restricted").stderr)
+        self.assertEqual((profile / "local-fonts").read_text().strip(), "standard")
+        native_lock.unlink()
+        self.assertIn(SWITCH, self.browser_args("one", "--local-fonts", "restricted"))
+
+    def test_rejects_path_as_profile(self):
+        result = self.run_cli("../one")
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse((self.data / "last-launch").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

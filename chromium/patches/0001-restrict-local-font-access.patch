@@ -1,0 +1,57 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 33a3b3844a..3c33f9b9ef 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -440,6 +440,9 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+   } else {
+     printf("%s %s %s\n", PRODUCT_FULLNAME_STRING, CHROME_VERSION_STRING,
+            chrome::GetChannelName(chrome::WithExtendedStable(true)).c_str());
++    if (command_line.HasSwitch("moltskin-capabilities")) {
++      puts("moltskin-disable-local-font-access");
++    }
+   }
+   fflush(stdout);
+   return true;
+diff --git a/content/browser/font_access/font_access_manager.cc b/content/browser/font_access/font_access_manager.cc
+index 256d2221ba..68ef186d0c 100644
+--- a/content/browser/font_access/font_access_manager.cc
++++ b/content/browser/font_access/font_access_manager.cc
+@@ -9,6 +9,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/command_line.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/read_only_shared_memory_region.h"
+ #include "base/sequence_checker.h"
+@@ -36,6 +37,14 @@
+ 
+ namespace content {
+ 
++namespace {
++
++// Moltskin launches each environment in its own browser process.
++constexpr char kMoltskinDisableLocalFontAccess[] =
++    "moltskin-disable-local-font-access";
++
++}  // namespace
++
+ // static
+ std::unique_ptr<FontAccessManager> FontAccessManager::Create() {
+   return std::make_unique<FontAccessManager>(
+@@ -77,6 +86,15 @@ void FontAccessManager::EnumerateLocalFonts(
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+   CHECK_CURRENTLY_ON(BrowserThread::UI, base::NotFatalUntil::M159);
+ 
++  // Enforce the environment setting before consulting any site permission.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          kMoltskinDisableLocalFontAccess)) {
++    std::move(callback).Run(
++        blink::mojom::FontEnumerationStatus::kPermissionDenied,
++        base::ReadOnlySharedMemoryRegion());
++    return;
++  }
++
+   if (skip_privacy_checks_for_testing_) {
+     DidRequestPermission(
+         std::move(callback),
