@@ -1,0 +1,127 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 3c33f9b..2fc6ee1 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -442,6 +442,9 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+            chrome::GetChannelName(chrome::WithExtendedStable(true)).c_str());
+     if (command_line.HasSwitch("moltskin-capabilities")) {
+       puts("moltskin-disable-local-font-access");
++#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
++      puts("moltskin-panel");
++#endif
+     }
+   }
+   fflush(stdout);
+diff --git a/chrome/browser/ui/navigator/BUILD.gn b/chrome/browser/ui/navigator/BUILD.gn
+index 335b892..b42808a 100644
+--- a/chrome/browser/ui/navigator/BUILD.gn
++++ b/chrome/browser/ui/navigator/BUILD.gn
+@@ -96,6 +96,7 @@ source_set("impl") {
+       "//chrome/browser/ui/browser_ui_controller",
+       "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/location_bar",
++      "//chrome/browser/ui/startup",
+       "//chrome/browser/ui/tabs:features",
+       "//chrome/browser/ui/tabs:tab_strip",
+       "//chrome/browser/ui/web_applications",
+diff --git a/chrome/browser/ui/navigator/browser_navigator.cc b/chrome/browser/ui/navigator/browser_navigator.cc
+index d5d5691..64ef5ca 100644
+--- a/chrome/browser/ui/navigator/browser_navigator.cc
++++ b/chrome/browser/ui/navigator/browser_navigator.cc
+@@ -39,6 +39,7 @@
+ #include "chrome/browser/ui/navigator/browser_navigator_params.h"
+ #include "chrome/browser/ui/navigator/browser_navigator_params_utils.h"
+ #include "chrome/browser/ui/singleton_tabs.h"
++#include "chrome/browser/ui/startup/url_util.h"
+ #include "chrome/browser/ui/status_bubble.h"
+ #include "chrome/browser/ui/tabs/features.h"
+ #include "chrome/browser/ui/tabs/split_tab_metrics.h"
+@@ -669,6 +670,13 @@ base::WeakPtr<content::NavigationHandle> NavigateImpl(
+   TRACE_EVENT1("navigation", "chrome::Navigate", "disposition",
+                params->disposition);
+   CHECK(params);
++#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
++  // Resolve before target selection so the tab displays the HTTP origin and
++  // the panel is loaded as an ordinary web document.
++  if (!params->is_renderer_initiated && !params->initiator_origin) {
++    startup::ResolveMoltskinPanelURL(&params->url);
++  }
++#endif
+   BrowserWindowInterface* source_browser = params->browser;
+   if (source_browser) {
+     params->initiating_profile = source_browser->GetProfile();
+diff --git a/chrome/browser/ui/startup/url_util.cc b/chrome/browser/ui/startup/url_util.cc
+index 910f1e7..54472bc 100644
+--- a/chrome/browser/ui/startup/url_util.cc
++++ b/chrome/browser/ui/startup/url_util.cc
+@@ -4,7 +4,10 @@
+ 
+ #include "chrome/browser/ui/startup/url_util.h"
+ 
++#include "base/command_line.h"
+ #include "base/logging.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_util.h"
+ #include "build/build_config.h"
+ #include "chrome/common/url_constants.h"
+ #include "chrome/common/webui_url_constants.h"
+@@ -21,6 +24,8 @@ namespace startup {
+ 
+ namespace {
+ 
++constexpr char kMoltskinPanelURL[] = "chrome://moltskin/";
++
+ // Returns true if `url` is invalid or uses a nested scheme
+ // (filesystem: or blob:) that could be used to launder privileged origins.
+ bool IsNestedOrInvalid(const GURL& url) {
+@@ -29,6 +34,22 @@ bool IsNestedOrInvalid(const GURL& url) {
+ 
+ }  // namespace
+ 
++void ResolveMoltskinPanelURL(GURL* url) {
++  if (!url->is_valid() || url->spec() != kMoltskinPanelURL) {
++    return;
++  }
++  unsigned port = 8765;
++  const auto* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch("moltskin-panel-port")) {
++    const auto value = command_line->GetSwitchValueASCII("moltskin-panel-port");
++    if (!base::ContainsOnlyChars(value, "0123456789") ||
++        !base::StringToUint(value, &port) || port == 0 || port > 65535) {
++      return;
++    }
++  }
++  *url = GURL("http://127.0.0.1:" + base::NumberToString(port) + "/");
++}
++
+ bool ValidateLaunchUrlWebSafe(const GURL& url) {
+   if (IsNestedOrInvalid(url)) {
+     return false;
+@@ -47,6 +68,13 @@ bool ValidateLaunchUrlWebUnsafe(const GURL& url) {
+     return false;
+   }
+ 
++#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
++  // Only the exact panel shortcut may be passed by a native launcher.
++  if (url.spec() == kMoltskinPanelURL) {
++    return true;
++  }
++#endif
++
+   const GURL settings_url(chrome::kChromeUISettingsURL);
+   bool url_points_to_an_approved_settings_page = false;
+ #if BUILDFLAG(IS_CHROMEOS)
+diff --git a/chrome/browser/ui/startup/url_util.h b/chrome/browser/ui/startup/url_util.h
+index c6e0c82..7fbdf42 100644
+--- a/chrome/browser/ui/startup/url_util.h
++++ b/chrome/browser/ui/startup/url_util.h
+@@ -9,6 +9,9 @@ class GURL;
+ 
+ namespace startup {
+ 
++// Resolve the desktop panel shortcut before a browser-initiated navigation.
++void ResolveMoltskinPanelURL(GURL* url);
++
+ // Validates a URL passed during startup or external system events
+ // (Command-Line, macOS Intents, Android JNI Intents).
+ //

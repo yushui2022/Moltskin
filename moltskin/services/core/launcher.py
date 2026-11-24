@@ -14,7 +14,7 @@ from threading import Thread
 
 from camoufox.fingerprints import get_random_preset
 
-from . import config, db, extensions
+from . import chromium, config, db, extensions
 
 ACTIVE_STATES = ("starting", "running", "stopping")
 
@@ -44,10 +44,24 @@ def _pid_alive(pid: int | None) -> bool:
         return False
 
 
+SESSION_QUERY = (
+    "SELECT s.*, p.engine, p.user_data_dir FROM sessions s "
+    "JOIN profiles p ON p.id=s.profile_id "
+)
+
+
+def _session_alive(session) -> bool:
+    if not _pid_alive(session["pid"]):
+        return False
+    if session["engine"] == "chromium":
+        return chromium.matches_process(Path(session["user_data_dir"]), session["pid"])
+    return True
+
+
 def _active_session(conn, profile_id: str):
     placeholders = ",".join("?" for _ in ACTIVE_STATES)
     return conn.execute(
-        f"SELECT * FROM sessions WHERE profile_id=? AND state IN ({placeholders}) "
+        SESSION_QUERY + f"WHERE s.profile_id=? AND s.state IN ({placeholders}) "
         "ORDER BY started_at DESC LIMIT 1",
         (profile_id, *ACTIVE_STATES),
     ).fetchone()
@@ -56,50 +70,77 @@ def _active_session(conn, profile_id: str):
 def _finish_session(session_id: str, profile_id: str, state: str, code: str | None = None,
                     message: str | None = None) -> None:
     with db.session() as conn:
-        conn.execute(
-            "UPDATE sessions SET state=?, error_code=?, error_message=?, ended_at=? WHERE id=?",
+        changed = conn.execute(
+            "UPDATE sessions SET state=?, error_code=?, error_message=?, ended_at=? "
+            "WHERE id=? AND state IN ('starting','running','stopping')",
             (state, code, message, db.now(), session_id),
         )
+        if not changed.rowcount:
+            return
         profile_status = "ready" if state in ("stopped", "killed") else "crashed"
         conn.execute(
-            "UPDATE profiles SET status=?, updated_at=? WHERE id=?",
-            (profile_status, db.now(), profile_id),
+            "UPDATE profiles SET status=?, updated_at=? WHERE id=? AND last_session_id=?",
+            (profile_status, db.now(), profile_id, session_id),
         )
 
 
 def _monitor(session_id: str, profile_id: str, proc: subprocess.Popen,
-             status_path: Path, log_handle) -> None:
+             status_path: Path | None) -> None:
     code = proc.wait()
-    # 给 runner 一点时间把最终状态写盘
-    deadline = time.time() + 3
-    final = None
-    while time.time() < deadline:
-        final = _read_status(status_path)
-        if final and final.get("state") in ("stopped", "failed"):
-            break
-        time.sleep(0.1)
-
+    final = _read_status(status_path) if status_path else None
     if final and final.get("state") == "failed":
-        _finish_session(
-            session_id, profile_id, "failed",
-            final.get("error_code", "LAUNCH_FAILED"),
-            final.get("error_message"),
-        )
-        state = "crashed"
+        _finish_session(session_id, profile_id, "failed", final.get("error_code", "LAUNCH_FAILED"),
+                        final.get("error_message"))
     else:
-        state = "stopped" if code == 0 else "crashed"
+        state = "stopped" if code in (0, -signal.SIGTERM) else "crashed"
         _finish_session(session_id, profile_id, state, None,
-                        None if code == 0 else f"进程退出码 {code}")
+                        None if state == "stopped" else f"进程退出码 {code}")
+
+
+def _camoufox_command(profile, proxy, session_id, headless, manager_url, status_path):
+    profile_id = profile["id"]
+    fingerprint = json.loads(profile["fingerprint"] or "{}")
+    if not fingerprint.get("preset"):
+        preset = get_random_preset(os=profile["os"])
+        if preset:
+            fingerprint["preset"] = preset
+            with db.session() as conn:
+                conn.execute(
+                    "UPDATE profiles SET fingerprint=?, updated_at=? WHERE id=?",
+                    (json.dumps(fingerprint, ensure_ascii=False), db.now(), profile_id),
+                )
 
     with db.session() as conn:
-        conn.execute(
-            "UPDATE profiles SET status=?, updated_at=? WHERE id=? AND status='running'",
-            (state, db.now(), profile_id),
-        )
-    try:
-        log_handle.close()
-    except Exception:  # noqa: BLE001
-        pass
+        ext_ids = [
+            row["ext_id"]
+            for row in conn.execute(
+                "SELECT ext_id FROM profile_extensions WHERE profile_id=?", (profile_id,)
+            ).fetchall()
+        ]
+    addon_paths = extensions.paths_for(ext_ids)
+    first_open = not (profile["open_count"] or 0)
+    builtin = extensions.builtin_manager_button(open_sidebar=first_open)
+    if builtin:
+        addon_paths.append(builtin)
+
+    plan = {
+        "profile_id": profile_id,
+        "session_id": session_id,
+        "user_data_dir": profile["user_data_dir"],
+        "os": profile["os"],
+        "headless": headless,
+        "fingerprint": fingerprint,
+        "fingerprint_preset": fingerprint.get("preset"),
+        "addons": addon_paths,
+        "proxy": proxy,
+        "manager_url": manager_url,
+        "status_file": str(status_path),
+    }
+    plan_path = config.RUN_DIR / f"{session_id}.plan.json"
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+    plan_path.chmod(0o600)
+
+    return [sys.executable, "-m", "moltskin.services.core.runner", "--plan", str(plan_path)]
 
 
 def launch(profile_id: str, actor: str = "local") -> dict:
@@ -110,10 +151,56 @@ def launch(profile_id: str, actor: str = "local") -> dict:
 
         session = _active_session(conn, profile_id)
         if session:
-            if _pid_alive(session["pid"]):
+            if _session_alive(session):
                 raise LaunchError("PROFILE_LOCKED", "该环境正在运行", 409)
             _finish_session(session["id"], profile_id, "crashed", "STALE_SESSION",
                             "上次会话已失效")
+
+        proxy = None
+        if profile["proxy_id"]:
+            row = conn.execute("SELECT * FROM proxies WHERE id=?", (profile["proxy_id"],)).fetchone()
+            if row is None:
+                raise LaunchError("PROXY_FAILED", "绑定的代理不存在", 422)
+            # 坏代理一定要拦：带着坏代理打开环境会直接暴露本机 IP
+            if row["status"] in ("failed", "mismatch"):
+                raise LaunchError("PROXY_FAILED", "代理不可用，请先重新检测", 422)
+            if db.get_setting("require_proxy_ok", False) and row["status"] not in ("ok", "slow"):
+                raise LaunchError(
+                    "PROXY_UNCHECKED", "严格模式下代理必须先检测通过", 422
+                )
+            proxy = dict(row)
+
+    session_id = f"ss_{os.urandom(6).hex()}"
+    status_path = config.RUN_DIR / f"{session_id}.json"
+    log_path = config.RUN_DIR / f"{session_id}.log"
+
+    profile_dir = Path(profile["user_data_dir"])
+    headless = config.FORCE_HEADLESS or bool(profile["headless"]) or bool(db.get_setting("headless", False))
+    is_chromium = profile["engine"] == "chromium"
+    if is_chromium:
+        if proxy:
+            raise LaunchError("ENGINE_OPTIONS", "当前 Chromium 预览版不支持绑定代理", 422)
+        try:
+            command = chromium.launch_command(profile_dir, profile["local_fonts"], headless)
+        except BlockingIOError as exc:
+            raise LaunchError("PROFILE_LOCKED", str(exc)) from exc
+        except (ValueError, OSError, subprocess.SubprocessError) as exc:
+            raise LaunchError("CHROMIUM_UNAVAILABLE", f"无法启动 Moltskin Chromium：{exc}", 503) from exc
+        status_path = None
+    else:
+        manager_url = config.MANAGER_URL if config.OPEN_MANAGER and db.get_setting("open_manager_on_launch", True) else None
+        command = _camoufox_command(profile, proxy, session_id, headless, manager_url, status_path)
+
+    # Serialize reservation and PID publication across API, batch, and scheduled launches.
+    with db.session() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        current = conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
+        if current is None:
+            raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
+        if _active_session(conn, profile_id):
+            raise LaunchError("PROFILE_LOCKED", "该环境正在启动或运行")
+        if is_chromium and any(current[k] != profile[k] for k in ("engine", "local_fonts", "headless", "proxy_id")):
+            raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
 
         active_count = conn.execute(
             "SELECT COUNT(*) AS n FROM sessions WHERE state IN ('starting','running','stopping')"
@@ -139,70 +226,6 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                     429,
                 )
 
-        proxy = None
-        if profile["proxy_id"]:
-            row = conn.execute("SELECT * FROM proxies WHERE id=?", (profile["proxy_id"],)).fetchone()
-            if row is None:
-                raise LaunchError("PROXY_FAILED", "绑定的代理不存在", 422)
-            # 坏代理一定要拦：带着坏代理打开环境会直接暴露本机 IP
-            if row["status"] in ("failed", "mismatch"):
-                raise LaunchError("PROXY_FAILED", "代理不可用，请先重新检测", 422)
-            if db.get_setting("require_proxy_ok", False) and row["status"] not in ("ok", "slow"):
-                raise LaunchError(
-                    "PROXY_UNCHECKED", "严格模式下代理必须先检测通过", 422
-                )
-            proxy = dict(row)
-
-    fingerprint = json.loads(profile["fingerprint"] or "{}")
-    if not fingerprint.get("preset"):
-        preset = get_random_preset(os=profile["os"])
-        if preset:
-            fingerprint["preset"] = preset
-            with db.session() as conn:
-                conn.execute(
-                    "UPDATE profiles SET fingerprint=?, updated_at=? WHERE id=?",
-                    (json.dumps(fingerprint, ensure_ascii=False), db.now(), profile_id),
-                )
-
-    session_id = f"ss_{os.urandom(6).hex()}"
-    status_path = config.RUN_DIR / f"{session_id}.json"
-    plan_path = config.RUN_DIR / f"{session_id}.plan.json"
-    log_path = config.RUN_DIR / f"{session_id}.log"
-
-    with db.session() as conn:
-        ext_ids = [
-            row["ext_id"]
-            for row in conn.execute(
-                "SELECT ext_id FROM profile_extensions WHERE profile_id=?", (profile_id,)
-            ).fetchall()
-        ]
-    addon_paths = extensions.paths_for(ext_ids)
-    first_open = not (profile["open_count"] or 0)
-    builtin = extensions.builtin_manager_button(open_sidebar=first_open)
-    if builtin:
-        addon_paths.append(builtin)
-
-    plan = {
-        "profile_id": profile_id,
-        "session_id": session_id,
-        "user_data_dir": profile["user_data_dir"],
-        "os": profile["os"],
-        "headless": config.FORCE_HEADLESS
-        or bool(profile["headless"])
-        or bool(db.get_setting("headless", False)),
-        "fingerprint": fingerprint,
-        "fingerprint_preset": fingerprint.get("preset"),
-        "addons": addon_paths,
-        "proxy": proxy,
-        "manager_url": config.MANAGER_URL
-        if config.OPEN_MANAGER and db.get_setting("open_manager_on_launch", True)
-        else None,
-        "status_file": str(status_path),
-    }
-    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
-    plan_path.chmod(0o600)
-
-    with db.session() as conn:
         conn.execute(
             "INSERT INTO sessions(id, profile_id, state, started_at) VALUES (?, ?, 'starting', ?)",
             (session_id, profile_id, db.now()),
@@ -212,42 +235,39 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             "open_count=COALESCE(open_count, 0) + 1, updated_at=? WHERE id=?",
             (session_id, db.now(), db.now(), profile_id),
         )
-
-    log_handle = open(log_path, "w", encoding="utf-8")  # noqa: SIM115
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "moltskin.services.core.runner", "--plan", str(plan_path)],
-        cwd=str(config.ROOT),
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
-    )
-
-    with db.session() as conn:
+        try:
+            with log_path.open("w", encoding="utf-8") as log_handle:
+                proc = subprocess.Popen(command, cwd=config.ROOT, stdout=log_handle,
+                                        stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as exc:
+            raise LaunchError("LAUNCH_FAILED", f"无法启动浏览器进程：{exc}", 500) from exc
         conn.execute("UPDATE sessions SET pid=? WHERE id=?", (proc.pid, session_id))
 
     timeout = float(db.get_setting("launch_timeout_sec", 30))
     deadline = time.time() + timeout
     state = None
+    info = None
     while time.time() < deadline:
-        info = _read_status(status_path)
-        if info:
-            state = info.get("state")
-            if state in ("running", "failed"):
-                break
-        if proc.poll() is not None:
+        if status_path is not None:
+            info = _read_status(status_path)
+            state = info.get("state") if info else None
+        elif chromium.owns_lock(profile_dir, proc.pid):
+            state = "running"
+        if state in ("running", "failed") or proc.poll() is not None:
             break
-        time.sleep(0.2)
+        time.sleep(0.1)
 
-    if state == "failed":
-        info = _read_status(status_path) or {}
-        _finish_session(session_id, profile_id, "failed",
-                        info.get("error_code", "LAUNCH_FAILED"),
-                        info.get("error_message"))
-        raise LaunchError(
-            info.get("error_code", "LAUNCH_FAILED"),
-            info.get("error_message") or "启动失败",
-            409 if info.get("error_code") == "PROFILE_LOCKED" else 500,
-        )
+    if state == "failed" or proc.poll() is not None:
+        info = info or {}
+        code = info.get("error_code", "LAUNCH_FAILED")
+        message = info.get("error_message") or f"浏览器在启动完成前退出（{proc.returncode}）"
+        with db.session() as conn:
+            row = conn.execute("SELECT state FROM sessions WHERE id=?", (session_id,)).fetchone()
+        if row and row["state"] in ("stopping", "stopped", "killed"):
+            _finish_session(session_id, profile_id, "stopped")
+            raise LaunchError("LAUNCH_CANCELLED", "启动已取消")
+        _finish_session(session_id, profile_id, "failed", code, message)
+        raise LaunchError(code, message, 409 if code == "PROFILE_LOCKED" else 500)
 
     if state != "running":
         proc.terminate()
@@ -255,18 +275,23 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+            proc.wait()
         _finish_session(session_id, profile_id, "failed", "LAUNCH_TIMEOUT", "启动超时")
         raise LaunchError("LAUNCH_TIMEOUT", f"启动超时（{timeout} 秒）", 504)
 
     with db.session() as conn:
-        conn.execute("UPDATE sessions SET state='running' WHERE id=?", (session_id,))
+        started = conn.execute(
+            "UPDATE sessions SET state='running' WHERE id=? AND state='starting'", (session_id,)
+        ).rowcount
 
     Thread(
         target=_monitor,
-        args=(session_id, profile_id, proc, status_path, log_handle),
+        args=(session_id, profile_id, proc, status_path),
         daemon=True,
     ).start()
 
+    if not started:
+        raise LaunchError("LAUNCH_CANCELLED", "启动已取消")
     db.log("profile.launch", profile_id, {"session_id": session_id}, actor=actor)
     return {"session_id": session_id, "profile_id": profile_id, "state": "running"}
 
@@ -286,30 +311,46 @@ def stop_profile(profile_id: str, actor: str = "local") -> dict:
 
 def stop(session_id: str, actor: str = "local") -> dict:
     with db.session() as conn:
-        session = conn.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+        conn.execute("BEGIN IMMEDIATE")
+        session = conn.execute(
+            SESSION_QUERY + "WHERE s.id=?", (session_id,),
+        ).fetchone()
         if session is None:
             raise LaunchError("SESSION_NOT_FOUND", "会话不存在", 404)
         if session["state"] not in ACTIVE_STATES:
             return {"session_id": session_id, "state": session["state"]}
+        pid = session["pid"]
+        if session["engine"] == "chromium" and _session_alive(session):
+            if not chromium.owns_lock(Path(session["user_data_dir"]), pid):
+                if session["state"] == "starting":
+                    raise LaunchError("PROFILE_STARTING", "浏览器正在初始化，请稍后再关闭")
+                if session["state"] == "stopping":
+                    return {"session_id": session_id, "state": "stopping"}
+                # An old session PID can belong to an unrelated process after restart.
+                raise LaunchError("PROCESS_CHANGED", "进程与当前环境不匹配，未发送关闭信号")
+        conn.execute("UPDATE sessions SET state='stopping' WHERE id=?", (session_id,))
 
-    pid = session["pid"]
-    if _pid_alive(pid):
+    if _session_alive(session):
         try:
-            os.kill(pid, 15)  # SIGTERM
-        except OSError:
+            # Chromium treats SIGTERM as an OS logout and skips some storage writes.
+            # SIGINT uses its normal browser exit path on Linux and macOS.
+            normal_exit = signal.SIGINT if session["engine"] == "chromium" else signal.SIGTERM
+            os.kill(pid, normal_exit)
+        except ProcessLookupError:
             pass
         timeout = float(db.get_setting("stop_timeout_sec", 8))
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            if not _pid_alive(pid):
-                break
-            time.sleep(0.2)
-        if _pid_alive(pid):
-            try:
-                os.kill(pid, 9)
-            except OSError:
-                pass
+        deadline = time.monotonic() + timeout
+        while _session_alive(session) and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if _session_alive(session):
+            if session["engine"] != "chromium" or chromium.owns_lock(Path(session["user_data_dir"]), pid):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
+    if not _session_alive(session):
+        _finish_session(session_id, session["profile_id"], "stopped")
     db.log("session.stop", session["profile_id"], {"session_id": session_id}, actor=actor)
     return {"session_id": session_id, "state": "stopping"}
 
@@ -320,9 +361,10 @@ def status(profile_id: str) -> dict:
         if profile is None:
             raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
         session = _active_session(conn, profile_id)
-        if session and not _pid_alive(session["pid"]):
-            _finish_session(session["id"], profile_id, "crashed", "PROCESS_GONE",
-                            "进程已退出")
+        if session and not _session_alive(session):
+            state = "stopped" if session["state"] == "stopping" else "crashed"
+            _finish_session(session["id"], profile_id, state, "PROCESS_GONE", "进程已退出")
+            profile = conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
             session = None
     return {
         "profile_id": profile_id,
@@ -377,51 +419,25 @@ def cleanup_browser_orphans() -> int:
     return cleaned
 
 
-def reap_stale() -> int:
-    """周期性回收：会话仍是 running 但进程已消失时，及时改状态。
-
-    没有这一步，被 SIGKILL 或崩溃的 runner 会让环境一直显示"运行中"，
-    并发上限、备份和批量操作都会被卡住。
-    """
-    cleaned = 0
+def _reap_missing(code: str, message: str) -> int:
     with db.session() as conn:
-        rows = conn.execute(
-            "SELECT * FROM sessions WHERE state IN ('starting','running','stopping')"
-        ).fetchall()
-        for row in rows:
-            if _pid_alive(row["pid"]):
-                continue
-            conn.execute(
-                "UPDATE sessions SET state='crashed', error_code='PROCESS_GONE', "
-                "error_message='进程已退出', ended_at=? WHERE id=?",
-                (db.now(), row["id"]),
-            )
-            conn.execute(
-                "UPDATE profiles SET status='crashed', updated_at=? WHERE id=? AND status='running'",
-                (db.now(), row["profile_id"]),
-            )
+        rows = conn.execute(SESSION_QUERY + "WHERE s.state IN ('starting','running','stopping')").fetchall()
+    cleaned = 0
+    for row in rows:
+        if not _session_alive(row):
+            if row["state"] == "stopping":
+                _finish_session(row["id"], row["profile_id"], "stopped")
+            else:
+                _finish_session(row["id"], row["profile_id"], "crashed", code, message)
             cleaned += 1
     return cleaned
+
+
+def reap_stale() -> int:
+    """回收失效会话；保留新启动的会话及其环境状态。"""
+    return _reap_missing("PROCESS_GONE", "进程已退出")
 
 
 def cleanup_orphans() -> int:
     """服务启动时清理上次异常退出留下的会话。"""
-    cleaned = 0
-    with db.session() as conn:
-        rows = conn.execute(
-            "SELECT * FROM sessions WHERE state IN ('starting','running','stopping')"
-        ).fetchall()
-        for row in rows:
-            if _pid_alive(row["pid"]):
-                continue
-            conn.execute(
-                "UPDATE sessions SET state='crashed', error_code='ORPHAN', "
-                "error_message='服务重启时发现进程已不存在', ended_at=? WHERE id=?",
-                (db.now(), row["id"]),
-            )
-            conn.execute(
-                "UPDATE profiles SET status='crashed', updated_at=? WHERE id=? AND status='running'",
-                (db.now(), row["profile_id"]),
-            )
-            cleaned += 1
-    return cleaned
+    return _reap_missing("ORPHAN", "服务重启时发现进程已不存在")

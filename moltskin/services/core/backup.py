@@ -44,8 +44,8 @@ def create(include_profiles: bool = False) -> Path:
     with sqlite3.connect(db_copy) as conn:
         conn.row_factory = sqlite3.Row
         profiles = [
-            {"id": row["id"], "name": row["name"]}
-            for row in conn.execute("SELECT id, name FROM profiles ORDER BY created_at")
+            dict(row)
+            for row in conn.execute("SELECT id, name, engine FROM profiles ORDER BY created_at")
         ]
 
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -57,6 +57,8 @@ def create(include_profiles: bool = False) -> Path:
                     zf.write(path, str(Path("extensions") / path.relative_to(ext_dir)))
         if include_profiles:
             for profile in profiles:
+                if profile["engine"] != "camoufox":
+                    continue
                 base = config.PROFILES_DIR / profile["id"]
                 cookies = base / "cookies.sqlite"
                 if cookies.exists():
@@ -76,6 +78,7 @@ def create(include_profiles: bool = False) -> Path:
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "include_profiles": include_profiles,
                     "profiles": profiles,
+                    "profile_data_excluded": [p["id"] for p in profiles if include_profiles and p["engine"] != "camoufox"],
                     "extensions": sum(1 for _ in (config.DATA_DIR / "extensions").rglob("*"))
                     if (config.DATA_DIR / "extensions").exists()
                     else 0,
@@ -112,7 +115,11 @@ def restore(archive: bytes) -> dict[str, Any]:
         # 校验即将替换的数据库能打开且有 profiles 表
         try:
             conn = sqlite3.connect(f"file:{incoming}?mode=ro", uri=True)
-            conn.execute("SELECT COUNT(*) FROM profiles").fetchone()
+            columns = {col[1] for col in conn.execute("PRAGMA table_info(profiles)")}
+            profile_query = "SELECT id FROM profiles"
+            if "engine" in columns:
+                profile_query += " WHERE engine='camoufox'"
+            camoufox_ids = {row[0] for row in conn.execute(profile_query)}
             conn.close()
         except sqlite3.Error as exc:
             raise ValueError(f"备份中的数据库不可用：{exc}")
@@ -139,7 +146,7 @@ def restore(archive: bytes) -> dict[str, Any]:
         restored_profiles = 0
         if profiles_in.exists():
             for profile_dir in profiles_in.iterdir():
-                if not profile_dir.is_dir():
+                if not profile_dir.is_dir() or profile_dir.name not in camoufox_ids:
                     continue
                 dest = config.PROFILES_DIR / profile_dir.name
                 dest.mkdir(parents=True, exist_ok=True)

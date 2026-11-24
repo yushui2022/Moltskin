@@ -451,6 +451,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .modal .foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex;
   justify-content: flex-end; gap: 8px; flex: none; background: var(--panel); }
 .field.full { grid-column: 1 / -1; }
+.field[hidden] { display: none; }
 
 /* profile detail */
 .detail-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
@@ -672,7 +673,6 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </a>
       <div class="engine-card" id="engineCard">
         <b>引擎检测中…</b>
-        <span>Camoufox 内核</span>
       </div>
     </div>
   </aside>
@@ -1042,7 +1042,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               </div>
               <div class="field"><label>环境内显示控制台按钮</label>
                 <select class="select" id="sManagerButton"><option value="true">是（侧边栏 + Alt+Shift+M）</option><option value="false">否</option></select>
-                <div class="hint">每个环境的浏览器左侧会多一个按钮，点一下回到管理控制台</div>
+                <div class="hint">在 Camoufox 窗口左侧显示返回管理控制台的按钮</div>
               </div>
               <div class="field"><label>环境上限</label><input class="input" id="sProfileLimit" type="number" min="1"></div>
               <div class="field"><label>每日打开上限</label><input class="input" id="sDailyLimit" type="number" min="1"></div>
@@ -1077,9 +1077,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
                   <button class="btn small" id="backupBtn">导出备份</button>
                   <button class="btn small" id="restoreBtn">恢复备份</button>
                 </div>
-                <div class="hint">导出数据库与扩展；勾选「包含登录态」会额外打包每个环境的 Cookie 与 localStorage（需要先关闭所有环境）</div>
+                <div class="hint">备份包含数据库、扩展和两种内核的环境配置。要一并备份 Camoufox 环境的 Cookie 和本地存储，请先关闭所有环境。</div>
                 <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-top:4px">
-                  <input type="checkbox" id="backupProfiles"> 包含登录态
+                  <input type="checkbox" id="backupProfiles"> 包含 Camoufox 登录态
                 </label>
               </div>
               <div class="field"><label>数据目录</label>
@@ -1107,12 +1107,12 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="scroll">
         <div class="panel" style="max-width:760px">
           <div class="panel-body" style="padding:18px 20px;line-height:1.75">
-            <h3 style="margin:0 0 8px;font-size:14px">1. 准备代理（可选）</h3>
+            <h3 style="margin:0 0 8px;font-size:14px">1. 准备 Camoufox 代理（可选）</h3>
             <p class="muted" style="margin:0 0 16px">在「代理 IP」添加 HTTP 或 SOCKS5 代理并检测，确认出口 IP 与目标地区一致。</p>
             <h3 style="margin:0 0 8px;font-size:14px">2. 创建环境</h3>
-            <p class="muted" style="margin:0 0 16px">创建时系统会生成一份随机指纹并永久保存；同一环境每次启动都是同一身份。</p>
+            <p class="muted" style="margin:0 0 16px">选择浏览器内核。Camoufox 环境可设置操作系统和代理，Moltskin Chromium 环境可设置网页读取本机字体的权限。</p>
             <h3 style="margin:0 0 8px;font-size:14px">3. 打开窗口</h3>
-            <p class="muted" style="margin:0 0 16px">点击「打开」启动独立的 Camoufox 实例，登录状态保存在该环境自己的数据目录里。</p>
+            <p class="muted" style="margin:0 0 16px">点击「打开」启动所选内核。登录状态保存在该环境自己的数据目录里。</p>
             <h3 style="margin:0 0 8px;font-size:14px">常见问题</h3>
             <p class="muted" style="margin:0">· 环境显示「异常」：上次进程被强制结束，重新打开即可恢复。<br>
               · 打开失败并提示并发上限：到「设置 → 最大同时运行」调高上限。<br>
@@ -1133,10 +1133,17 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
     <div class="head"><span id="profileModalTitle">创建窗口</span><button class="x" data-close="profileMask"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body">
       <div class="field full"><label>窗口名称 *</label><input class="input" id="fName" placeholder="例如：店铺-菲律宾-01"></div>
-      <div class="field"><label>操作系统</label>
+      <div class="field"><label for="fEngine">浏览器内核</label>
+        <select class="select" id="fEngine"><option value="camoufox">Camoufox（Firefox）</option><option value="chromium">Moltskin Chromium</option></select>
+        <div class="hint" id="fEngineHint" hidden></div>
+      </div>
+      <div class="field" data-engine="chromium" hidden><label for="fLocalFonts">本机字体访问</label>
+        <select class="select" id="fLocalFonts"><option value="standard">标准（由站点请求授权）</option><option value="restricted">受限（禁止枚举）</option></select>
+      </div>
+      <div class="field" data-engine="camoufox"><label for="fOs">操作系统</label>
         <select class="select" id="fOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
       </div>
-      <div class="field"><label>代理</label>
+      <div class="field" data-engine="camoufox"><label for="fProxy">代理</label>
         <select class="select" id="fProxy"><option value="">不使用代理</option></select>
       </div>
       <div class="field"><label>分组</label>
@@ -1168,14 +1175,21 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="field full"><label>名称前缀</label><input class="input" id="bPrefix" placeholder="环境">
         <div class="hint" id="batchPreview" style="margin-top:4px"></div>
       </div>
-      <div class="field"><label>操作系统</label>
+      <div class="field"><label for="bEngine">浏览器内核</label>
+        <select class="select" id="bEngine"><option value="camoufox">Camoufox（Firefox）</option><option value="chromium">Moltskin Chromium</option></select>
+        <div class="hint" id="bEngineHint" hidden></div>
+      </div>
+      <div class="field" data-engine="chromium" hidden><label for="bLocalFonts">本机字体访问</label>
+        <select class="select" id="bLocalFonts"><option value="standard">标准（由站点请求授权）</option><option value="restricted">受限（禁止枚举）</option></select>
+      </div>
+      <div class="field" data-engine="camoufox"><label for="bOs">操作系统</label>
         <select class="select" id="bOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
       </div>
       <div class="field"><label>启动方式</label>
         <select class="select" id="bHeadless"><option value="0">有头（显示窗口）</option><option value="1">无头（后台）</option></select>
       </div>
       <div class="field"><label>分组</label><select class="select" id="bGroup"><option value="">未分组</option></select></div>
-      <div class="field"><label>代理</label><select class="select" id="bProxy"><option value="">不使用代理</option></select></div>
+      <div class="field" data-engine="camoufox"><label for="bProxy">代理</label><select class="select" id="bProxy"><option value="">不使用代理</option></select></div>
       <div class="field full"><label>标签</label><input class="input" id="bTags" placeholder="用逗号分隔，应用到全部新环境"></div>
     </div>
     <div class="foot">
@@ -1305,19 +1319,19 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <span id="detailStatus"></span>
       </div>
       <section class="section">
-        <h3>指纹预览</h3>
+        <h3 id="detailConfigHeading">指纹预览</h3>
         <div class="kv-grid" id="fingerprintPreview"></div>
       </section>
-      <section class="section">
+      <section class="section" data-engine="camoufox">
         <h3>启动前检查<button class="btn small" id="recheckBtn">重新检查</button></h3>
         <div id="consistency" class="check-list"><span class="muted">检查中…</span></div>
       </section>
-      <section class="section">
+      <section class="section" data-engine="camoufox">
         <h3>扩展<button class="btn small" id="reloadExtBtn">刷新</button></h3>
         <div id="detailExtensions" class="ext-picker"><span class="muted">加载中…</span></div>
       </section>
 
-      <section class="section">
+      <section class="section" data-engine="camoufox">
         <h3>环境同步<button class="btn small" id="stateSizeRefresh">刷新</button></h3>
         <p class="hint">把另一个环境的 Cookie、localStorage、IndexedDB 覆盖到当前环境（两个环境都要先关闭）。</p>
         <div class="field-row">
@@ -1326,7 +1340,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <div class="hint" id="stateSize" style="margin-top:6px">统计中…</div>
       </section>
 
-      <section class="section">
+      <section class="section" data-engine="camoufox">
         <h3>Cookie<button class="btn small" id="cookieRefresh">刷新</button></h3>
         <div id="cookieSummary" class="hint">加载中…</div>
         <div class="field-row" style="flex-wrap:wrap">
@@ -1338,7 +1352,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         </div>
       </section>
 
-      <section class="section">
+      <section class="section" data-engine="camoufox">
         <h3>指纹自检</h3>
         <p class="hint">在 CreepJS 中打开该环境并截图，运行前需要先关闭环境。</p>
         <button class="btn primary small" id="selfTestBtn">运行自检</button>
@@ -1755,13 +1769,25 @@ function statusHtml(p) {
   return `<span class="status"><span class="dot-s ${st[1]}"></span>${st[0]}</span>`;
 }
 
+function engineName(p) {
+  return p.engine === "chromium" ? "Moltskin Chromium" : "Camoufox";
+}
+
+function fontsLabel(p) {
+  return p.local_fonts === "restricted" ? "禁止枚举" : "站点授权";
+}
+
 function rowHtml(p, index) {
   const proxy = proxyLabel(p);
   const c = state.columns;
   const preview = p.fingerprint_preview;
-  const cfg = preview
-    ? `${preview.os === "macos" ? "macOS" : preview.os === "linux" ? "Linux" : "Win"} · ${preview.hardware_concurrency || "?"}核 · ${preview.screen || ""}`
-    : "未生成";
+  let cfg = "Camoufox · 未生成指纹";
+  if (p.engine === "chromium") {
+    cfg = `Chromium · 字体${fontsLabel(p)}`;
+  } else if (preview) {
+    const os = preview.os === "macos" ? "macOS" : preview.os === "linux" ? "Linux" : "Win";
+    cfg = `Camoufox · ${os} · ${preview.hardware_concurrency || "?"}核 · ${preview.screen || ""}`;
+  }
   return `<tr class="${state.selected.has(p.id) ? "selected" : ""}">
     <td><input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}"></td>
     <td class="dim">${(state.pageNo - 1) * state.pageSize + index + 1}</td>
@@ -1788,7 +1814,7 @@ function rowHtml(p, index) {
       <div class="cfg">
         ${icon("finger")}
         <div class="stack">
-          <span style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(cfg)}</span>
+          <span title="${esc(cfg)}" style="font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(cfg)}</span>
           <span class="sub">打开 ${p.open_count || 0} 次 · ${esc(relTime(p.last_opened_at))}</span>
         </div>
       </div>
@@ -1818,13 +1844,15 @@ function cardHtml(p) {
       <input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}">
       <div class="grow">
         <div class="env-card-name" data-action="detail" data-id="${p.id}">${esc(p.name)}</div>
-        <div class="env-card-sub">${esc(p.group?.name || "未分组")} · ${esc(relTime(p.last_opened_at))}</div>
+        <div class="env-card-sub">${engineName(p)} · ${esc(p.group?.name || "未分组")} · ${esc(relTime(p.last_opened_at))}</div>
       </div>
       ${statusHtml(p)}
     </div>
     <div class="env-card-meta">
       <div><span class="k">代理</span><span class="v mono">${esc(proxy.text)}${proxy.geo ? ` · ${esc(proxy.geo)}` : ""}</span></div>
-      <div><span class="k">指纹</span><span class="v">${preview ? `${esc(preview.os)} · ${esc(preview.screen || "")}` : "未生成"}</span></div>
+      ${p.engine === "chromium"
+        ? `<div><span class="k">字体访问</span><span class="v">${fontsLabel(p)}</span></div>`
+        : `<div><span class="k">指纹</span><span class="v">${preview ? `${esc(preview.os)} · ${esc(preview.screen || "")}` : "未生成"}</span></div>`}
       <div><span class="k">打开</span><span class="v">${p.open_count || 0} 次</span></div>
     </div>
     ${(p.tags || []).length ? `<div class="env-card-tags">${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
@@ -2123,7 +2151,7 @@ function openRowMenu(anchor, id) {
     <div class="sep"></div>
     <button data-cmd="edit" data-id="${id}">${icon("edit")}编辑环境</button>
     <button data-cmd="duplicate" data-id="${id}">${icon("copy")}复制环境</button>
-    <button data-cmd="reset" data-id="${id}">${icon("refresh")}重置指纹</button>
+    ${p.engine !== "chromium" ? `<button data-cmd="reset" data-id="${id}">${icon("refresh")}重置指纹</button>` : ""}
     <div class="sep"></div>
     <button data-cmd="delete" data-id="${id}" class="danger">${icon("trash")}删除环境</button>`;
   openPop(anchor, html, { align: "right" });
@@ -2237,7 +2265,7 @@ async function stopProfile(id) {
     toast(err.message, true);
   } finally {
     state.busy.delete(id);
-    setTimeout(refresh, 700);
+    await refresh();
   }
 }
 async function duplicateProfile(id) {
@@ -2265,15 +2293,65 @@ async function deleteProfile(id) {
 }
 
 /* ---------------- 创建 / 编辑 ---------------- */
-function openProfileModal(id = null) {
+function setEngineFields(prefix) {
+  const select = $(prefix + "Engine");
+  const chromium = select.value === "chromium";
+  for (const field of select.closest(".body").querySelectorAll("[data-engine]")) {
+    field.hidden = field.dataset.engine !== select.value;
+  }
+  const hint = $(prefix + "EngineHint");
+  const unavailable = state.engine?.chromium?.available === false;
+  hint.textContent = chromium && unavailable ? "本机 Chromium 暂不可用，可先保存环境配置。" : "";
+  if (chromium && $(prefix + "LocalFonts").disabled) {
+    hint.textContent += "关闭环境后可更改字体权限。";
+  }
+  hint.hidden = !hint.textContent;
+}
+
+function engineSettings(prefix, creating) {
+  const engine = $(prefix + "Engine").value;
+  const values = creating ? { engine } : {};
+  if (engine === "chromium") {
+    const fonts = $(prefix + "LocalFonts");
+    if (!fonts.disabled) values.local_fonts = fonts.value;
+  } else {
+    values.proxy_id = $(prefix + "Proxy").value || null;
+    if (creating) values.os = $(prefix + "Os").value;
+  }
+  return values;
+}
+
+$("fEngine").onchange = () => setEngineFields("f");
+$("bEngine").onchange = () => setEngineFields("b");
+
+function updateEditLock(id, status) {
+  if (!$("profileMask").classList.contains("show") || state.editingId !== id || $("fEngine").value !== "chromium") return;
+  $("fLocalFonts").disabled = status === "running";
+  setEngineFields("f");
+}
+
+async function openProfileModal(id = null) {
   state.editingId = id;
   const isEdit = Boolean(id);
   $("profileModalTitle").textContent = isEdit ? "编辑环境" : "创建窗口";
   $("confirmProfile").textContent = isEdit ? "保存" : "创建";
   fillSelects();
 
-  const p = isEdit ? state.profiles.find((x) => x.id === id) : null;
+  let p = null;
+  if (isEdit) {
+    try {
+      p = await api(`/profiles/${id}`);
+    } catch (err) {
+      return toast(err.message, true);
+    }
+    if (state.editingId !== id) return;
+  }
   $("fName").value = p?.name || "";
+  $("fEngine").value = p?.engine || "camoufox";
+  $("fEngine").disabled = isEdit;
+  $("fLocalFonts").value = p?.local_fonts || "standard";
+  $("fLocalFonts").disabled = p?.status === "running";
+  setEngineFields("f");
   $("fOs").value = p?.os || "windows";
   $("fOs").disabled = isEdit;
   $("fProxy").value = p?.proxy?.id || "";
@@ -2303,8 +2381,7 @@ $("confirmProfile").onclick = async () => {
   if (!name) return toast("请填写窗口名称", true);
   const payload = {
     name,
-    os: $("fOs").value,
-    proxy_id: $("fProxy").value || null,
+    ...engineSettings("f", !state.editingId),
     group_id: $("fGroup").value || null,
     headless: $("fHeadless").value === "1",
     remark: $("fRemark").value.trim(),
@@ -2363,6 +2440,9 @@ function openBatchModal() {
   $("bCount").value = 5;
   $("bPrefix").value = "";
   $("bStart").value = 1;
+  $("bEngine").value = "camoufox";
+  $("bLocalFonts").value = "standard";
+  setEngineFields("b");
   $("bTags").value = "";
   const check = $("batchPreview");
   check.textContent = "";
@@ -2396,8 +2476,7 @@ $("confirmBatch").onclick = async () => {
   const start = Math.max(1, Number($("bStart").value) || 1);
   const pad = (n) => String(n).padStart(String(start + count - 1).length, "0");
   const base = {
-    os: $("bOs").value,
-    proxy_id: $("bProxy").value || null,
+    ...engineSettings("b", true),
     group_id: $("bGroup").value || null,
     headless: $("bHeadless").value === "1",
     tags: $("bTags").value.split(",").map((x) => x.trim()).filter(Boolean),
@@ -2476,12 +2555,23 @@ function openDetail(id) {
   $("detailName").textContent = p.name;
   $("detailSub").textContent = [
     p.group?.name || "未分组",
-    p.os,
-    p.proxy?.exit_ip || "未绑定代理",
+    engineName(p),
+    ...(p.engine === "chromium" ? [] : [p.os, p.proxy?.exit_ip || "未绑定代理"]),
     `打开 ${p.open_count || 0} 次`,
   ].join(" · ");
   $("detailStatus").innerHTML = statusHtml(p);
 
+  const chromium = p.engine === "chromium";
+  $("detailConfigHeading").textContent = chromium ? "内核设置" : "指纹预览";
+  for (const section of $("detailMask").querySelectorAll('[data-engine="camoufox"]')) {
+    section.hidden = chromium;
+  }
+  if (chromium) {
+    $("fingerprintPreview").innerHTML = `<div class="kv"><div class="k">本机字体访问</div><div class="v">${fontsLabel(p)}</div></div>
+      <div class="kv"><div class="k">启动方式</div><div class="v">${p.headless ? "无头（后台）" : "有头（显示窗口）"}</div></div>`;
+    openModal("detailMask");
+    return;
+  }
   const preview = p.fingerprint_preview;
   $("fingerprintPreview").innerHTML = preview
     ? Object.entries({
@@ -2833,7 +2923,7 @@ $("logAction").addEventListener("change", (e) => {
 let settingsCache = null;
 async function loadSettings() {
   try {
-    const [s, engine] = await Promise.all([api("/settings"), state.engine ? Promise.resolve(state.engine) : api("/engine")]);
+    const [s, engine] = await Promise.all([api("/settings"), api("/engine")]);
     state.engine = engine;
     settingsCache = s;
     $("sMax").value = s.max_concurrent;
@@ -2855,12 +2945,16 @@ async function loadSettings() {
 function renderEngine(engine) {
   const active = (engine.browsers || []).find((b) => b.active) || (engine.browsers || [])[0];
   const card = $("engineCard");
-  card.innerHTML = `<b>Camoufox ${esc(engine.camoufox)}</b><span>内核 ${esc(active ? active.version : "未安装")}</span>`;
+  const chromium = engine.chromium;
+  const version = chromium?.available ? chromium.version || "可用" : "未就绪";
+  card.innerHTML = `<b>Camoufox ${esc(engine.camoufox)}</b><span>Chromium ${esc(version)}</span>`;
   $("enginePanel").innerHTML = `
     <div class="field"><label>Camoufox</label><div class="mono">${esc(engine.camoufox)}</div></div>
     <div class="field"><label>Playwright</label><div class="mono">${esc(engine.playwright)}</div></div>
-    <div class="field"><label>浏览器内核</label><div class="mono">${esc(active ? active.version : "未安装")}</div></div>
-    <div class="field"><label>已安装内核</label><div class="mono">${(engine.browsers || []).map((b) => esc(b.version)).join("<br>") || "—"}</div></div>`;
+    <div class="field"><label>Moltskin Chromium</label><div class="mono">${esc(version)}</div>
+      ${!chromium?.available && chromium?.message ? `<div class="hint">${esc(chromium.message)}</div>` : ""}</div>
+    <div class="field"><label>活动的 Camoufox 内核</label><div class="mono">${esc(active ? active.version : "未安装")}</div></div>
+    <div class="field"><label>已安装的 Camoufox 内核</label><div class="mono">${(engine.browsers || []).map((b) => esc(b.version)).join("<br>") || "—"}</div></div>`;
 }
 
 $("saveSettings").onclick = async () => {
@@ -3093,7 +3187,7 @@ $("extGrid").addEventListener("click", async (e) => {
     const res = await askChoose({
       title: "分配到环境",
       label: "选择环境（会覆盖该环境原有的扩展选择）",
-      options: [{ value: "", label: "不分配" }, ...state.profiles.map((p) => ({ value: p.id, label: p.name }))],
+      options: [{ value: "", label: "不分配" }, ...state.profiles.filter((p) => p.engine !== "chromium").map((p) => ({ value: p.id, label: p.name }))],
     });
     if (!res || !res.value) return;
     try {
@@ -3165,7 +3259,7 @@ $("stateSizeRefresh").onclick = () => detailId && loadStateSize(detailId);
 
 $("syncStateBtn").onclick = async () => {
   if (!detailId) return;
-  const others = state.profiles.filter((p) => p.id !== detailId);
+  const others = state.profiles.filter((p) => p.id !== detailId && p.engine !== "chromium");
   if (!others.length) return toast("没有其他环境", true);
   const source = await askChoose({
     title: "同步登录态",
@@ -3279,7 +3373,7 @@ $("cookieExportNetscape").onclick = () => exportCookies("netscape");
 
 $("cookieCopyBtn").onclick = async () => {
   if (!detailId) return;
-  const others = state.profiles.filter((p) => p.id !== detailId);
+  const others = state.profiles.filter((p) => p.id !== detailId && p.engine !== "chromium");
   if (!others.length) return toast("没有其他环境", true);
   const res = await askChoose({
     title: "从其他环境复制 Cookie",
@@ -3574,6 +3668,8 @@ async function refresh({ silent = false } = {}) {
     const changed = sig !== state.sig;
     state.sig = sig;
     state.profiles = profiles.items;
+    const edited = state.editingId && state.profiles.find((p) => p.id === state.editingId);
+    if (edited) updateEditLock(edited.id, edited.status);
     state.stats = stats;
     state.proxies = proxies;
     state.groups = groups;
@@ -3647,8 +3743,13 @@ function canAutoRefresh() {
   go(page);
   refresh({ silent: true }).then(refreshProxies).catch(() => {});
   setInterval(() => {
-    if (document.hidden || !canAutoRefresh()) return;
-    refresh({ silent: true }).catch(() => {});
+    if (document.hidden) return;
+    const edited = state.editingId;
+    if (edited && $("profileMask").classList.contains("show") && $("fEngine").value === "chromium") {
+      api(`/profiles/${edited}/status`).then((p) => updateEditLock(edited, p.status)).catch(() => {});
+    } else if (canAutoRefresh()) {
+      refresh({ silent: true }).catch(() => {});
+    }
   }, 4000);
 })();
 </script>

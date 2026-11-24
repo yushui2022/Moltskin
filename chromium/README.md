@@ -1,6 +1,16 @@
 # Moltskin Chromium 开发预览
 
-Chromium 预览版为每个环境提供独立的数据目录和本机字体访问设置。已有开发包时可直接用命令行启动。当前桌面面板使用 Camoufox。
+本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录和本机字体访问设置。
+
+## 打开浏览器内的控制面板
+
+构建包含下方两个补丁的 Chromium，按项目快速开始安装 Python 依赖。在仓库根目录用同一 Python 环境运行 `python chromium/open_panel.py`。启动器会启动或复用本机控制服务，在 Moltskin Chromium 里打开管理标签页。macOS 也可以运行一次 `python chromium/install_panel_macos.py`，以后双击用户「应用程序」目录中的 `Moltskin.app` 即可打开。
+
+在管理页点击「创建窗口」，选择 Chromium、填写名称并选择字体访问策略，然后在列表中点「打开」。工作环境默认打开空白页；在地址栏输入 `chrome://moltskin/` 可以回到面板。这个浏览器入口在当前标签页打开本机服务，地址栏会显示实际的回环地址。要修改字体策略，先关闭对应环境，编辑后再次打开。
+
+已有环境继续使用创建时的内核。面板根据环境 ID 分配数据目录，命令行预览的数据位于自己的目录中。如果开发包放在自定义路径，启动面板前设置 `MOLTSKIN_CHROMIUM_BINARY`，指向 Mac 的 `Chromium.app` 或 Linux 的 `chrome` 可执行文件。面板会显示实际检测到的内核版本。
+
+Chromium 环境可在浏览器中登录并保留本机数据。面板里的 Cookie 文件管理、跨环境状态同步和备份中的登录态目前仅支持 Camoufox。Chromium 环境的名称和字体策略随面板数据库一起备份。
 
 ## 临时打开看效果
 
@@ -21,7 +31,7 @@ python3 chromium/launch_preview.py b --local-fonts restricted
 
 macOS 命名环境使用登录钥匙串保护 Cookie。如果系统询问当前开发版是否可访问「Chromium Safe Storage」，确认是自己启动的版本后，在系统弹窗输入登录钥匙串密码，选择「始终允许」可记住此次授权。重新编译的开发版可能需要重新授权。[Apple 钥匙串说明](https://support.apple.com/guide/mac-help/kychn002/mac)
 
-启动器默认查找下文的 `out/MoltskinFont` 开发包。其他位置可用 `--binary` 指定 macOS 的 `Chromium.app` 或 Linux 的 `chrome` 可执行文件。启动前会向内核确认它支持这项设置。
+启动器优先查找下文的 `out/MoltskinPanel` 开发包，也能用以前的 `out/MoltskinFont` 做字体预览。命令行字体预览还可以用 `--binary` 指定其他开发包。启动前会向内核确认它支持所需功能。
 
 ## 检查上游版本
 
@@ -71,7 +81,7 @@ pin="$(python3 "$module/verify_upstream.py")" &&
 
 在 `$checkout/src` 下，Linux 的可执行文件为 `out/Moltskin/chrome`，Mac 为 `out/Moltskin/Chromium.app/Contents/MacOS/Chromium`。用该文件执行 `--version` 并与锁定版本核对。用全新的测试数据目录打开自有 HTTPS 测试页，正常关闭后重启，记录系统、架构、构建日志和产物摘要。两端分别保留结果，作为接入 Moltskin 启动器前的基线。
 
-## 构建带字体设置的预览版
+## 构建带内置面板入口和字体设置的预览版
 
 检出干净的锁定版本、同步依赖后，在同一终端执行。单独的输出目录可以保留上面的对照版本。
 
@@ -80,13 +90,14 @@ pin="$(python3 "$module/verify_upstream.py")" &&
   set -eu
   cd "$checkout/src"
   test "$(git rev-parse HEAD)" = "$pin"
-  patch="$module/patches/0001-restrict-local-font-access.patch"
-  git apply --check "$patch"
-  git apply "$patch"
-  mkdir -p out/MoltskinFont
-  cp "$module/args.gn" out/MoltskinFont/args.gn
-  gn gen out/MoltskinFont
-  autoninja -C out/MoltskinFont -j 4 chrome
+  for patch in "$module"/patches/*.patch; do
+    git apply --check "$patch"
+    git apply "$patch"
+  done
+  mkdir -p out/MoltskinPanel
+  cp "$module/args.gn" out/MoltskinPanel/args.gn
+  gn gen out/MoltskinPanel
+  autoninja -C out/MoltskinPanel -j 4 chrome
 )
 ```
 
@@ -95,9 +106,9 @@ pin="$(python3 "$module/verify_upstream.py")" &&
 在有桌面会话和已安装字体的机器上，从 Moltskin 仓库根目录执行。测试使用当前 Python 环境中的 Playwright 和指定的浏览器文件。
 
 ```sh
-browser="$checkout/src/out/MoltskinFont/chrome"
+browser="$checkout/src/out/MoltskinPanel/chrome"
 if [ "$(uname -s)" = Darwin ]; then
-  browser="$checkout/src/out/MoltskinFont/Chromium.app/Contents/MacOS/Chromium"
+  browser="$checkout/src/out/MoltskinPanel/Chromium.app/Contents/MacOS/Chromium"
 fi
 "$browser" --version --moltskin-capabilities
 python3 chromium/check_local_fonts.py "$browser"

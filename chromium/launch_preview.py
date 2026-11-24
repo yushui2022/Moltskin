@@ -6,13 +6,16 @@ import argparse
 import fcntl
 import os
 import re
-import socket
 import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-CAPABILITY = "moltskin-disable-local-font-access"
+if __package__:
+    from . import native
+else:  # Direct invocation: python3 chromium/launch_preview.py
+    import native
+
 MODES = ("standard", "restricted")
 
 
@@ -24,39 +27,10 @@ def profile_name(value: str) -> str:
     return value
 
 
-def checked_binary(path: Path) -> Path:
-    path = path.expanduser().resolve()
-    if path.suffix == ".app":
-        path = path / "Contents" / "MacOS" / "Chromium"
-    probe = subprocess.run(
-        [path, "--version", "--moltskin-capabilities"], stdout=subprocess.PIPE, timeout=15, check=True
-    )
-    if CAPABILITY.encode() not in probe.stdout.splitlines():
-        raise ValueError(f"this binary does not report the Moltskin Local Font Access capability: {path}")
-    return path
-
-
-def chromium_owns_directory(user_data: Path) -> bool:
-    # Chromium also creates a lock when launched directly, or if our launcher exits first.
-    try:
-        owner = os.readlink(user_data / "SingletonLock")
-    except FileNotFoundError:
-        return False
-    host, _, pid = owner.rpartition("-")
-    if host == socket.gethostname() and pid.isascii() and pid.isdigit() and 0 < int(pid) <= 2**31 - 1:
-        try:
-            os.kill(int(pid), 0)
-        except ProcessLookupError:
-            return False  # Chromium cleans its own stale lock on startup.
-        except PermissionError:
-            pass
-    return True
-
-
 def run_browser(binary: Path, user_data: Path, mode: str, *, disposable: bool = False) -> int:
     args = [str(binary), f"--user-data-dir={user_data}", "--no-first-run", "--no-default-browser-check"]
     if mode == "restricted":
-        args.append("--" + CAPABILITY)
+        args.append("--" + native.CAPABILITY)
     if disposable and sys.platform == "darwin":
         args.append("--use-mock-keychain")
     with subprocess.Popen(args) as browser:
@@ -76,7 +50,7 @@ def launch(profile: Path, binary: Path, requested_mode: str | None) -> int:
         except BlockingIOError:
             raise ValueError(busy) from None
         user_data = profile / "browser"
-        if chromium_owns_directory(user_data):
+        if native.chromium_owns_directory(user_data):
             raise ValueError(busy)
 
         settings = profile / "local-fonts"
@@ -97,17 +71,16 @@ def launch(profile: Path, binary: Path, requested_mode: str | None) -> int:
 
 
 def main() -> int:
-    build = Path.home() / "chromium-baseline" / "src" / "out" / "MoltskinFont"
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("profile", nargs="?", type=profile_name, help="environment to save; omit for a disposable preview")
     parser.add_argument("--local-fonts", choices=MODES, help="font access policy; new profiles default to standard")
     parser.add_argument(
-        "--binary", type=Path, default=build / ("Chromium.app" if sys.platform == "darwin" else "chrome"),
+        "--binary", type=Path, default=native.default_binary(),
         help="Moltskin Chromium executable or .app bundle (default: local out/MoltskinFont build)",
     )
     args = parser.parse_args()
     try:
-        binary = checked_binary(args.binary)
+        binary, _ = native.probe(args.binary)
         if args.profile is None:
             with TemporaryDirectory(prefix="moltskin-preview-") as temporary:
                 print("Opening a disposable preview. Its data will be removed when Chromium exits.", flush=True)

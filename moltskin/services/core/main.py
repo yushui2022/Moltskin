@@ -6,17 +6,20 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import re
 import shutil
 import sqlite3
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
 from contextlib import asynccontextmanager
 from importlib.metadata import version as pkg_version
-from typing import Any
+from typing import Any, Literal
 
 from camoufox.fingerprints import get_random_preset
 from camoufox.multiversion import list_installed
@@ -25,6 +28,8 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
+
+from chromium import native as chromium_native
 
 from . import backup as backup_store
 from . import config, db, extensions, jobs, launcher, proxy_checker, scheduler, selftest, state_sync
@@ -36,7 +41,13 @@ from .security import get_token
 # ---------------------------------------------------------------------------
 
 
+Engine = Literal["camoufox", "chromium"]
+FontPolicy = Literal["standard", "restricted"]
+
+
 class ProfileCreate(BaseModel):
+    engine: Engine = "camoufox"
+    local_fonts: FontPolicy = "standard"
     name: str = Field(min_length=1, max_length=120)
     group_id: str | None = None
     proxy_id: str | None = None
@@ -48,6 +59,8 @@ class ProfileCreate(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
+    engine: Engine | None = None
+    local_fonts: FontPolicy | None = None
     name: str | None = None
     group_id: str | None = None
     proxy_id: str | None = None
@@ -183,7 +196,7 @@ def ensure_presets() -> int:
     """给历史环境补上指纹预设，保证每次启动身份稳定。"""
     changed = 0
     with db.session() as conn:
-        rows = conn.execute("SELECT id, os, fingerprint FROM profiles").fetchall()
+        rows = conn.execute("SELECT id, os, fingerprint FROM profiles WHERE engine='camoufox'").fetchall()
         for row in rows:
             fingerprint = json.loads(row["fingerprint"] or "{}")
             if fingerprint.get("preset"):
@@ -204,6 +217,8 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
         "name": row["name"],
+        "engine": row["engine"],
+        "local_fonts": row["local_fonts"],
         "group": {"id": row["group_id"], "name": row["group_name"]} if row["group_id"] else None,
         "tags": json.loads(row["tags"] or "[]"),
         "remark": row["remark"],
@@ -269,6 +284,25 @@ def get_profile_row(profile_id: str) -> sqlite3.Row:
     if row is None:
         raise HTTPException(404, detail={"code": "PROFILE_NOT_FOUND", "message": "环境不存在"})
     return row
+
+
+def camoufox_profile(profile_id: str) -> sqlite3.Row:
+    row = get_profile_row(profile_id)
+    if row["engine"] != "camoufox":
+        raise HTTPException(422, detail={"code": "ENGINE_UNSUPPORTED", "message": "此操作仅支持 Camoufox 环境"})
+    return row
+
+
+def _check_engine_options(engine: str, local_fonts: str, proxy: Any, fingerprint: Any) -> None:
+    if engine not in ("camoufox", "chromium") or local_fonts not in ("standard", "restricted"):
+        message = "不支持的浏览器内核或字体访问设置"
+    elif engine == "camoufox" and local_fonts != "standard":
+        message = "本机字体访问设置仅支持 Chromium 环境"
+    elif engine == "chromium" and (proxy or fingerprint):
+        message = "当前 Chromium 预览版不支持绑定代理或使用 Camoufox 指纹预设"
+    else:
+        return
+    raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": message})
 
 
 def raise_launch_error(exc: launcher.LaunchError) -> None:
@@ -403,8 +437,13 @@ def font(name: str):
 
 
 @app.get("/api/v1/health")
-def health():
-    return {"status": "ok", "version": "0.4.1"}
+def health(panel_challenge: str | None = None):
+    result = {"status": "ok", "version": "0.4.1"}
+    if panel_challenge and re.fullmatch(r"[0-9a-f]{32}", panel_challenge):
+        # The local panel launcher can verify this service without sending its API token.
+        message = b"moltskin-panel-v1\x00" + panel_challenge.encode("ascii")
+        result["panel_proof"] = hmac.digest(get_token().strip().encode(), message, "sha256").hex()
+    return result
 
 
 @app.get("/api/v1/export/profiles")
@@ -423,6 +462,8 @@ def export_profiles():
         fingerprint = json.loads(row["fingerprint"] or "{}")
         items.append({
             "name": row["name"],
+            "engine": row["engine"],
+            "local_fonts": row["local_fonts"],
             "group": groups.get(row["group_id"]),
             "tags": json.loads(row["tags"] or "[]"),
             "remark": row["remark"],
@@ -458,6 +499,13 @@ def import_profiles(payload: ImportRequest):
             name = str(item.get("name") or "").strip()
             if not name:
                 skipped.append({"name": "", "reason": "名称为空"})
+                continue
+            engine = item.get("engine", "camoufox")
+            local_fonts = item.get("local_fonts", "standard")
+            try:
+                _check_engine_options(engine, local_fonts, item.get("proxy"), item.get("fingerprint"))
+            except HTTPException as exc:
+                skipped.append({"name": name, "reason": exc.detail["message"]})
                 continue
             final_name = name
             suffix = 2
@@ -499,18 +547,21 @@ def import_profiles(payload: ImportRequest):
             profile_id = new_id("pf")
             user_data_dir = config.PROFILES_DIR / profile_id
             user_data_dir.mkdir(parents=True, exist_ok=True)
-            fingerprint = _fingerprint_with_preset(item.get("fingerprint") or {}, item.get("os") or "windows")
+            fingerprint = {}
+            os_name = "native" if engine == "chromium" else item.get("os") or "windows"
+            if engine == "camoufox":
+                fingerprint = _fingerprint_with_preset(item.get("fingerprint") or {}, os_name)
             ts = db.now()
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
-                "user_data_dir, headless, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)",
+                "user_data_dir, headless, status, created_at, updated_at, engine, local_fonts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
                 (
                     profile_id, final_name, group_id, proxy_id,
                     json.dumps(item.get("tags") or [], ensure_ascii=False),
-                    str(item.get("remark") or ""), item.get("os") or "windows",
+                    str(item.get("remark") or ""), os_name,
                     json.dumps(fingerprint, ensure_ascii=False), str(user_data_dir),
-                    int(bool(item.get("headless"))), ts, ts,
+                    int(bool(item.get("headless"))), ts, ts, engine, local_fonts,
                 ),
             )
             existing_names.add(final_name)
@@ -571,7 +622,7 @@ def stats():
 
 @app.get("/api/v1/engine")
 def engine():
-    """直接读取 Camoufox 的版本与已安装内核信息。"""
+    """Report installed builds and whether this host can launch the Chromium preview."""
     browsers = []
     for installed in list_installed():
         browsers.append(
@@ -583,11 +634,25 @@ def engine():
                 "prerelease": installed.is_prerelease,
             }
         )
+    chromium_version = None
+    problem = None
+    if sys.platform not in {"darwin", "linux"}:
+        problem = "Chromium 预览版目前支持 macOS 和 Linux。"
+    else:
+        try:
+            _, chromium_version = chromium_native.probe(chromium_native.default_binary())
+        except FileNotFoundError:
+            problem = "未找到 Moltskin Chromium，可通过 MOLTSKIN_CHROMIUM_BINARY 指定开发包。"
+        except ValueError:
+            problem = "此 Chromium 缺少 Moltskin 本机字体访问补丁。"
+        except (OSError, subprocess.SubprocessError):
+            problem = "无法执行 Moltskin Chromium，请检查开发包路径和执行权限。"
     return {
         "data": {
             "camoufox": pkg_version("camoufox"),
             "playwright": pkg_version("playwright"),
             "browsers": browsers,
+            "chromium": {"available": problem is None, "version": chromium_version, "message": problem},
         }
     }
 
@@ -718,6 +783,9 @@ def list_profiles(q: str = "", status: str = "", group_id: str = "",
 
 @app.post("/api/v1/profiles", status_code=201)
 def create_profile(payload: ProfileCreate):
+    _check_engine_options(payload.engine, payload.local_fonts, payload.proxy_id, payload.fingerprint)
+    if payload.engine == "chromium" and "os" in payload.model_fields_set and payload.os != "native":
+        raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     limit = int(db.get_setting("profile_limit", 200) or 0)
     if limit > 0:
         with db.session() as conn:
@@ -730,6 +798,7 @@ def create_profile(payload: ProfileCreate):
                     "message": f"环境数量已达上限（{limit}），可在设置中调整",
                 },
             )
+    fingerprint = {} if payload.engine == "chromium" else _fingerprint_with_preset(payload.fingerprint, payload.os)
     profile_id = new_id("pf")
     user_data_dir = config.PROFILES_DIR / profile_id
     user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -738,8 +807,8 @@ def create_profile(payload: ProfileCreate):
         with db.session() as conn:
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
-                "fingerprint, user_data_dir, headless, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)",
+                "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
                 (
                     profile_id,
                     payload.name.strip(),
@@ -747,12 +816,14 @@ def create_profile(payload: ProfileCreate):
                     payload.proxy_id or None,
                     json.dumps(payload.tags, ensure_ascii=False),
                     payload.remark,
-                    payload.os,
-                    json.dumps(_fingerprint_with_preset(payload.fingerprint, payload.os), ensure_ascii=False),
+                    "native" if payload.engine == "chromium" else payload.os,
+                    json.dumps(fingerprint, ensure_ascii=False),
                     str(user_data_dir),
                     int(payload.headless),
                     ts,
                     ts,
+                    payload.engine,
+                    payload.local_fonts,
                 ),
             )
     except sqlite3.IntegrityError:
@@ -772,7 +843,15 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     row = get_profile_row(profile_id)
     # exclude_unset 才能区分“字段没传”和“显式传 null（解绑代理 / 移出分组）”
     provided = payload.model_dump(exclude_unset=True)
+    if "engine" in provided and provided["engine"] != row["engine"]:
+        raise HTTPException(409, detail={"code": "ENGINE_IMMUTABLE", "message": "环境创建后不能更换内核"})
+    _check_engine_options(row["engine"], provided.get("local_fonts", row["local_fonts"]),
+                          provided.get("proxy_id"), provided.get("fingerprint"))
+    if row["engine"] == "chromium" and "os" in provided and provided["os"] != "native":
+        raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     fields: dict[str, Any] = {}
+    if "local_fonts" in provided and payload.local_fonts != row["local_fonts"]:
+        fields["local_fonts"] = payload.local_fonts
     for key in ("name", "group_id", "proxy_id", "remark", "os", "headless"):
         if key in provided:
             value = provided[key]
@@ -801,6 +880,9 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     assignments = ", ".join(f"{key}=?" for key in fields)
     try:
         with db.session() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if "local_fonts" in fields and launcher._active_session(conn, profile_id):
+                raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改字体访问设置"})
             conn.execute(
                 f"UPDATE profiles SET {assignments} WHERE id=?",
                 (*fields.values(), profile_id),
@@ -814,7 +896,7 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
 @app.post("/api/v1/profiles/{profile_id}/reset-fingerprint")
 def reset_fingerprint(profile_id: str):
     """重新生成指纹预设（身份变化，Cookie 保留）。"""
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     if row["status"] == "running":
         raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境"})
     fingerprint = json.loads(row["fingerprint"] or "{}")
@@ -828,15 +910,18 @@ def reset_fingerprint(profile_id: str):
             (json.dumps(fingerprint, ensure_ascii=False), db.now(), profile_id),
         )
     db.log("profile.reset_fingerprint", profile_id, {"os": row["os"]})
-    return {"data": serialize_profile(get_profile_row(profile_id))}
+    return {"data": serialize_profile(camoufox_profile(profile_id))}
 
 
 @app.delete("/api/v1/profiles/{profile_id}")
 def delete_profile(profile_id: str, delete_data: bool = False):
-    row = get_profile_row(profile_id)
-    if row["status"] == "running":
-        raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境"})
     with db.session() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT status, user_data_dir FROM profiles WHERE id=?", (profile_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, detail={"code": "PROFILE_NOT_FOUND", "message": "环境不存在"})
+        if row["status"] == "running":
+            raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境"})
         conn.execute("DELETE FROM profiles WHERE id=?", (profile_id,))
     if delete_data:
         shutil.rmtree(row["user_data_dir"], ignore_errors=True)
@@ -853,12 +938,12 @@ def duplicate_profile(profile_id: str):
     ts = db.now()
     source_fp = json.loads(row["fingerprint"] or "{}")
     source_fp.pop("preset", None)  # 复制必须得到新身份，不能共用指纹
-    duplicated_fp = _fingerprint_with_preset(source_fp, row["os"])
+    duplicated_fp = _fingerprint_with_preset(source_fp, row["os"]) if row["engine"] == "camoufox" else {}
     with db.session() as conn:
         conn.execute(
             "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
-            "fingerprint, user_data_dir, headless, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?)",
+            "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
             (
                 new_profile_id,
                 f"{row['name']} 副本",
@@ -872,6 +957,8 @@ def duplicate_profile(profile_id: str):
                 row["headless"],
                 ts,
                 ts,
+                row["engine"],
+                row["local_fonts"],
             ),
         )
     db.log("profile.duplicate", new_profile_id, {"from": profile_id})
@@ -942,6 +1029,7 @@ def batch_profiles(payload: BatchRequest):
 
     elif action == "delete":
         with db.session() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             for profile_id in payload.ids:
                 row = conn.execute("SELECT status, user_data_dir FROM profiles WHERE id=?", (profile_id,)).fetchone()
                 if row is None:
@@ -1010,7 +1098,7 @@ def _ua_os(user_agent: str) -> str | None:
 
 @app.post("/api/v1/profiles/{profile_id}/verify")
 def verify_profile(profile_id: str):
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     fingerprint = json.loads(row["fingerprint"] or "{}")
     preview = fingerprint_preview(fingerprint, row["os"])
     checks: list[dict[str, Any]] = []
@@ -1081,7 +1169,7 @@ def verify_profile(profile_id: str):
 
 @app.post("/api/v1/profiles/{profile_id}/self-test")
 def self_test(profile_id: str):
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     if row["status"] == "running":
         raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再运行自检"})
     proxy = None
@@ -1366,7 +1454,7 @@ def _require_stopped(row: sqlite3.Row, action: str = "修改") -> None:
 
 @app.get("/api/v1/profiles/{profile_id}/cookies")
 def list_cookies(profile_id: str, domain: str = ""):
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     try:
         items = cookie_store.read_cookies(row["user_data_dir"], domain)
     except FileNotFoundError:
@@ -1376,7 +1464,7 @@ def list_cookies(profile_id: str, domain: str = ""):
 
 @app.get("/api/v1/profiles/{profile_id}/cookies/export")
 def export_cookies(profile_id: str, format: str = "json"):
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     try:
         items = cookie_store.read_cookies(row["user_data_dir"])
     except FileNotFoundError:
@@ -1399,7 +1487,7 @@ def export_cookies(profile_id: str, format: str = "json"):
 
 @app.put("/api/v1/profiles/{profile_id}/cookies")
 def import_cookies(profile_id: str, payload: CookiePayload):
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     _require_stopped(row, "导入")
     raw = payload.cookies if payload.cookies is not None else payload.text
     if raw is None:
@@ -1415,8 +1503,8 @@ def import_cookies(profile_id: str, payload: CookiePayload):
 
 @app.post("/api/v1/profiles/{profile_id}/cookies/copy-from/{source_id}")
 def copy_cookies(profile_id: str, source_id: str, mode: str = "merge"):
-    target = get_profile_row(profile_id)
-    source = get_profile_row(source_id)
+    target = camoufox_profile(profile_id)
+    source = camoufox_profile(source_id)
     _require_stopped(target, "导入")
     try:
         items = cookie_store.read_cookies(source["user_data_dir"])
@@ -1431,7 +1519,7 @@ def copy_cookies(profile_id: str, source_id: str, mode: str = "merge"):
 
 @app.delete("/api/v1/profiles/{profile_id}/cookies")
 def clear_cookies(profile_id: str):
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     _require_stopped(row, "清除")
     result = cookie_store.write_cookies(row["user_data_dir"], [], mode="replace")
     db.log("profile.cookies_clear", profile_id, {})
@@ -1523,7 +1611,7 @@ def delete_extension(ext_id: str):
 
 @app.get("/api/v1/profiles/{profile_id}/extensions")
 def profile_extensions(profile_id: str):
-    get_profile_row(profile_id)
+    camoufox_profile(profile_id)
     with db.session() as conn:
         ids = [
             row["ext_id"]
@@ -1536,7 +1624,7 @@ def profile_extensions(profile_id: str):
 
 @app.put("/api/v1/profiles/{profile_id}/extensions")
 def set_profile_extensions(profile_id: str, payload: dict[str, Any]):
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     if row["status"] == "running":
         raise HTTPException(
             409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改扩展"}
@@ -1730,15 +1818,15 @@ def run_schedule_now(schedule_id: str):
 
 @app.get("/api/v1/profiles/{profile_id}/state-size")
 def profile_state_size(profile_id: str):
-    row = get_profile_row(profile_id)
+    row = camoufox_profile(profile_id)
     return {"data": state_sync.size_of(row["user_data_dir"])}
 
 
 @app.post("/api/v1/profiles/{profile_id}/sync-from/{source_id}")
 def sync_profile_state(profile_id: str, source_id: str, parts: str = "cookies,storage"):
     """把源环境的 Cookie / localStorage 覆盖到目标环境（两个都要先关闭）。"""
-    target = get_profile_row(profile_id)
-    source = get_profile_row(source_id)
+    target = camoufox_profile(profile_id)
+    source = camoufox_profile(source_id)
     if profile_id == source_id:
         raise HTTPException(422, detail={"code": "SAME_PROFILE", "message": "不能从自己同步"})
     for row, label in ((target, "目标"), (source, "源")):
@@ -1803,6 +1891,7 @@ def restore_backup(file: UploadFile = File(...)):
         result = backup_store.restore(archive)
     except ValueError as exc:
         raise HTTPException(422, detail={"code": "BAD_BACKUP", "message": str(exc)})
+    db.init_db()
     ensure_presets()
     db.log("backup.restore", None, {"profiles": result["profiles"]})
     return {"data": result}

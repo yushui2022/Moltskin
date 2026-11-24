@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import os
 import sys
 import tempfile
@@ -31,6 +32,18 @@ def test_health_is_public():
         response = client.get("/api/v1/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_panel_health_proof():
+    challenge = "0123456789abcdef" * 2
+    with _client() as client:
+        plain = client.get("/api/v1/health").json()
+        assert "panel_proof" not in plain
+        for invalid in (challenge.upper(), challenge[:-1], challenge + "0"):
+            assert client.get("/api/v1/health", params={"panel_challenge": invalid}).json() == plain
+        data = client.get("/api/v1/health", params={"panel_challenge": challenge}).json()
+        proof = hmac.digest(get_token().strip().encode(), b"moltskin-panel-v1\x00" + challenge.encode(), "sha256").hex()
+        assert data == {**plain, "panel_proof": proof}
 
 
 def test_api_requires_token():
@@ -65,6 +78,7 @@ def test_create_profile_generates_preview():
         response = client.post("/api/v1/profiles", headers=_auth_headers(), json={"name": "smoke-test", "os": "windows"})
         assert response.status_code == 201
         profile = response.json()["data"]
+        assert profile["engine"] == "camoufox"
         assert profile["fingerprint_preview"] is not None
         assert profile["fingerprint_preview"]["platform"] == "Win32"
 

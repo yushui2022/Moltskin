@@ -14,6 +14,8 @@ curl http://127.0.0.1:8765/api/v1/health
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/api/v1/engine
 ```
 
+`data.chromium` reports `available`, `version` and a diagnostic `message` when the local Moltskin build cannot run. Set `MOLTSKIN_CHROMIUM_BINARY` before starting the service to select a custom build path.
+
 ## Profiles
 
 | Method | Path | Description |
@@ -21,7 +23,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/api/v1/engine
 | GET | `/profiles` | List; `status`, `q`, `field`, `op`, `tag`, `group_id`, `sort`, `order`, `page`, `page_size` |
 | POST | `/profiles` | Create |
 | GET | `/profiles/{id}` | Detail with `fingerprint_preview` |
-| PATCH | `/profiles/{id}` | Update name / group / tags / remark / os / headless |
+| PATCH | `/profiles/{id}` | Update metadata or settings for the selected engine |
 | DELETE | `/profiles/{id}?delete_data=true` | Delete |
 | POST | `/profiles/{id}/duplicate` | Duplicate with a new fingerprint |
 | POST | `/profiles/{id}/reset-fingerprint` | New fingerprint, keep cookies |
@@ -56,6 +58,8 @@ curl -G .../profiles -H "Authorization: Bearer $TOKEN" \
 ```
 
 ### Create
+
+Omitting `engine` selects Camoufox, including for profiles saved before dual-engine support. To create a Chromium profile, send `{"name":"local-preview","engine":"chromium","local_fonts":"restricted"}`. Supported font policies are `standard` (default, follows site permissions) and `restricted` (empty local font list). Each profile keeps its engine for its lifetime. Close a Chromium profile before updating its font policy. The usual launch, stop and status endpoints apply.
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/v1/profiles \
@@ -215,7 +219,7 @@ curl -X POST .../profiles/pf_b/sync-from/pf_a?parts=cookies,storage \
 | POST | `/backup/restore` | Multipart `file=@backup.zip` |
 
 A database-only backup uses SQLite's online snapshot, so profiles may keep
-running. `include_profiles=true` requires everything stopped. Restore keeps the
+running. `include_profiles=true` requires everything stopped. It includes Camoufox login state. The manifest lists Chromium profiles under `profile_data_excluded`. Their settings are included in the database snapshot. Restore keeps the
 previous database as `moltskin.db.bak`.
 
 ## Schedules

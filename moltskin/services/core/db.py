@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   tags             TEXT NOT NULL DEFAULT '[]',
   remark           TEXT NOT NULL DEFAULT '',
   os               TEXT NOT NULL DEFAULT 'windows',
+  engine           TEXT NOT NULL DEFAULT 'camoufox' CHECK (engine IN ('camoufox','chromium')),
+  local_fonts      TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted')),
   browser_version  TEXT,
   fingerprint      TEXT NOT NULL DEFAULT '{}',
   user_data_dir    TEXT NOT NULL,
@@ -193,6 +195,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(profiles)")}
     additions = {
         "open_count": "INTEGER NOT NULL DEFAULT 0",
+        "engine": "TEXT NOT NULL DEFAULT 'camoufox' CHECK (engine IN ('camoufox','chromium'))",
+        "local_fonts": "TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted'))",
     }
     for name, ddl in additions.items():
         if name not in columns:

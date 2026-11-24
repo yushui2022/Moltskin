@@ -8,7 +8,7 @@ Moltskin is a self-hosted browser for managing isolated profiles. In the **0.4.1
 
 ## Chromium roadmap
 
-Moltskin's Chromium developer preview builds from source on Apple Silicon. Each profile can allow the usual site permission flow or block enumeration through the Local Font Access API. The preview launches from the command line. Dashboard integration and verification on Linux x86-64 are planned. [Build, launch and test two profiles](chromium/README.md)
+Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` shortcut opens the local dashboard. Select Camoufox or Chromium when creating a profile. Chromium profiles also have a local font access setting. Each profile keeps its engine and data directory across restarts. The Chromium build has been verified on Apple Silicon. Linux x86-64 browser verification is pending. [Build and run the Chromium preview](chromium/README.md)
 
 | Milestone | What we will verify |
 |---|---|
@@ -175,7 +175,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 | GET | `/export/profiles` | Export profiles as JSON |
 | POST | `/import/profiles` | Import profiles from JSON |
 | GET/PUT | `/settings` | Settings |
-| GET | `/engine` | Camoufox version and installed builds |
+| GET | `/engine` | Camoufox builds and local Moltskin Chromium availability |
 
 Interactive docs: <http://127.0.0.1:8765/docs>
 Full endpoint reference: [docs/API.md](docs/API.md)
