@@ -494,6 +494,16 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .kpi .v small { font-size: 13px; font-weight: 400; color: var(--dim); margin-left: 3px; }
 .kpi .s { color: var(--dim); font-size: 11.5px; margin-top: 4px; }
 .home-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px; }
+.home-measurements { display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 16px; padding: 16px; }
+.home-measurements .module-icon { display: grid; place-items: center; flex: none;
+  width: 40px; height: 40px; border-radius: var(--r-md); color: var(--accent); background: var(--accent-soft); }
+.home-measurements .module-icon .i { width: 21px; height: 21px; }
+.home-measurements h2 { margin: 0; font-size: 16px; }
+.home-measurements p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.measurement-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; min-width: 0; }
+.measurement-controls select { width: clamp(120px, 16vw, 220px); }
+.measurement-controls [hidden] { display: none; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm); overflow: hidden; }
 .panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px;
@@ -691,6 +701,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   .proxy-form { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 650px) {
+  .measurement-controls { flex-basis: 100%; }
+  .measurement-controls select { flex: 1; min-width: 0; }
   .shell { grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); }
   .side { padding: 0 var(--page-gutter); border-right: 0; border-bottom: 1px solid var(--border); }
   .brand { justify-content: flex-start; gap: 7px; padding: 9px 0; }
@@ -842,6 +854,18 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </header>
       <div class="scroll">
         <div class="kpis" id="kpis"></div>
+        <section class="panel home-measurements" id="homeMeasurements" aria-labelledby="homeMeasurementTitle">
+          <span class="module-icon" aria-hidden="true"><svg class="i"><use href="#i-finger"/></svg></span>
+          <div>
+            <h2 id="homeMeasurementTitle">浏览器实测</h2>
+            <p id="homeMeasurementHint">正在读取环境…</p>
+          </div>
+          <div class="measurement-controls">
+            <select class="select" id="homeMeasurementProfile" aria-label="选择要查看实测结果的 Camoufox 环境" hidden></select>
+            <button class="btn primary" id="homeMeasurementOpen" type="button" aria-haspopup="dialog" hidden>查看实测</button>
+            <button class="btn" id="homeMeasurementCreate" data-action="create" aria-haspopup="dialog" hidden>创建 Camoufox 环境</button>
+          </div>
+        </section>
         <div class="home-grid">
           <div class="panel">
             <div class="panel-head">
@@ -1470,7 +1494,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <span id="detailStatus"></span>
       </div>
       <section class="section" data-engine="camoufox">
-        <h3>浏览器实测<button class="btn small" id="recheckBtn">刷新结果</button></h3>
+        <h3 id="measurementHeading" tabindex="-1">浏览器实测<button class="btn small" id="recheckBtn">刷新结果</button></h3>
         <div id="consistency" class="check-list" aria-live="polite"></div>
       </section>
       <section class="section">
@@ -1725,11 +1749,12 @@ document.addEventListener("scroll", (e) => {
 
 /* ---------------- 弹窗 ---------------- */
 let lastFocused = null;
-function openModal(id) {
+function openModal(id, initialFocus = null) {
   lastFocused = document.activeElement;
   $(id).classList.add("show");
   setTimeout(() => {
-    const first = $(id).querySelector("[data-initial-focus]") || $(id).querySelector("input:not([type=hidden]), select, button.primary");
+    if (!$(id).classList.contains("show")) return;
+    const first = initialFocus || $(id).querySelector("[data-initial-focus]") || $(id).querySelector("input:not([type=hidden]), select, button.primary");
     first?.focus();
   }, 40);
 }
@@ -2732,7 +2757,7 @@ $("importFile").addEventListener("change", async (e) => {
 let detailId = null;
 let verifyRequest = 0;
 let detailView = 0;
-function openDetail(id) {
+function openDetail(id, initialFocus = null) {
   const p = state.profiles.find((x) => x.id === id);
   if (!p) return;
   detailId = id;
@@ -2775,7 +2800,7 @@ function openDetail(id) {
   $("selfTestResult").innerHTML = "";
   $("selfTestBtn").disabled = false;
   $("selfTestBtn").textContent = "运行自检";
-  openModal("detailMask");
+  openModal("detailMask", initialFocus);
   runVerify(id);
   loadDetailExtensions(id);
   loadCookieSummary(id);
@@ -3261,7 +3286,29 @@ $("restoreFile").addEventListener("change", async (e) => {
 });
 
 /* ---------------- 首页 ---------------- */
+function renderHomeMeasurements() {
+  const select = $("homeMeasurementProfile");
+  const eligible = state.profiles.filter((p) => !p.engine || p.engine === "camoufox");
+  const hasProfiles = eligible.length > 0;
+  if (eligible.length !== select.length || eligible.some((p, i) =>
+    p.id !== select.options[i].value || p.name !== select.options[i].text)) {
+    const previous = select.value;
+    select.replaceChildren(...eligible.map((p) => new Option(p.name, p.id)));
+    if (eligible.some((p) => p.id === previous)) select.value = previous;
+  }
+  select.hidden = !hasProfiles;
+  $("homeMeasurementOpen").hidden = !hasProfiles;
+  $("homeMeasurementCreate").hidden = !state.stats || hasProfiles;
+  $("homeMeasurementHint").textContent = !state.stats
+    ? (state.loading ? "正在读取环境…" : "环境列表暂时不可用")
+    : hasProfiles ? "对照 Camoufox 环境的预设值和最近一次启动的实测值。"
+    : "创建并启动一个 Camoufox 环境，即可查看实测结果。";
+}
+
+$("homeMeasurementOpen").onclick = () => openDetail($("homeMeasurementProfile").value, $("measurementHeading"));
+
 function renderHome() {
+  renderHomeMeasurements();
   const s = state.stats;
   if (!s) return;
   const cards = [
@@ -3876,10 +3923,17 @@ $("jobMask").querySelectorAll("[data-close]").forEach((el) =>
   el.addEventListener("click", () => { if (jobTimer) { clearInterval(jobTimer); jobTimer = null; } }));
 
 
+async function loadDashboardProfiles() {
+  const pageSize = Math.max(200, state.profiles.length);
+  const result = await api(`/profiles?page_size=${pageSize}`);
+  if (result.total > pageSize) return api(`/profiles?page_size=${result.total}`);
+  return result;
+}
+
 async function refresh({ silent = false } = {}) {
   try {
     const [profiles, stats, proxies, groups, tags, extensions, schedules] = await Promise.all([
-      api("/profiles?page_size=200"),
+      loadDashboardProfiles(),
       api("/stats"),
       api("/proxies"),
       api("/groups"),
@@ -3919,6 +3973,7 @@ async function refresh({ silent = false } = {}) {
     state.loading = false;
     $("errorBanner").style.display = "flex";
     renderList();
+    if (state.page === "home") renderHomeMeasurements();
     if (!silent) toast(err.message, true);
   }
 }
