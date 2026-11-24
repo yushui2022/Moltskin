@@ -4,7 +4,7 @@
 > 引擎：**Camoufox**（Firefox，MPL-2.0） · 产品层：**Moltskin**（自研）
 > 调研快照：**2026-10-25** · 状态：**产品 v0.1.0 已实现（2026-11-06）**，内核基线回归仍待做
 >
-> 当前代码、安装与快速开始见根目录 [README](../README.md)。
+> 本文记录 Camoufox 初版的设计取舍。当前仓库的后续工作见 [Chromium 开发路线](../README.zh-CN.md#chromium-开发路线)。
 
 ---
 

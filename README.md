@@ -1,14 +1,24 @@
 # Moltskin
 
-<p align="center"><img src="docs/logo.svg" width="76" alt="Moltskin logo"></p>
-
-**Self-hosted multi-profile browser with stable fingerprints, proxies, and a local API.**
-
-Moltskin is an open-source, local-first alternative to commercial anti-detect browsers.
-It manages isolated browser profiles on top of [Camoufox](https://github.com/daijro/camoufox)
-and exposes them through a web UI and a local REST API.
+<p align="center"><img src="docs/logo-wordmark.svg" width="320" alt="Moltskin"></p>
 
 [中文文档](README.zh-CN.md)
+
+Moltskin is a self-hosted browser for managing isolated profiles. In the **0.4.1 alpha**, each profile has its own data directory, fingerprint preset and proxy settings. The local dashboard and REST API launch [Camoufox (Firefox)](https://github.com/daijro/camoufox). [Changelog](CHANGELOG.md) · [Quick start](#quick-start)
+
+## Chromium roadmap
+
+We plan to build Moltskin's own Chromium distribution from upstream source. This repository will hold the version pins, patches, build scripts and regression tests alongside the dashboard that launches the browser. All milestones below are planned.
+
+| Milestone | What we will verify |
+|---|---|
+| Build the engine | Build a pinned Chromium revision on Linux x86-64 and macOS arm64. Launch each build from a clean profile and record its version and checksum. |
+| Launch both engines | Choose the engine for each new profile in the dashboard. Existing Camoufox profiles keep their data. Separate Chromium profiles can run and restart independently. |
+| Ship a native privacy setting | Start with local font enumeration. A test page must observe the restriction in profile A while profile B retains its own permission. Extend coverage to graphics, media devices and locale as tests land. |
+| Migrate profiles and run them remotely | Import a separate Hubstudio cookie file into each of two Chromium profiles. Verify both accounts on the same test site after restart. On a Linux node, check that each authorized user sees and controls only their own session. |
+| Maintain releases | Track upstream Beta and Stable, apply our patches on upgrade branches, build both platforms and test profile upgrades and recovery before publishing. |
+
+**Planned GitHub automation.** When someone reports a bug, the bot will ask for missing details or reproduce it and open a draft fix with a regression test. On new or updated pull requests, it will report the tested commit, what failed before the change and what passed afterward. Maintainers review and merge. [Contributing](CONTRIBUTING.md)
 
 ![Moltskin overview](docs/screenshots/overview.png)
 
@@ -20,17 +30,13 @@ and exposes them through a web UI and a local REST API.
 |---|---|---|
 | ![Extensions](docs/screenshots/extensions.png) | ![Schedules](docs/screenshots/schedules.png) | ![Detail](docs/screenshots/profile-detail.png) |
 
-> Status: **v0.4.0 alpha**. The core create → launch → reuse loop works; expect breaking changes. [Changelog](CHANGELOG.md)
-
----
-
 ## Why Moltskin
 
 - **Local-first** — profiles, cookies and logs stay on your machine. No cloud account.
 - **Stable identity** — each profile gets one fingerprint preset at creation and keeps it across launches.
 - **Isolated by default** — one browser process and one `user_data_dir` per profile.
 - **Auditable kernel** — built on Camoufox, an open-source Firefox fork with C++-level fingerprint patches.
-- **API-first** — manage profiles, proxies and sessions over HTTP; MCP support is on the roadmap.
+- **API-first** — manage profiles, proxies and sessions over HTTP, through the Python SDK or with the MCP server.
 
 ## Features
 
@@ -214,14 +220,6 @@ with MoltskinClient() as client:
 | `MOLTSKIN_PORT` | `8765` | Service port |
 | `MOLTSKIN_HEADLESS` | unset | Force headless mode (Docker sets `1`) |
 | `MOLTSKIN_OPEN_MANAGER` | `1` | Open the manager page on launch |
-
-## Roadmap
-
-- **v0.1** — profile CRUD, launch/stop, proxies, API, web UI
-- **v0.2** — fingerprint preview, consistency check, groups/tags, batch create/open, import/export
-- **v0.3** — MCP server, Python SDK, webhooks
-- **v0.4** — desktop app (Tauri), auto-update
-- **v1.0** — stable API, team features, distributed runners
 
 ## Comparison
 
