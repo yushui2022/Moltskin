@@ -18,8 +18,11 @@ def default_binary() -> Path:
         return Path(configured).expanduser()
     out = Path.home() / "chromium-baseline" / "src" / "out"
     executable = "Chromium.app" if sys.platform == "darwin" else "chrome"
-    panel_build = out / "MoltskinPanel" / executable
-    return panel_build if panel_build.exists() else out / "MoltskinFont" / executable
+    for directory in ("MoltskinToolbar", "MoltskinPanel"):
+        binary = out / directory / executable
+        if binary.exists():
+            return binary
+    return out / "MoltskinFont" / executable
 
 
 def probe(path: Path, *, capability: str = CAPABILITY) -> tuple[Path, str]:

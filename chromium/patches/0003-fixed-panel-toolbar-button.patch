@@ -1,0 +1,150 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 2fc6ee1..d996c92 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -444,6 +444,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+       puts("moltskin-disable-local-font-access");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
++      puts("moltskin-toolbar");
+ #endif
+     }
+   }
+diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
+index fcc7a53..6969e85 100644
+--- a/chrome/browser/ui/views/toolbar/BUILD.gn
++++ b/chrome/browser/ui/views/toolbar/BUILD.gn
+@@ -289,12 +289,14 @@ source_set("impl") {
+     "//chrome/browser/ui/customize_chrome",
+     "//chrome/browser/ui/extensions",
+     "//chrome/browser/ui/hats",
++    "//chrome/browser/ui/navigator",
+     "//chrome/browser/ui/omnibox",
+     "//chrome/browser/ui/profiles",
+     "//chrome/browser/ui/safety_hub",
+     "//chrome/browser/ui/side_panel",
+     "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+     "//chrome/browser/ui/signin",
++    "//chrome/browser/ui/startup",
+     "//chrome/browser/ui/tabs:tab_enums",
+     "//chrome/browser/ui/tabs:tab_strip",
+     "//chrome/browser/ui/tabs:tab_strip_model_observer",
+diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+index 7f404c6..4982c82 100644
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -58,9 +58,12 @@
+ #include "chrome/browser/ui/global_error/global_error_service_factory.h"
+ #include "chrome/browser/ui/intent_picker_tab_helper.h"
+ #include "chrome/browser/ui/layout_constants.h"
++#include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"
+ #include "chrome/browser/ui/omnibox/omnibox_view.h"
+ #include "chrome/browser/ui/page_action/page_action_properties_provider.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry_id.h"
++#include "chrome/browser/ui/startup/url_util.h"
+ #include "chrome/browser/ui/tabs/public/tab_features.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/tabs/tab_strip_prefs.h"
+@@ -159,6 +162,7 @@
+ #include "ui/gfx/image/canvas_image_source.h"
+ #include "ui/gfx/paint_vector_icon.h"
+ #include "ui/gfx/scoped_canvas.h"
++#include "ui/gfx/vector_icon_types.h"
+ #include "ui/views/accessibility/view_accessibility.h"
+ #include "ui/views/actions/action_view_controller.h"
+ #include "ui/views/background.h"
+@@ -194,6 +198,78 @@ DEFINE_UI_CLASS_PROPERTY_KEY(ActionItemEngagedIndicatorStyle,
+
+ namespace {
+
++#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
++const gfx::VectorIcon& MoltskinToolbarIcon() {
++  // The Moltskin chameleon in a square canvas. Use the toolbar's foreground
++  // color so its curled tail and eye remain visible in both theme modes.
++  using enum gfx::CommandType;
++  static constexpr gfx::PathElement kPath[] = {
++      CANVAS_DIMENSIONS, 192,
++      MOVE_TO, 24, 113,
++      R_CUBIC_TO, -12, 2, -17, 15, -12, 26,
++      R_CUBIC_TO, 6, 15, 24, 21, 40, 14,
++      R_CUBIC_TO, 17, -7, 25, -20, 29, -42,
++      R_LINE_TO, 4, -14, R_LINE_TO, -16, -9, R_LINE_TO, -6, 28,
++      R_CUBIC_TO, -3, 19, -14, 29, -25, 29,
++      R_CUBIC_TO, -11, 0, -19, -7, -18, -16,
++      R_CUBIC_TO, 0, -6, 4, -10, 9, -10,
++      R_CUBIC_TO, 5, 0, 7, 4, 6, 7,
++      R_QUADRATIC_TO, -1, 3, -4, 4,
++      R_CUBIC_TO, 7, 2, 13, -2, 13, -9,
++      R_CUBIC_TO, 0, -9, -9, -12, -20, -8, CLOSE,
++      NEW_PATH,
++      MOVE_TO, 61, 124,
++      R_CUBIC_TO, 4, -14, -1, -32, 10, -48,
++      R_CUBIC_TO, 12, -18, 33, -27, 54, -25,
++      R_LINE_TO, 10, 1, R_LINE_TO, 13, -13, R_QUADRATIC_TO, 3, -3, 6, 0,
++      R_LINE_TO, 28, 30, R_QUADRATIC_TO, 4, 4, 0, 8, R_LINE_TO, -2, 2,
++      R_QUADRATIC_TO, -7, 4, -17, 4, R_QUADRATIC_TO, 6, 3, 12, 2,
++      R_CUBIC_TO, -9, 12, -22, 17, -40, 18,
++      R_CUBIC_TO, -11, 10, -24, 16, -38, 17,
++      R_CUBIC_TO, -15, 1, -22, -3, -27, -6, CLOSE,
++      CIRCLE, 154, 66, 7,
++      NEW_PATH,
++      MOVE_TO, 130, 99, R_LINE_TO, 5, 18, R_LINE_TO, 13, -1,
++      R_LINE_TO, -4, 6, R_LINE_TO, -15, 2, R_QUADRATIC_TO, -4, 0, -6, -4,
++      R_LINE_TO, -7, -12, CLOSE,
++      MOVE_TO, 92, 110, R_LINE_TO, 12, 5, R_LINE_TO, -12, 13,
++      R_LINE_TO, 12, -1, R_LINE_TO, -5, 7, R_LINE_TO, -16, 1,
++      R_QUADRATIC_TO, -5, 0, -3, -5, CLOSE,
++  };
++  static constexpr gfx::VectorIconRep kRep[] = {{kPath}};
++  static constexpr gfx::VectorIcon kIcon(kRep, 1, "moltskin_toolbar");
++  return kIcon;
++}
++
++void OpenMoltskinHome(BrowserWindowInterface* browser) {
++  GURL panel("chrome://moltskin/");
++  startup::ResolveMoltskinPanelURL(&panel);
++  if (!panel.SchemeIs("http")) {
++    return;
++  }
++  const GURL home = panel.Resolve("#/home");
++  NavigateParams params(browser, home, ui::PAGE_TRANSITION_AUTO_BOOKMARK);
++  params.user_gesture = true;
++  params.disposition = WindowOpenDisposition::kNewForegroundTab;
++  // Only an existing dashboard document in this window may be reused.
++  // Other pages served by the same loopback host are ordinary working tabs.
++  TabStripModel* tabs = browser->GetTabStripModel();
++  for (int i = 0; i < tabs->count(); ++i) {
++    content::WebContents* tab = tabs->GetWebContentsAt(i);
++    if (tab->GetVisibleURL().EqualsIgnoringRef(panel)) {
++      tabs->ActivateTabAt(i);
++      if (tab->GetVisibleURL() == home && !tab->IsCrashed()) {
++        return;
++      }
++      params.disposition = WindowOpenDisposition::kCurrentTab;
++      params.source_contents = tab;
++      break;
++    }
++  }
++  Navigate(&params);
++}
++#endif  // BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
++
+ // Gets the display mode for a given browser.
+ ToolbarView::DisplayMode GetDisplayMode(BrowserWindowInterface* browser) {
+   // Checked in this order because even tabbed PWAs use the CUSTOM_TAB
+@@ -603,6 +679,14 @@ void ToolbarView::Init() {
+     UpdateGlicButtonVisibility();
+   }
+
++#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
++  auto* moltskin_button = AddChildView(std::make_unique<ToolbarButton>(
++      base::BindRepeating(&OpenMoltskinHome, browser_)));
++  moltskin_button->SetVectorIcon(MoltskinToolbarIcon());
++  moltskin_button->SetTooltipText(u"Moltskin");
++  moltskin_button->GetViewAccessibility().SetName(u"Moltskin");
++#endif
++
+   if (!features::IsWebUIAvatarButtonEnabled()) {
+     avatar_ = AddChildView(std::make_unique<AvatarToolbarButton>(browser_));
+     bool show_avatar_toolbar_button =
