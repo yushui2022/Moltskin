@@ -46,7 +46,7 @@ else:
         return subprocess.run(
             [sys.executable, CLI, *args, "--binary", self.binary.parents[2]],
             env={**os.environ, "MOLTSKIN_DATA_DIR": str(self.data), **env},
-            capture_output=True, text=True, timeout=20,
+            capture_output=True, text=True, timeout=20, check=False,
         )
 
     def browser_args(self, *args):
@@ -54,11 +54,26 @@ else:
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads((self.data / "last-launch").read_text())
 
+    def test_disposable_previews_get_fresh_directories_and_clean_up(self):
+        directories = []
+        for options in [("--local-fonts", "restricted"), ()]:
+            args = self.browser_args(*options)
+            self.assertEqual(SWITCH in args, bool(options))
+            self.assertEqual("--use-mock-keychain" in args, sys.platform == "darwin")
+            data_arg, = (arg for arg in args if arg.startswith("--user-data-dir="))
+            user_data = Path(data_arg.split("=", 1)[1])
+            directories.append(user_data)
+            self.assertFalse(user_data.exists())
+        self.assertNotEqual(*directories)
+        self.assertFalse((self.data / "chromium-preview").exists())
+
     def test_per_profile_switch_and_restart(self):
         a = self.browser_args("one", "--local-fonts", "restricted")
         b = self.browser_args("two")
         self.assertIn(SWITCH, a)
         self.assertNotIn(SWITCH, b)
+        self.assertNotIn("--use-mock-keychain", a)
+        self.assertNotIn("--use-mock-keychain", b)
         base = self.data / "chromium-preview"
         self.assertIn(f"--user-data-dir={base / 'one/browser'}", a)
         self.assertIn(f"--user-data-dir={base / 'two/browser'}", b)

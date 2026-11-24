@@ -2,6 +2,10 @@
 
 Chromium 预览版为每个环境提供独立的数据目录和本机字体访问设置。已有开发包时可直接用命令行启动。当前桌面面板使用 Camoufox。
 
+## 临时打开看效果
+
+在仓库根目录执行 `python3 chromium/launch_preview.py`。每次都会打开全新的临时环境，正常退出浏览器后清理数据。macOS 临时预览使用 Chromium 的测试钥匙串处理 Cookie 加密，不读取登录钥匙串里的「Chromium Safe Storage」。需要保留登录状态时，使用下面的命名环境。[Chromium 开发构建说明](https://chromium.googlesource.com/chromium/src/+/main/docs/mac_build_instructions.md#avoiding-system-permissions-dialogs-after-each-build)
+
 ## 打开两个环境
 
 在 Moltskin 仓库根目录打开两个终端，分别执行一条命令。
@@ -14,6 +18,8 @@ python3 chromium/launch_preview.py b --local-fonts restricted
 网页调用 `window.queryLocalFonts()` 时，标准模式沿用 Chromium 的站点授权流程。限制模式在浏览器进程中直接返回空列表，即使该站点已有授权。这个设置只作用于 Local Font Access API，网页仍可正常使用 CSS 字体。
 
 关闭 B 的浏览器后，执行 `python3 chromium/launch_preview.py b` 即可恢复上次设置。要调整设置，关闭该环境后重新启动并指定 `--local-fonts`。每个环境的设置和浏览数据保存在 `data/chromium-preview/<环境名>/`，可用 `MOLTSKIN_DATA_DIR` 指定数据根目录。
+
+macOS 命名环境使用登录钥匙串保护 Cookie。如果系统询问当前开发版是否可访问「Chromium Safe Storage」，确认是自己启动的版本后，在系统弹窗输入登录钥匙串密码，选择「始终允许」可记住此次授权。重新编译的开发版可能需要重新授权。[Apple 钥匙串说明](https://support.apple.com/guide/mac-help/kychn002/mac)
 
 启动器默认查找下文的 `out/MoltskinFont` 开发包。其他位置可用 `--binary` 指定 macOS 的 `Chromium.app` 或 Linux 的 `chrome` 可执行文件。启动前会向内核确认它支持这项设置。
 

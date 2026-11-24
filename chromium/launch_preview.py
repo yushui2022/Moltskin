@@ -1,4 +1,4 @@
-"""Launch a named, persistent Moltskin Chromium preview on macOS or Linux."""
+"""Open a disposable Moltskin Chromium preview, or a persistent one by name."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
-
+from tempfile import TemporaryDirectory
 
 CAPABILITY = "moltskin-disable-local-font-access"
 MODES = ("standard", "restricted")
@@ -53,6 +53,20 @@ def chromium_owns_directory(user_data: Path) -> bool:
     return True
 
 
+def run_browser(binary: Path, user_data: Path, mode: str, *, disposable: bool = False) -> int:
+    args = [str(binary), f"--user-data-dir={user_data}", "--no-first-run", "--no-default-browser-check"]
+    if mode == "restricted":
+        args.append("--" + CAPABILITY)
+    if disposable and sys.platform == "darwin":
+        args.append("--use-mock-keychain")
+    with subprocess.Popen(args) as browser:
+        try:
+            return browser.wait()
+        except KeyboardInterrupt:
+            browser.terminate()
+            return browser.wait()
+
+
 def launch(profile: Path, binary: Path, requested_mode: str | None) -> int:
     profile.mkdir(mode=0o700, parents=True, exist_ok=True)
     busy = f"profile {profile.name!r} is already open; quit its browser before relaunching"
@@ -78,32 +92,28 @@ def launch(profile: Path, binary: Path, requested_mode: str | None) -> int:
             temporary.write_text(mode + "\n", encoding="utf-8")
             temporary.replace(settings)
 
-        args = [str(binary), f"--user-data-dir={user_data}", "--no-first-run", "--no-default-browser-check"]
-        if mode == "restricted":
-            args.append("--" + CAPABILITY)
         print(f"Opening {profile.name} with Local Font Access set to {mode}.", flush=True)
-        with subprocess.Popen(args) as browser:
-            try:
-                return browser.wait()
-            except KeyboardInterrupt:
-                browser.terminate()
-                return browser.wait()
+        return run_browser(binary, user_data, mode)
 
 
 def main() -> int:
     build = Path.home() / "chromium-baseline" / "src" / "out" / "MoltskinFont"
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("profile", type=profile_name, help="persistent preview environment name")
-    parser.add_argument("--local-fonts", choices=MODES, help="save this policy; new profiles default to standard")
+    parser.add_argument("profile", nargs="?", type=profile_name, help="environment to save; omit for a disposable preview")
+    parser.add_argument("--local-fonts", choices=MODES, help="font access policy; new profiles default to standard")
     parser.add_argument(
         "--binary", type=Path, default=build / ("Chromium.app" if sys.platform == "darwin" else "chrome"),
         help="Moltskin Chromium executable or .app bundle (default: local out/MoltskinFont build)",
     )
     args = parser.parse_args()
-    repo = Path(__file__).resolve().parents[1]
-    data = Path(os.environ.get("MOLTSKIN_DATA_DIR", repo / "data")).expanduser().resolve()
     try:
         binary = checked_binary(args.binary)
+        if args.profile is None:
+            with TemporaryDirectory(prefix="moltskin-preview-") as temporary:
+                print("Opening a disposable preview. Its data will be removed when Chromium exits.", flush=True)
+                return run_browser(binary, Path(temporary), args.local_fonts or "standard", disposable=True)
+        repo = Path(__file__).resolve().parents[1]
+        data = Path(os.environ.get("MOLTSKIN_DATA_DIR", repo / "data")).expanduser().resolve()
         return launch(data / "chromium-preview" / args.profile, binary, args.local_fonts)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         parser.exit(1, f"Cannot launch Chromium preview: {error}\n")
