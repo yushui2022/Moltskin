@@ -1,0 +1,3 @@
+# Baseline for native Linux x86-64 and macOS arm64 builds.
+is_debug = false
+symbol_level = 0
