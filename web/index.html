@@ -35,32 +35,35 @@
 }
 
 :root {
-  --bg: #fafafa;
-  --panel: #ffffff;
-  --panel-2: #f7f7f7;
-  --raised: #f1f1f1;
-  --border: #e5e5e5;
-  --border-soft: #efefef;
-  --text: #333333;
-  --muted: #666666;
-  --dim: #999999;
-  --accent: #4662d6;
-  --accent-2: #5a75e0;
-  --accent-strong: #3a53c4;
-  --accent-soft: #eef1fe;
-  --ok: #2f9e5f;
-  --err: #c9483f;
-  --warn: #b7791f;
+  color-scheme: light;
+  --bg: #f5f6f2;
+  --panel: #fff;
+  --panel-2: #f2f5f1;
+  --raised: #eaf0e9;
+  --border: #d9dfd7;
+  --border-soft: #e8ece5;
+  --text: #1f302a;
+  --muted: #54655d;
+  --dim: #67756d;
+  --accent: #176251;
+  --accent-2: #207560;
+  --accent-strong: #104b3f;
+  --accent-soft: #e6f1e9;
+  --ok: #23845d;
+  --err: #b94740;
+  --warn: #94601b;
   --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
+  --r-sm: 7px;
+  --r-md: 9px;
+  --r-lg: 15px;
   --r-pill: 999px;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .04);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, .08);
-  --shadow-lg: 0 20px 60px rgba(0, 0, 0, .16);
-  --side: 236px;
+  --shadow-sm: 0 1px 2px rgb(33 55 39 / 5%), 0 3px 8px rgb(33 55 39 / 2%);
+  --shadow-md: 0 4px 8px rgb(33 55 39 / 5%), 0 12px 30px rgb(33 55 39 / 9%);
+  --shadow-lg: 0 24px 70px rgb(19 47 33 / 20%);
+  --side: 216px;
+  --page-gutter: clamp(22px, 2.4vw, 40px);
 }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
@@ -80,56 +83,53 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------------- shell ---------------- */
-.shell { display: grid; grid-template-columns: var(--side) 1fr; height: 100vh; overflow: hidden; }
-
+.shell { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); height: 100vh; height: 100dvh; overflow: hidden; }
 .side {
-  background: var(--panel-2);
-  border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; min-height: 0;
-  padding: 12px 10px 10px;
+  background: #f0f2eb; border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; min-height: 0; padding: 0 13px 15px;
 }
-.brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 16px; }
-.brand img { width: 30px; height: 30px; border-radius: 7px; display: block; }
-.brand-name { font-size: 14px; font-weight: 600; letter-spacing: -.15px; }
-.brand-ver { margin-left: auto; color: var(--dim); font-size: 10px; font-weight: 500;
-             border: 1px solid var(--border); border-radius: var(--r-pill);
-             padding: 1px 6px; background: var(--panel); }
-
-.nav { display: flex; flex-direction: column; gap: 1px; }
-.nav-label { padding: 14px 10px 5px; color: var(--dim); font-size: 10.5px;
-             letter-spacing: .06em; text-transform: uppercase; font-weight: 500; }
+.brand { display: flex; align-items: center; gap: 6px; padding: 28px 3px 24px; }
+.brand img { flex: none; width: 32px; height: 32px; object-fit: contain; display: block; }
+.brand-name { font: bold italic 24px/1 Georgia, "Times New Roman", serif; color: #193e32;
+  letter-spacing: -1.4px; }
+.brand-ver { margin-left: auto; color: #67756b; font-size: 10px; white-space: nowrap;
+  font-variant-numeric: tabular-nums; }
+.mobile-page { display: none; }
+.nav { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
 .nav-item {
-  display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px;
-  border-radius: var(--r-md); color: var(--muted); cursor: pointer;
+  display: flex; align-items: center; gap: 11px; min-height: 39px; padding: 0 13px;
+  border-radius: var(--r-md); color: #4c5f54; cursor: pointer;
   text-decoration: none; border: 0; background: transparent; width: 100%; text-align: left;
-  transition: background .12s, color .12s;
+  transition: background .15s, color .15s;
 }
-.nav-item:hover { background: #ededed; color: var(--text); }
-.nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
-.nav-item .i { width: 16px; height: 16px; opacity: .95; }
-.nav-item .count {
-  margin-left: auto; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums;
-}
-.nav-item.active .count { color: var(--accent); }
-.side-foot { margin-top: auto; padding-top: 8px; }
+.nav-item:hover { background: #e4eae1; color: var(--accent-strong); }
+.nav-item.active { background: #214e41; color: #fff; font-weight: 500; box-shadow: var(--shadow-sm); }
+.nav-item .i { width: 17px; height: 17px; }
+.nav-item .count { margin-left: auto; min-width: 20px; text-align: center; font-size: 11px;
+  color: var(--dim); font-variant-numeric: tabular-nums; }
+.nav-item.active .count { color: #edfaf1; background: #42695a; border-radius: 5px; line-height: 19px; }
+.nav-rule { height: 1px; flex: none; background: var(--border); margin: 10px 9px; }
+.side-foot { margin-top: auto; padding-top: 12px; }
 .engine-card {
-  margin-top: 8px; padding: 9px 10px; border: 1px solid var(--border);
-  border-radius: var(--r-md); background: var(--panel); font-size: 11px; color: var(--muted);
-  line-height: 1.45;
+  margin: 8px 2px 0; padding: 10px 12px; border: 1px solid #d7ded2;
+  border-radius: var(--r-md); background: #f8f9f4; color: var(--muted);
+  font-size: 11px; line-height: 1.8; font-variant-numeric: tabular-nums;
 }
-.engine-card b { color: var(--text); font-weight: 500; display: block; font-size: 11.5px; }
+.engine-card .engine-row { display: flex; align-items: baseline; gap: 5px; }
+.engine-row strong { font-weight: 500; color: var(--text); }
+.engine-row small { margin-left: auto; color: var(--muted); font-size: 10px; }
 
 /* ---------------- page scaffolding ---------------- */
-.main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .page { display: none; flex: 1; flex-direction: column; min-height: 0; }
 .page.active { display: flex; }
 
 .page-head {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
-  padding: 22px 24px 14px; flex: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 28px var(--page-gutter) 20px; flex: none;
 }
-.page-title h1 { margin: 0 0 3px; font-size: 19px; line-height: 1.2; font-weight: 600; letter-spacing: -.2px; }
-.page-title p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.page-title h1 { margin: 0 0 6px; font-size: clamp(23px, 2.3vw, 32px); line-height: 1.22; font-weight: 650; letter-spacing: -.045em; }
+.page-title p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .head-actions { display: flex; align-items: center; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
 
 .page-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -137,13 +137,13 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 
 /* ---------------- buttons ---------------- */
 .btn {
-  border: 1px solid #dcdcdc; background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); background: var(--panel); color: var(--text);
   border-radius: var(--r-md); padding: 0 12px; font-size: 13px; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px; height: 32px;
   box-shadow: var(--shadow-sm); white-space: nowrap;
   transition: background .12s, border-color .12s, color .12s;
 }
-.btn:hover { background: #f7f7f7; border-color: #cfcfcf; }
+.btn:hover { background: var(--panel-2); border-color: #bccbbf; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
 .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .btn.danger { color: var(--err); border-color: #f0c4c0; }
@@ -156,9 +156,13 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 .btn .i { width: 15px; height: 15px; }
 .btn.primary .i { color: #fff; }
+.head-actions .btn { height: 36px; }
+.head-actions .btn.icon { width: 36px; }
+.head-actions .primary { box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%), var(--shadow-sm); }
+
 
 .split { display: inline-flex; }
-.split .btn.primary { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split .btn.primary:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .split .btn.caret-btn {
   border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: rgba(255,255,255,.28);
   padding: 0 8px;
@@ -167,14 +171,14 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 
 /* ---------------- inputs ---------------- */
 .input, .select, textarea.input {
-  height: 32px; border: 1px solid #dcdcdc; border-radius: var(--r-md);
+  height: 32px; border: 1px solid var(--border); border-radius: var(--r-md);
   padding: 0 10px; background: var(--panel); outline: none; min-width: 0;
   transition: border-color .12s, box-shadow .12s;
 }
 textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
-.input::placeholder { color: #b3b3b3; }
+.input::placeholder { color: #7c8a81; }
 .input:focus, .select:focus {
-  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(70, 98, 214, .12);
+  border-color: var(--accent); box-shadow: 0 0 0 3px rgb(23 98 81 / 13%);
 }
 .select { appearance: none; padding-right: 26px; cursor: pointer;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
@@ -212,25 +216,63 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
   display: inline-flex; padding: 2px; opacity: .7; }
 .chip button:hover { opacity: 1; }
 
-.quota { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted);
-  padding: 0 24px 10px; flex: none; flex-wrap: wrap; }
-.quota .bar { width: 90px; height: 5px; border-radius: 3px; background: #ececec; overflow: hidden; }
-.quota .bar span { display: block; height: 100%; background: var(--accent); }
-.quota b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
-.quota .sep { width: 1px; height: 11px; background: var(--border); }
-.quota a { color: var(--accent); text-decoration: none; font-size: 12px; }
-.quota a:hover { text-decoration: underline; }
+.quota {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+  padding: 0 var(--page-gutter, 24px) 20px; flex: none;
+}
+.quota-card {
+  --meter-color: #32806b; --meter-track: #e5ece8;
+  position: relative; min-width: 0; padding: 15px 19px 14px; overflow: hidden;
+  background: #fff; border: 1px solid #dce4df; border-radius: 12px;
+  box-shadow: 0 1px 3px #193a2c08; color: #1d332b;
+}
+.quota-card:first-child {
+  --meter-color: #b6deb9; --meter-track: #ffffff38;
+  color: #fff; border-color: #185448;
+  background: linear-gradient(110deg, #184d43 8%, #206452);
+}
+.quota-card:first-child::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-radial-gradient(ellipse at 116% 145%, transparent 0 15px, #e2f4df12 16px, transparent 17px 28px);
+  mask-image: linear-gradient(90deg, transparent 22%, #000);
+}
+.quota-head, .quota-value, .quota-meter { position: relative; }
+.quota-head { display: flex; align-items: center; gap: 7px; min-height: 24px; font-size: 12px; font-weight: 500; }
+.quota-glyph { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; color: #366b58; background: #eaf2eb; }
+.quota-glyph .i { width: 14px; height: 14px; }
+.quota-card:first-child .quota-glyph { background: #ffffff19; color: #e2efde; }
+.quota-card:nth-child(2) .quota-glyph { background: #f7f0df; color: #806531; }
+.quota-head a { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; width: 25px; height: 25px; color: #dbebdf; border-radius: 5px; }
+.quota-head a:hover, .quota-head a:focus-visible { background: #ffffff25; color: #fff; }
+.quota-head a .i { width: 15px; height: 15px; }
+.quota-value { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin: 6px 0 10px; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.quota-value strong { font-size: 32px; font-weight: 600; letter-spacing: -.055em; }
+.quota-limit { font-size: 12px; color: #61746a; }
+.quota-card:first-child .quota-limit { color: #c3dbcf; }
+.quota-meter { height: 3px; background: var(--meter-track); border-radius: 3px; overflow: hidden; }
+.quota-meter span { display: block; height: 100%; background: var(--meter-color); }
+@media (max-width: 650px) {
+  .quota { gap: 6px; padding-bottom: 12px; }
+  .quota-card { padding: 9px 10px; border-radius: 9px; }
+  .quota-head { font-size: 11px; gap: 4px; }
+  .quota-glyph { display: none; }
+  .quota-head a { width: 21px; height: 22px; }
+  .quota-head a .i { width: 13px; height: 13px; }
+  .quota-value { gap: 3px; margin: 4px 0 9px; }
+  .quota-value strong { font-size: 24px; }
+  .quota-limit { font-size: 10px; }
+}
 
 /* ---------------- card / table ---------------- */
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
   box-shadow: var(--shadow-sm); }
 .list-card { flex: 1; display: flex; flex-direction: column; min-height: 0;
-  margin: 0 24px; overflow: hidden; }
+  margin: 0 var(--page-gutter) 16px; overflow: hidden; }
 .list-scroll { flex: 1; overflow: auto; min-height: 0; }
 
 table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-spacing: 0; }
 .grid thead th {
-  position: sticky; top: 0; z-index: 3; background: #fbfbfb; color: var(--dim);
+  position: sticky; top: 0; z-index: 3; background: #f4f6f2; color: var(--muted);
   font-weight: 500; font-size: 11px; text-align: left; padding: 9px 12px;
   border-bottom: 1px solid var(--border); white-space: nowrap;
   text-transform: uppercase; letter-spacing: .04em;
@@ -244,17 +286,17 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
 .grid thead th.sorted .sort i { background: var(--accent); }
 .grid thead th.sorted { color: var(--text); }
 .grid tbody td {
-  padding: 11px 12px; border-bottom: 1px solid #f3f3f3; vertical-align: middle;
+  padding: 11px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: middle;
   background: var(--panel); font-size: 13px; overflow: hidden;
 }
 .grid tbody tr:last-child td { border-bottom: 0; }
-.grid tbody tr:hover td { background: #fafafb; }
-.grid tbody tr.selected td { background: #f6f8ff; }
+.grid tbody tr:hover td { background: #f8faf6; }
+.grid tbody tr.selected td { background: #edf5ed; }
 .grid .col-actions { text-align: right; position: sticky; right: 0; background: var(--panel);
   box-shadow: -10px 0 12px -12px rgba(0,0,0,.22); }
-.grid thead th.col-actions { background: #fbfbfb; z-index: 4; }
-.grid tbody tr:hover td.col-actions { background: #fafafb; }
-.grid tbody tr.selected td.col-actions { background: #f6f8ff; }
+.grid thead th.col-actions { background: #f4f6f2; z-index: 4; }
+.grid tbody tr:hover td.col-actions { background: #f8faf6; }
+.grid tbody tr.selected td.col-actions { background: #edf5ed; }
 .grid th.col-actions { text-align: right; }
 .muted { color: var(--muted); }
 .dim { color: var(--dim); }
@@ -275,7 +317,7 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
 .ip-cell { display: flex; align-items: center; gap: 7px; }
 .ip-cell .badge { width: 20px; height: 20px; border-radius: var(--r-xs); background: #f0f0f0;
   display: grid; place-items: center; font-size: 11px; flex: none; }
-.ip-cell .addr { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.ip-cell .addr { white-space: nowrap; font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .ip-cell .geo { color: var(--dim); font-size: 11px; }
 .stack { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .stack .sub { color: var(--dim); font-size: 11px; }
@@ -300,7 +342,7 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
   min-width: 64px;
 }
 .open-btn:hover { background: var(--accent-strong); }
-.open-btn.stop { background: var(--panel); color: var(--text); border: 1px solid #dcdcdc; font-weight: 400; }
+.open-btn.stop { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 400; }
 .open-btn.stop:hover { background: #f7f7f7; }
 .open-btn:disabled { opacity: .55; cursor: wait; }
 .open-btn .i { width: 13px; height: 13px; }
@@ -318,6 +360,36 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
 .empty-ico .i { width: 22px; height: 22px; }
 .empty-title { color: var(--text); font-size: 15px; font-weight: 500; margin-bottom: 6px; }
 .empty p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0 0 16px; }
+#empty { max-width: none; min-height: min(295px, 100%); height: calc(100% - 38px);
+  padding: 22px 20px 30px; display: grid; align-content: center; justify-items: center; }
+#empty[hidden], #empty button[hidden] { display: none; }
+#empty .empty-title { margin: 12px 0 5px; font-size: 18px; font-weight: 600; letter-spacing: -.035em; }
+#empty p { max-width: 35em; margin-bottom: 16px; }
+#empty .window-art { width: 202px; height: 118px; position: relative; isolation: isolate; }
+#empty .window-art::before { content: ""; position: absolute; inset: -5px -12px -4px;
+  background: radial-gradient(circle, #80a997 1px, transparent 1.3px) 50% 50% / 9px 9px;
+  opacity: .55; mask-image: radial-gradient(ellipse closest-side, black 52%, transparent); }
+#empty .window-sheet { position: absolute; width: 104px; height: 70px;
+  border: 1px solid #b7d0c1; border-radius: 9px; background: #e3eee5; }
+#empty .window-sheet.back { left: 33px; top: 20px; transform: rotate(-14deg); }
+#empty .window-sheet.mid { left: 62px; top: 19px; transform: rotate(9deg);
+  background: linear-gradient(135deg, #eff3e9, #dce6d9); border-color: #c2cbb2; }
+#empty .window-front { position: absolute; left: 44px; top: 28px; width: 118px; height: 78px;
+  border-radius: 9px; border: 1px solid #7ca38e; overflow: hidden; transform: rotate(-3deg);
+  background: #fff; box-shadow: 0 8px 13px -6px #274e3747, 0 2px 4px #3153420e; }
+#empty .window-bar { display: flex; gap: 3px; align-items: center; height: 15px; padding-left: 8px;
+  background: #edf4ee; border-bottom: 1px solid #d3e0d5; }
+#empty .window-bar::before { content: ""; width: 4px; height: 4px; border-radius: 50%;
+  background: #719980; box-shadow: 7px 0 #b6cabc, 14px 0 #c5ac77; }
+#empty .window-canvas { display: grid; place-items: center; height: calc(100% - 15px);
+  background: linear-gradient(123deg, #fcfdf9, #f7faf5); }
+#empty .window-canvas img { width: 52px; height: 38px; }
+@media (max-height: 650px) {
+  #empty { min-height: 194px; padding-block: 12px 18px; }
+  #empty .window-art { zoom: .75; }
+  #empty .empty-title { margin-top: 4px; }
+  #empty p { margin-bottom: 10px; }
+}
 .loading { padding: 64px 20px; text-align: center; color: var(--muted); font-size: 12.5px; }
 
 /* ---------------- pagination ---------------- */
@@ -338,22 +410,52 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
 .pager button:disabled { opacity: .38; cursor: not-allowed; }
 .pager .jump { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 12px;
   margin-left: 6px; }
-.pager .jump input { width: 46px; height: 27px; text-align: center; border: 1px solid #dcdcdc;
+.pager .jump input { width: 46px; height: 27px; text-align: center; border: 1px solid var(--border);
   border-radius: var(--r-sm); outline: none; }
 .pager .jump input:focus { border-color: var(--accent); }
 .page-size { height: 27px; font-size: 12px; border-radius: var(--r-sm); }
 
 .batch-bar {
   display: flex; align-items: center; gap: 6px; padding: 7px 10px; margin: 0 24px;
-  background: var(--accent-soft); border: 1px solid #d9e0fb; border-radius: var(--r-md);
+  background: var(--accent-soft); border: 1px solid #c8dbcd; border-radius: var(--r-md);
   color: var(--accent-strong); font-size: 12.5px; flex: none; margin-bottom: 8px;
 }
 .batch-bar[hidden] { display: none; }
 .batch-bar b { font-weight: 600; }
 .batch-bar .spacer { margin-left: auto; }
-.batch-bar .btn { background: #fff; border-color: #d9e0fb; color: var(--accent-strong); box-shadow: none; }
-.batch-bar .btn:hover { background: #fff; border-color: #b9c4f5; }
+.batch-bar .btn { background: #fff; border-color: #c8dbcd; color: var(--accent-strong); box-shadow: none; }
+.batch-bar .btn:hover { background: #fff; border-color: #9bbba7; }
 .batch-bar .btn.danger { color: var(--err); border-color: #f0c4c0; }
+
+/* Windows list controls */
+#windowsCard { box-shadow: 0 2px 5px rgb(33 55 39 / 4%), 0 9px 24px rgb(33 55 39 / 3%); }
+#windowsCard .toolbar { padding: 0 16px; min-height: 52px; border-bottom: 1px solid var(--border-soft); flex-wrap: nowrap; }
+#tabs { align-self: stretch; padding: 0; gap: 14px; border: 0; background: transparent; border-radius: 0; min-width: 0; overflow-x: auto; }
+#tabs button { align-self: stretch; position: relative; height: auto; flex: none; padding: 0 2px; gap: 5px; border-radius: 0; }
+#tabs button:hover { color: var(--accent); }
+#tabs button.active { color: var(--accent-strong); font-weight: 600; box-shadow: none; background: transparent; }
+#tabs button.active::after { content: ""; position: absolute; inset: auto 0 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--accent); }
+#tabs .n { padding: 1px 5px; font-size: 10px; background: var(--panel-2); border-radius: 5px; line-height: 15px; }
+#tabs .active .n { color: var(--accent-strong); background: var(--accent-soft); }
+#windowsCard .filter-bar { padding: 12px 16px; border-bottom: 1px solid var(--border-soft); }
+.window-search { position: relative; display: flex; flex: 0 1 280px; min-width: 145px; }
+.window-search .i { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--dim); pointer-events: none; }
+.window-search .input { width: 100%; padding-left: 33px; }
+.search-options { gap: 4px; }
+.filter-pickers { margin-left: auto; gap: 6px; }
+#filterChips:empty { display: none !important; }
+#filterChips:not(:empty) { flex-basis: 100%; }
+#windowsCard .batch-bar { margin: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; flex-wrap: wrap; }
+#profileTable { min-width: 810px; }
+#profileTable th { width: var(--column-width, auto); }
+#windowsCard:has(#empty:not([hidden])) #profileTable { min-width: 0; table-layout: fixed; }
+#windowsCard:has(#empty:not([hidden])) #profileTable th:nth-child(n+3):not(:last-child) { width: auto; }
+#windowsCard .list-foot { min-height: 44px; padding: 7px 16px; }
+#profileTable th, #profileTable td { padding-left: 9px; padding-right: 9px; }
+#profileTable td.col-actions { z-index: 1; }
+#profileTable td { height: 53px; }
+#profileTable .open-btn:not(.stop), .env-card .open-btn:not(.stop) { color: var(--accent-strong); background: var(--accent-soft); border-color: #c4dcca; }
+#profileTable .open-btn:not(.stop):hover, .env-card .open-btn:not(.stop):hover { background: #d8eadc; }
 
 /* ---------------- dropdown / popover ---------------- */
 .pop {
@@ -527,7 +629,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 /* schedules */
 .weekdays { display: flex; gap: 6px; flex-wrap: wrap; }
 .weekdays label { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px;
-  border: 1px solid #dcdcdc; border-radius: var(--r-sm); font-size: 12.5px; cursor: pointer; }
+  border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 12.5px; cursor: pointer; }
 .weekdays label:has(input:checked) { border-color: var(--accent); color: var(--accent-strong);
   background: var(--accent-soft); }
 .switch { position: relative; display: inline-flex; width: 32px; height: 18px; }
@@ -558,22 +660,51 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   .proxy-form { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 980px) {
-  .shell { grid-template-columns: 68px 1fr; }
-  .brand-name, .nav-item span, .nav-label, .nav-item .count, .engine-card { display: none; }
-  .brand { justify-content: center; padding: 4px 0 14px; }
+  .shell { grid-template-columns: 66px minmax(0, 1fr); }
+  .side { padding-inline: 8px; }
+  .brand-name, .brand-ver, .nav-item span, .engine-card { display: none; }
+  .brand { justify-content: center; padding: 23px 0 20px; }
   .nav-item { justify-content: center; padding: 0; }
   .settings-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
-  .page-head { flex-direction: column; padding: 16px 16px 12px; }
+  :root { --page-gutter: 16px; }
+  .page-head { flex-wrap: wrap; padding: 18px var(--page-gutter) 14px; gap: 10px; }
   .head-actions { justify-content: flex-start; }
-  .toolbar, .filter-bar, .quota { padding-left: 16px; padding-right: 16px; }
-  .list-card { margin: 0 16px; }
-  .batch-bar { margin-left: 16px; margin-right: 16px; }
-  .scroll { padding: 0 16px 16px; }
-  .modal .body { grid-template-columns: 1fr; }
-  .kv-grid { grid-template-columns: 1fr; }
+  .toolbar, .filter-bar { padding-inline: var(--page-gutter); }
+  .list-card { margin-inline: var(--page-gutter); }
+  .batch-bar { margin-inline: var(--page-gutter); }
+  .scroll { padding: 0 var(--page-gutter) 16px; }
+  .modal .body, .kv-grid { grid-template-columns: 1fr; }
   .proxy-form { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 650px) {
+  .shell { grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); }
+  .side { padding: 0 var(--page-gutter); border-right: 0; border-bottom: 1px solid var(--border); }
+  .brand { justify-content: flex-start; gap: 7px; padding: 9px 0; }
+  .brand img { width: 29px; height: 27px; }
+  .brand-name { display: block; font-size: 23px; }
+  .brand-ver, .side .nav, .side-foot { display: none; }
+  .mobile-page { display: inline-block; width: auto; height: 30px; margin-left: auto; font-size: 12px; }
+  .head-actions { gap: 6px; }
+  #page-windows { overflow-y: auto; }
+  #windowsCard { flex: 1 0 auto; min-height: 350px; margin-bottom: 12px; }
+  #windowsCard .list-scroll { flex: 1 0 auto; max-height: 62vh; }
+  #windowsCard .toolbar { padding: 0 8px; gap: 4px; min-height: 44px; }
+  #windowsCard .toolbar > .spacer { display: none; }
+  #tabs { flex: 1 1 0; gap: 7px; }
+  #tabs button { font-size: 12px; padding: 0 1px; gap: 0; }
+  #tabs .n { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
+  #windowsCard .toolbar > [aria-label="视图"] button { padding-inline: 6px; }
+  #windowsCard .filter-bar { padding: 9px 10px; gap: 6px; }
+  .window-search { flex-basis: 100%; }
+  .search-options { gap: 3px; }
+  .search-options .select { width: auto !important; padding-left: 7px; padding-right: 19px; background-position: right 4px center; }
+  .filter-pickers { gap: 4px; }
+  .filter-pickers .btn { padding: 0 7px; }
+  #windowsCard:has(#empty:not([hidden])) #profileTable { display: none; }
+  #windowsCard .list-foot { gap: 3px; padding: 7px 9px; }
+  .pager .jump { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
@@ -628,11 +759,12 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 </svg>
 
 <div class="shell">
-  <aside class="side">
+  <aside class="side" aria-label="主导航">
     <div class="brand">
-      <img src="/logo.svg" width="30" height="30" alt="Moltskin">
+      <img src="/logo.svg" width="30" height="30" alt="">
       <div class="brand-name">Moltskin</div>
       <span class="brand-ver">v0.4.1</span>
+      <select class="select mobile-page" id="mobilePage" aria-label="切换页面"></select>
     </div>
 
     <nav class="nav" id="nav">
@@ -655,6 +787,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <svg class="i"><use href="#i-puzzle"/></svg><span>扩展中心</span>
         <span class="count" id="navExtensions">0</span>
       </a>
+      <div class="nav-rule" aria-hidden="true"></div>
       <a class="nav-item" href="#/schedules" data-page="schedules">
         <svg class="i"><use href="#i-calendar"/></svg><span>定时任务</span>
         <span class="count" id="navSchedules">0</span>
@@ -734,62 +867,64 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         </div>
       </header>
 
-      <div class="quota" id="quota"></div>
-
-      <div class="toolbar">
-        <div class="segmented" id="tabs">
-          <button data-tab="all" class="active">全部<span class="n" id="tabAll">0</span></button>
-          <button data-tab="running">已打开<span class="n" id="tabRunning">0</span></button>
-          <button data-tab="stopped">已关闭<span class="n" id="tabStopped">0</span></button>
-          <button data-tab="crashed">异常<span class="n" id="tabCrashed">0</span></button>
-          <button data-tab="unopened">未打开</button>
-        </div>
-        <div class="spacer"></div>
-
-        <div class="segmented" role="group" aria-label="视图">
-          <button id="viewTable" class="active" title="表格视图"><svg class="i"><use href="#i-list"/></svg></button>
-          <button id="viewGrid" title="卡片视图"><svg class="i"><use href="#i-grid"/></svg></button>
-        </div>
-        <button class="btn icon" id="columnsBtn" title="显示列"><svg class="i"><use href="#i-columns"/></svg></button>
-      </div>
-
-      <div class="filter-bar" id="filterBar">
-        <button class="btn" id="groupFilterBtn"><svg class="i"><use href="#i-folder"/></svg>分组</button>
-        <button class="btn" id="tagFilterBtn"><svg class="i"><use href="#i-tag"/></svg>标签</button>
-        <div class="field-row">
-          <select class="select" id="searchField" style="width:104px" aria-label="搜索字段">
-            <option value="all">全部字段</option>
-            <option value="name">窗口名称</option>
-            <option value="remark">备注</option>
-            <option value="proxy">代理 IP</option>
-            <option value="group">分组</option>
-          </select>
-          <select class="select" id="searchOp" style="width:88px" aria-label="匹配方式">
-            <option value="contains">包含</option>
-            <option value="not_contains">不包含</option>
-            <option value="equals">等于</option>
-          </select>
-          <label style="position:relative;display:block">
-            <svg class="i" style="position:absolute;left:9px;top:8px;color:#aaa"><use href="#i-search"/></svg>
-            <input class="input" id="searchInput" placeholder="搜索窗口名称 / 备注 / IP" style="width:220px;padding-left:30px" aria-label="搜索环境">
-          </label>
-        </div>
-        <span id="filterChips" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></span>
-      </div>
-
-      <div class="batch-bar" id="batchBar" hidden>
-        <span>已选 <b id="selCount">0</b> 个环境</span>
-        <div class="spacer"></div>
-        <button class="btn small" data-batch="launch"><svg class="i"><use href="#i-play"/></svg>打开</button>
-        <button class="btn small" data-batch="stop"><svg class="i"><use href="#i-stop"/></svg>关闭</button>
-        <button class="btn small" data-batch="move">移动分组</button>
-        <button class="btn small" data-batch="tag">编辑标签</button>
-        <button class="btn small" data-batch="export">导出</button>
-        <button class="btn small danger" data-batch="delete"><svg class="i"><use href="#i-trash"/></svg>删除</button>
-        <button class="btn small ghost" data-batch="clear">取消选择</button>
-      </div>
+      <section class="quota" id="quota" aria-label="环境使用情况"></section>
 
       <div class="card list-card" id="windowsCard">
+        <div class="toolbar">
+          <div class="segmented" id="tabs" role="group" aria-label="按状态筛选">
+            <button data-tab="all" class="active">全部<span class="n" id="tabAll">0</span></button>
+            <button data-tab="running">已打开<span class="n" id="tabRunning">0</span></button>
+            <button data-tab="stopped">已关闭<span class="n" id="tabStopped">0</span></button>
+            <button data-tab="crashed">异常<span class="n" id="tabCrashed">0</span></button>
+            <button data-tab="unopened">未打开</button>
+          </div>
+          <div class="spacer"></div>
+
+          <div class="segmented" role="group" aria-label="视图">
+            <button id="viewTable" class="active" title="表格视图"><svg class="i"><use href="#i-list"/></svg></button>
+            <button id="viewGrid" title="卡片视图"><svg class="i"><use href="#i-grid"/></svg></button>
+          </div>
+          <button class="btn icon" id="columnsBtn" title="显示列"><svg class="i"><use href="#i-columns"/></svg></button>
+        </div>
+
+        <div class="filter-bar" id="filterBar">
+          <label class="window-search">
+            <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+            <input class="input" id="searchInput" placeholder="搜索窗口名称 / 备注 / IP" aria-label="搜索环境">
+          </label>
+          <div class="field-row search-options">
+            <select class="select" id="searchField" style="width:104px" aria-label="搜索字段">
+              <option value="all">全部字段</option>
+              <option value="name">窗口名称</option>
+              <option value="remark">备注</option>
+              <option value="proxy">代理 IP</option>
+              <option value="group">分组</option>
+            </select>
+            <select class="select" id="searchOp" style="width:88px" aria-label="匹配方式">
+              <option value="contains">包含</option>
+              <option value="not_contains">不包含</option>
+              <option value="equals">等于</option>
+            </select>
+          </div>
+          <div class="field-row filter-pickers">
+            <button class="btn" id="groupFilterBtn"><svg class="i"><use href="#i-folder"/></svg>分组</button>
+            <button class="btn" id="tagFilterBtn"><svg class="i"><use href="#i-tag"/></svg>标签</button>
+          </div>
+          <span id="filterChips" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></span>
+        </div>
+
+        <div class="batch-bar" id="batchBar" hidden>
+          <span>已选 <b id="selCount">0</b> 个环境</span>
+          <div class="spacer"></div>
+          <button class="btn small" data-batch="launch"><svg class="i"><use href="#i-play"/></svg>打开</button>
+          <button class="btn small" data-batch="stop"><svg class="i"><use href="#i-stop"/></svg>关闭</button>
+          <button class="btn small" data-batch="move">移动分组</button>
+          <button class="btn small" data-batch="tag">编辑标签</button>
+          <button class="btn small" data-batch="export">导出</button>
+          <button class="btn small danger" data-batch="delete"><svg class="i"><use href="#i-trash"/></svg>删除</button>
+          <button class="btn small ghost" data-batch="clear">取消选择</button>
+        </div>
+
         <div class="list-scroll">
           <table class="grid" id="profileTable">
             <caption class="sr-only">浏览器环境列表</caption>
@@ -799,11 +934,15 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <tbody id="rows"></tbody>
           </table>
           <div class="cards-grid" id="cards" style="display:none"></div>
-          <div class="empty" id="empty" style="display:none">
-            <div class="empty-ico"><svg class="i"><use href="#i-window"/></svg></div>
-            <div class="empty-title">还没有环境</div>
-            <p>创建第一个独立浏览器环境，绑定代理后即可开始。</p>
-            <button class="btn primary" data-action="create"><svg class="i"><use href="#i-plus"/></svg>创建窗口</button>
+          <div class="empty" id="empty" hidden>
+            <div class="window-art" aria-hidden="true">
+              <span class="window-sheet back"></span><span class="window-sheet mid"></span>
+              <div class="window-front"><div class="window-bar"></div><div class="window-canvas"><img src="/logo.svg" alt=""></div></div>
+            </div>
+            <div class="empty-title" id="windowEmptyTitle">还没有浏览器环境</div>
+            <p id="windowEmptyHint">选择浏览器内核，为第一个环境命名。</p>
+            <button class="btn primary" id="windowEmptyCreate" data-action="create"><svg class="i"><use href="#i-plus"/></svg>创建窗口</button>
+            <button class="btn" id="windowEmptyReset" hidden>查看全部环境</button>
           </div>
         </div>
         <div class="list-foot">
@@ -1654,6 +1793,7 @@ $("confirmMask").querySelectorAll("[data-close]").forEach((el) =>
 function go(page) {
   if (!document.getElementById("page-" + page)) page = "windows";
   state.page = page;
+  $("mobilePage").value = page;
   document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.dataset.page === page));
   document.querySelectorAll(".nav-item").forEach((n) => {
     const active = n.dataset.page === page;
@@ -1670,7 +1810,13 @@ function go(page) {
   if (page === "schedules") { renderSchedules(); loadSchedules(); }
   if (location.hash !== "#/" + page) history.replaceState(null, "", "#/" + page);
 }
+$("mobilePage").onchange = (event) => go(event.target.value);
+window.addEventListener("hashchange", () => go(location.hash.slice(2)));
 document.querySelectorAll(".nav-item").forEach((n) => {
+  const label = n.querySelector("span").textContent.trim();
+  n.setAttribute("aria-label", label);
+  n.title = label;
+  $("mobilePage").add(new Option(label, n.dataset.page));
   n.addEventListener("click", (e) => {
     e.preventDefault();
     go(n.dataset.page);
@@ -1696,21 +1842,21 @@ function theadHtml() {
   const c = state.columns;
   const sortBtn = (key, label, width = 210) => {
     const active = state.sort === key;
-    return `<th class="sortable ${active ? "sorted" : ""}" data-sort="${key}" style="width:${width}px">${label}
+    return `<th class="sortable ${active ? "sorted" : ""}" data-sort="${key}" style="--column-width:${width}px">${label}
       ${active ? `<span class="sort"><i class="${state.order === "desc" ? "down" : ""}"></i></span>` : ""}</th>`;
   };
   return `
-    <th style="width:38px"><input type="checkbox" id="selectAll" aria-label="全选"></th>
-    <th style="width:56px">序号</th>
-    ${c.group ? `<th style="width:120px">分组</th>` : ""}
+    <th style="--column-width:38px"><input type="checkbox" id="selectAll" aria-label="全选"></th>
+    <th style="--column-width:56px">序号</th>
+    ${c.group ? `<th style="--column-width:120px">分组</th>` : ""}
     ${sortBtn("name", "窗口名称")}
-    ${c.proxy ? `<th style="width:180px">代理 IP</th>` : ""}
-    ${c.tags ? `<th style="width:140px">标签</th>` : ""}
-    ${c.remark ? `<th style="width:120px">备注</th>` : ""}
-    ${c.created ? `<th class="sortable ${state.sort === "created_at" ? "sorted" : ""}" data-sort="created_at" style="width:130px">创建时间
+    ${c.proxy ? `<th style="--column-width:180px">代理 IP</th>` : ""}
+    ${c.tags ? `<th style="--column-width:140px">标签</th>` : ""}
+    ${c.remark ? `<th style="--column-width:120px">备注</th>` : ""}
+    ${c.created ? `<th class="sortable ${state.sort === "created_at" ? "sorted" : ""}" data-sort="created_at" style="--column-width:130px">创建时间
       ${state.sort === "created_at" ? `<span class="sort"><i class="${state.order === "desc" ? "down" : ""}"></i></span>` : ""}</th>` : ""}
-    <th style="width:190px">配置</th>
-    <th class="col-actions" style="width:150px">打开</th>`;
+    <th style="--column-width:190px">配置</th>
+    <th class="col-actions" style="--column-width:106px">操作</th>`;
 }
 
 /* ---------------- 列表逻辑 ---------------- */
@@ -1819,7 +1965,7 @@ function rowHtml(p, index) {
         </div>
       </div>
     </td>
-    <td>
+    <td class="col-actions">
       <div class="action-cell">
         ${openBtn(p)}
         <button class="icon-btn" data-menu="${p.id}" aria-label="更多操作">${icon("more")}</button>
@@ -1878,14 +2024,14 @@ function renderList() {
   $("profileTable").style.display = tableMode ? "" : "none";
   $("cards").style.display = tableMode ? "none" : "";
   const empty = !state.loading && list.length === 0;
-  $("empty").style.display = empty ? "block" : "none";
+  $("empty").hidden = !empty;
   if (empty) {
-    const has = state.profiles.length > 0;
-    $("empty").querySelector(".empty-title").textContent = has ? "没有匹配的环境" : "还没有环境";
-    $("empty").querySelector("p").textContent = has
-      ? "换一个关键词，或清除筛选条件。"
-      : "创建第一个独立浏览器环境，绑定代理后即可开始。";
-    $("empty").querySelector("button").style.display = has ? "none" : "";
+    const filteredOut = state.profiles.length > 0;
+    $("windowEmptyTitle").textContent = filteredOut ? "没有匹配的环境" : "还没有浏览器环境";
+    $("windowEmptyHint").textContent = filteredOut
+      ? "试试其他关键词，或清除当前筛选条件。" : "选择浏览器内核，为第一个环境命名。";
+    $("windowEmptyCreate").hidden = filteredOut;
+    $("windowEmptyReset").hidden = !filteredOut;
   }
 
   $("listTotal").textContent = state.loading ? "正在加载…" : `共 ${list.length} 条`;
@@ -1923,16 +2069,24 @@ function pagerHtml(current, total, attr, pageSize = state.pageSize) {
 function renderQuota() {
   const s = state.stats;
   if (!s) return;
-  const limit = s.profile_limit || 200;
-  const pct = Math.min(100, Math.round((s.profiles_total / Math.max(1, limit)) * 100));
-  $("quota").innerHTML = `
-    <span>已用 <b>${s.profiles_total}</b> / 总数 <b>${limit}</b></span>
-    <span class="bar"><span style="width:${pct}%"></span></span>
-    <span class="sep"></span>
-    <span>今日打开 <b>${s.today_opened}</b> / 总数 <b>${s.daily_open_limit || 20000}</b></span>
-    <span class="sep"></span>
-    <span>运行中 <b>${s.profiles_running}</b> / 并发上限 <b>${s.max_concurrent}</b></span>
-    <a href="#/settings" style="margin-left:auto">调整上限</a>`;
+  const metrics = [
+    { label: "环境用量", glyph: "window", used: s.profiles_total, limit: s.profile_limit ?? 200, zeroMeansUnlimited: true },
+    { label: "今日打开", glyph: "clock", used: s.today_opened, limit: s.daily_open_limit ?? 20000, zeroMeansUnlimited: true },
+    { label: "正在运行", glyph: "bolt", used: s.profiles_running, limit: s.max_concurrent ?? 10 },
+  ];
+  $("quota").innerHTML = metrics.map(({ label, glyph, used, limit, zeroMeansUnlimited }, index) => {
+    const cap = Number(limit);
+    const value = Number(used) || 0;
+    const ratio = cap > 0 ? Math.min(100, 100 * value / cap) : 0;
+    const settings = index === 0
+      ? `<a href="#/settings" title="调整上限" aria-label="调整上限">${icon("gear")}</a>` : "";
+    return `<div class="quota-card">
+      <div class="quota-head"><span class="quota-glyph" aria-hidden="true">${icon(glyph)}</span>${label}${settings}</div>
+      <div class="quota-value"><strong>${value.toLocaleString("zh-CN")}</strong>
+        <span class="quota-limit">/ ${zeroMeansUnlimited && cap <= 0 ? "不限" : cap.toLocaleString("zh-CN")}</span></div>
+      <div class="quota-meter" aria-hidden="true"><span style="width:${ratio}%"></span></div>
+    </div>`;
+  }).join("");
   $("navWindows").textContent = s.profiles_total;
   $("navGroups").textContent = s.groups_total ?? state.groups.length;
   $("navProxies").textContent = s.proxies_total ?? state.proxies.length;
@@ -1970,6 +2124,13 @@ $("tabs").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-tab]");
   if (btn) setTab(btn.dataset.tab);
 });
+$("windowEmptyReset").onclick = () => {
+  state.groupId = "";
+  state.tag = "";
+  state.q = "";
+  $("searchInput").value = "";
+  setTab("all");
+};
 $("filterChips").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-clear]");
   if (!btn) return;
@@ -2947,7 +3108,8 @@ function renderEngine(engine) {
   const card = $("engineCard");
   const chromium = engine.chromium;
   const version = chromium?.available ? chromium.version || "可用" : "未就绪";
-  card.innerHTML = `<b>Camoufox ${esc(engine.camoufox)}</b><span>Chromium ${esc(version)}</span>`;
+  card.innerHTML = `<div class="engine-row"><strong>Camoufox</strong><small>${esc(engine.camoufox)}</small></div>
+    <div class="engine-row"><strong>Chromium</strong><small>${esc(version)}</small></div>`;
   $("enginePanel").innerHTML = `
     <div class="field"><label>Camoufox</label><div class="mono">${esc(engine.camoufox)}</div></div>
     <div class="field"><label>Playwright</label><div class="mono">${esc(engine.playwright)}</div></div>
