@@ -19,4 +19,4 @@ jobs:
       - name: Byte-compile
         run: python -m compileall -q moltskin tests
       - name: Smoke tests
-        run: pytest -q tests/test_smoke.py
+        run: pytest -q tests/test_smoke.py tests/test_profile_observations.py

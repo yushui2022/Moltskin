@@ -89,20 +89,9 @@ curl -X POST .../profiles/pf_.../stop   -H "Authorization: Bearer $TOKEN"
 curl -X POST .../profiles/pf_.../verify -H "Authorization: Bearer $TOKEN"
 ```
 
-```json
-{
-  "data": {
-    "ok": true,
-    "checks": [
-      {"name": "系统 / UA", "ok": true,  "detail": "配置 windows，UA 显示 windows"},
-      {"name": "屏幕",      "ok": true,  "detail": "1920x1080 @ 24bit"},
-      {"name": "代理连通",  "ok": true,  "detail": "203.0.113.7 · PH · 180ms"},
-      {"name": "时区",      "ok": true,  "detail": "跟随代理出口"}
-    ],
-    "warnings": []
-  }
-}
-```
+For a Camoufox profile, `data.measured_at` is the UTC time of the most recent launch sample that matches the current profile settings. A new profile or one with changed settings can have a null timestamp. Start the environment to collect a new sample. Rechecking the report reads the saved sample and reruns the existing proxy check if a proxy is bound.
+
+Each item in `checks` identifies its source. A `runtime` row contains the saved preset value in `expected` and the value read on a blank page in `observed`. Its `status` is `match`, `mismatch` or `unverified`. A missing value gives `ok: null`. For example, a CPU row with `expected: 4` and `observed: 18` has `status: "mismatch"` and `ok: false`. The other sources are `configuration` for saved settings and `proxy` for the proxy check. The overall `data.ok` is true only when every row passes.
 
 ### Self-test
 

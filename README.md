@@ -47,7 +47,7 @@ Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` sho
 | One process per profile, duplicate-launch protection | ✅ |
 | Fingerprint preset persisted per profile | ✅ |
 | Fingerprint preview (UA, screen, WebGL, cores) | ✅ |
-| Pre-launch consistency checks | ✅ |
+| Camoufox preset and browser readings compared on launch, with separate configuration and proxy checks | ✅ |
 | CreepJS self-test with screenshot | ✅ |
 | Proxy pool with exit IP / country / timezone / latency check | ✅ |
 | GeoIP alignment (timezone, locale, coordinates) | ✅ |

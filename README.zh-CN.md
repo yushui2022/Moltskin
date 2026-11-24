@@ -60,9 +60,8 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 - 创建 / 删除 / 复制环境
 - 一键启动 Camoufox（持久化 profile，登录态保留）
-- **同一环境指纹固定**（创建时生成并持久化预设）
-- 指纹预览（UA、屏幕、WebGL、CPU 核数）
-- 启动前一致性检查（系统/UA、代理、时区）
+- 环境创建时保存指纹预设，后续启动复用同一份预设
+- Camoufox 环境详情并排显示预设值与最近一次启动的浏览器实测值，可核对 CPU 核数、屏幕、UA 和 WebGL 等字段。缺少读数时显示「未验证」。
 - CreepJS 指纹自检 + 截图
 - 分组、标签、批量打开/关闭/删除/移动
 - JSON 导入 / 导出

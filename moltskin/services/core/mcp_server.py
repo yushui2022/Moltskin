@@ -125,7 +125,7 @@ def profile_status(profile_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 def verify_profile(profile_id: str) -> dict[str, Any]:
-    """Check fingerprint, OS/UA, proxy and timezone consistency before launch."""
+    """Compare the last Camoufox launch readings with the preset and check the proxy configuration."""
     return _request("POST", f"/profiles/{profile_id}/verify")
 
 

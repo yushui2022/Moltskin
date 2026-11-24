@@ -557,7 +557,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 
 /* profile detail */
 .detail-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 14px; }
-.detail-name { font-size: 17px; font-weight: 600; }
+.detail-name { margin: 0; font-size: 17px; font-weight: 600; }
 .detail-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
 .detail-head .status { margin-left: auto; }
 .section { border-top: 1px solid var(--border-soft); padding: 13px 0; }
@@ -570,11 +570,23 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .kv .k { color: var(--dim); font-size: 11px; }
 .kv .v { font-size: 12.5px; margin-top: 2px; overflow-wrap: anywhere; }
 .check-list { display: flex; flex-direction: column; gap: 7px; }
-.check-row { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; }
-.check-row .ico { width: 15px; flex: none; font-weight: 600; }
-.check-row.ok .ico { color: var(--ok); }
-.check-row.bad .ico { color: var(--err); }
-.check-row .detail { color: var(--muted); }
+.comparison-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.comparison-table th, .comparison-table td { padding: 7px 5px; text-align: left; vertical-align: top;
+  overflow-wrap: anywhere; border-bottom: 1px solid var(--border-soft); }
+.comparison-table th { color: var(--muted); font-weight: 500; }
+.comparison-table thead th { background: var(--panel-2); }
+.comparison-table thead th:first-child { width: 18%; }
+.comparison-table thead th:last-child { width: 5em; }
+.check-state { display: inline-block; color: var(--muted); font-weight: 500; }
+.check-state.match { color: var(--accent-strong); }
+.check-state.mismatch { color: var(--err); }
+.comparison-table .mismatch-row { background: #fcf3f1; }
+.check-list h4 { margin: 8px 0 0; font-size: 12px; font-weight: 600; }
+.check-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; font-size: 12px; }
+.check-row .detail { margin-left: 8px; color: var(--muted); overflow-wrap: anywhere; }
+.check-row .check-state { flex: none; }
+#presetDetails summary { cursor: pointer; font-size: 12.5px; font-weight: 500; }
+#presetDetails[open] summary { margin-bottom: 10px; }
 .check-warning { margin-top: 8px; padding: 8px 10px; border: 1px solid #f2d59b;
   background: #fff9e8; border-radius: var(--r-md); color: #8a5a00; font-size: 12px; }
 .selftest-result { margin-top: 10px; }
@@ -1447,23 +1459,25 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 
 <!-- 环境详情 -->
 <div class="mask" id="detailMask">
-  <div class="modal wide">
-    <div class="head">环境详情<button class="x" data-close="detailMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="modal wide" aria-labelledby="detailName">
+    <div class="head">环境详情<button class="x" data-close="detailMask" aria-label="关闭环境详情"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single">
       <div class="detail-head">
         <div>
-          <div class="detail-name" id="detailName">—</div>
+          <h2 class="detail-name" id="detailName" tabindex="-1" data-initial-focus>—</h2>
           <div class="detail-sub" id="detailSub">—</div>
         </div>
         <span id="detailStatus"></span>
       </div>
-      <section class="section">
-        <h3 id="detailConfigHeading">指纹预览</h3>
-        <div class="kv-grid" id="fingerprintPreview"></div>
-      </section>
       <section class="section" data-engine="camoufox">
-        <h3>启动前检查<button class="btn small" id="recheckBtn">重新检查</button></h3>
-        <div id="consistency" class="check-list"><span class="muted">检查中…</span></div>
+        <h3>浏览器实测<button class="btn small" id="recheckBtn">刷新结果</button></h3>
+        <div id="consistency" class="check-list" aria-live="polite"></div>
+      </section>
+      <section class="section">
+        <details id="presetDetails">
+          <summary id="detailConfigHeading">指纹预设</summary>
+          <div class="kv-grid" id="fingerprintPreview"></div>
+        </details>
       </section>
       <section class="section" data-engine="camoufox">
         <h3>扩展<button class="btn small" id="reloadExtBtn">刷新</button></h3>
@@ -1715,7 +1729,7 @@ function openModal(id) {
   lastFocused = document.activeElement;
   $(id).classList.add("show");
   setTimeout(() => {
-    const first = $(id).querySelector("input:not([type=hidden]), select, button.primary");
+    const first = $(id).querySelector("[data-initial-focus]") || $(id).querySelector("input:not([type=hidden]), select, button.primary");
     first?.focus();
   }, 40);
 }
@@ -1923,16 +1937,23 @@ function fontsLabel(p) {
   return p.local_fonts === "restricted" ? "禁止枚举" : "站点授权";
 }
 
+function presetScreenSize(preview) {
+  const size = preview?.screen;
+  return typeof size === "string" && /^[1-9]\d*[x×][1-9]\d*$/.test(size) ? size : null;
+}
+
 function rowHtml(p, index) {
   const proxy = proxyLabel(p);
   const c = state.columns;
   const preview = p.fingerprint_preview;
-  let cfg = "Camoufox · 未生成指纹";
+  let cfg = "Camoufox · 未生成预设";
   if (p.engine === "chromium") {
     cfg = `Chromium · 字体${fontsLabel(p)}`;
   } else if (preview) {
-    const os = preview.os === "macos" ? "macOS" : preview.os === "linux" ? "Linux" : "Win";
-    cfg = `Camoufox · ${os} · ${preview.hardware_concurrency || "?"}核 · ${preview.screen || ""}`;
+    const os = { macos: "macOS", linux: "Linux", windows: "Win" }[preview.os];
+    const cores = preview.hardware_concurrency;
+    cfg = ["Camoufox 预设", os, Number(cores) > 0 ? `${cores} 核` : null, presetScreenSize(preview)]
+      .filter(Boolean).join(" · ");
   }
   return `<tr class="${state.selected.has(p.id) ? "selected" : ""}">
     <td><input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}"></td>
@@ -1998,7 +2019,7 @@ function cardHtml(p) {
       <div><span class="k">代理</span><span class="v mono">${esc(proxy.text)}${proxy.geo ? ` · ${esc(proxy.geo)}` : ""}</span></div>
       ${p.engine === "chromium"
         ? `<div><span class="k">字体访问</span><span class="v">${fontsLabel(p)}</span></div>`
-        : `<div><span class="k">指纹</span><span class="v">${preview ? `${esc(preview.os)} · ${esc(preview.screen || "")}` : "未生成"}</span></div>`}
+        : `<div><span class="k">指纹预设</span><span class="v">${preview ? esc([preview.os, presetScreenSize(preview)].filter(Boolean).join(" · ") || "—") : "未生成"}</span></div>`}
       <div><span class="k">打开</span><span class="v">${p.open_count || 0} 次</span></div>
     </div>
     ${(p.tags || []).length ? `<div class="env-card-tags">${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
@@ -2709,10 +2730,13 @@ $("importFile").addEventListener("change", async (e) => {
 
 /* ---------------- 详情 ---------------- */
 let detailId = null;
+let verifyRequest = 0;
+let detailView = 0;
 function openDetail(id) {
   const p = state.profiles.find((x) => x.id === id);
   if (!p) return;
   detailId = id;
+  detailView++;
   $("detailName").textContent = p.name;
   $("detailSub").textContent = [
     p.group?.name || "未分组",
@@ -2723,7 +2747,8 @@ function openDetail(id) {
   $("detailStatus").innerHTML = statusHtml(p);
 
   const chromium = p.engine === "chromium";
-  $("detailConfigHeading").textContent = chromium ? "内核设置" : "指纹预览";
+  $("detailConfigHeading").textContent = chromium ? "内核设置" : "指纹预设";
+  $("presetDetails").open = chromium;
   for (const section of $("detailMask").querySelectorAll('[data-engine="camoufox"]')) {
     section.hidden = chromium;
   }
@@ -2740,13 +2765,13 @@ function openDetail(id) {
         "User-Agent": preview.user_agent,
         "平台": preview.platform,
         "CPU 核数": preview.hardware_concurrency,
-        "屏幕": `${preview.screen} @ ${preview.color_depth}bit`,
+        "屏幕": [presetScreenSize(preview), Number(preview.color_depth) > 0 ? `${preview.color_depth} 位色深` : null]
+          .filter(Boolean).join(" · "),
         "WebGL 厂商": preview.webgl_vendor,
         "WebGL 渲染器": preview.webgl_renderer,
-      }).map(([k, v]) => `<div class="kv"><div class="k">${k}</div><div class="v">${esc(v ?? "—")}</div></div>`).join("")
-    : '<span class="muted">尚未生成指纹</span>';
+      }).map(([k, v]) => `<div class="kv"><div class="k">${k}</div><div class="v">${esc(v || "—")}</div></div>`).join("")
+    : '<span class="muted">尚未生成预设</span>';
 
-  $("consistency").innerHTML = '<span class="muted">检查中…</span>';
   $("selfTestResult").innerHTML = "";
   $("selfTestBtn").disabled = false;
   $("selfTestBtn").textContent = "运行自检";
@@ -2758,38 +2783,74 @@ function openDetail(id) {
 }
 
 async function runVerify(id) {
+  const request = ++verifyRequest;
+  const box = $("consistency");
+  box.textContent = "正在读取检查结果…";
+  box.setAttribute("aria-busy", "true");
   try {
     const data = await api(`/profiles/${id}/verify`, { method: "POST" });
-    const rows = data.checks.map((check) => `
-      <div class="check-row ${check.ok ? "ok" : "bad"}">
-        <span class="ico">${check.ok ? "✓" : "✕"}</span>
-        <div>${esc(check.name)}<div class="detail">${esc(check.detail)}</div></div>
-      </div>`).join("");
-    const warnings = data.warnings.length
-      ? `<div class="check-warning">${data.warnings.map(esc).join("<br>")}</div>` : "";
-    $("consistency").innerHTML = rows + warnings;
+    if (request !== verifyRequest || detailId !== id) return;
+    const measured = data.checks.filter((check) => check.source === "runtime");
+    const other = data.checks.filter((check) => check.source !== "runtime");
+    let note = "当前配置还没有实测记录。启动环境后，刷新结果即可查看。";
+    if (data.measured_at) {
+      note = `最近一次启动采样 · ${fmtTime(data.measured_at)}`;
+    } else if (!("measured_at" in data) && !measured.length) {
+      note = "当前服务只提供配置记录。更新并重启本机服务后，启动环境即可采样。";
+    }
+    let html = `<p class="hint">${esc(note)}</p>`;
+    if (measured.length) {
+      measured.sort((a, b) => Number(b.status === "mismatch") - Number(a.status === "mismatch"));
+      const rows = measured.map((check) => {
+        const { status } = check;
+        const label = status === "match" ? "一致" : status === "mismatch" ? "不一致" : "未验证";
+        return `<tr class="${status === "mismatch" ? "mismatch-row" : ""}">
+          <th scope="row">${esc(check.name)}</th><td>${esc(check.expected ?? "—")}</td>
+          <td>${esc(check.observed ?? "—")}</td><td><span class="check-state ${esc(status)}">${label}</span></td></tr>`;
+      }).join("");
+      html += `<table class="comparison-table" aria-label="预设值与浏览器实测值对照">
+        <thead><tr><th scope="col">项目</th><th scope="col">预设值</th>
+        <th scope="col">实测值</th><th scope="col">结果</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    if (other.length) {
+      html += '<h4>配置与代理检查</h4>' + other.map((check) => {
+        const known = check.source === "proxy" || check.source === "configuration";
+        const status = known && check.ok === true ? "match" : known && check.ok === false ? "mismatch" : "";
+        const label = status === "match" ? "正常" : status === "mismatch" ? "需检查" : known ? "未验证" : "配置记录";
+        return `<div class="check-row"><div>${esc(check.name)}<span class="detail">${esc(check.detail)}</span></div>
+          <span class="check-state ${status}">${label}</span></div>`;
+      }).join("");
+    }
+    if (data.warnings?.length) html += `<div class="check-warning">${data.warnings.map(esc).join("<br>")}</div>`;
+    box.innerHTML = html;
   } catch (err) {
-    $("consistency").innerHTML = `<div class="check-warning">${esc(err.message)}</div>`;
+    if (request === verifyRequest && detailId === id) box.innerHTML = `<div class="check-warning">${esc(err.message)}</div>`;
+  } finally {
+    if (request === verifyRequest && detailId === id) box.removeAttribute("aria-busy");
   }
 }
 
 $("recheckBtn").onclick = () => detailId && runVerify(detailId);
 $("selfTestBtn").onclick = async () => {
   if (!detailId) return;
+  const view = detailView;
   const btn = $("selfTestBtn");
   btn.disabled = true;
   btn.textContent = "运行中（约 20 秒）…";
   $("selfTestResult").innerHTML = '<div class="muted">正在打开 CreepJS 并截图…</div>';
   try {
     const data = await api(`/profiles/${detailId}/self-test`, { method: "POST" });
+    if (detailView !== view) return;
     $("selfTestResult").innerHTML = `
-      <img src="${data.image_url}" alt="CreepJS 自检截图">
-      <div class="selftest-meta">${esc(data.url)} · ${fmtTime(data.created_at)}</div>`;
+      <img src="${esc(data.image_url)}" alt="CreepJS 自检截图">
+      <div class="selftest-meta">${esc(data.url)} · ${esc(fmtTime(data.created_at))}</div>`;
   } catch (err) {
-    $("selfTestResult").innerHTML = `<div class="check-warning">${esc(err.message)}</div>`;
+    if (detailView === view) $("selfTestResult").innerHTML = `<div class="check-warning">${esc(err.message)}</div>`;
   } finally {
-    btn.disabled = false;
-    btn.textContent = "重新自检";
+    if (detailView === view) {
+      btn.disabled = false;
+      btn.textContent = "重新自检";
+    }
   }
 };
 

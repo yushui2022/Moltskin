@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 from chromium import native as chromium_native
 
 from . import backup as backup_store
-from . import config, db, extensions, jobs, launcher, proxy_checker, scheduler, selftest, state_sync
+from . import config, db, extensions, jobs, launcher, observation, proxy_checker, scheduler, selftest, state_sync
 from . import cookies as cookie_store
 from .security import get_token
 
@@ -185,7 +185,7 @@ def fingerprint_preview(fingerprint: dict[str, Any], os_name: str) -> dict[str, 
         "user_agent": user_agent,
         "platform": nav.get("platform"),
         "hardware_concurrency": nav.get("hardwareConcurrency"),
-        "screen": f"{screen.get('width')}x{screen.get('height')}",
+        "screen": f"{screen['width']}x{screen['height']}" if screen.get("width") and screen.get("height") else None,
         "color_depth": screen.get("colorDepth"),
         "webgl_vendor": webgl.get("unmaskedVendor"),
         "webgl_renderer": webgl.get("unmaskedRenderer"),
@@ -1096,38 +1096,59 @@ def _ua_os(user_agent: str) -> str | None:
     return None
 
 
+def _runtime_checks(preview: dict, values: dict) -> list[dict]:
+    fields = (
+        ("user_agent", "User-Agent"), ("platform", "平台"), ("hardware_concurrency", "CPU 核数"),
+        ("screen", "屏幕尺寸"), ("color_depth", "色深"), ("webgl_vendor", "WebGL 厂商"),
+        ("webgl_renderer", "WebGL 渲染器"),
+    )
+    checks = []
+    for key, name in fields:
+        expected, observed = preview.get(key), values.get(key)
+        if expected in (None, "") or observed in (None, ""):
+            status, ok = "unverified", None
+        elif str(expected) == str(observed):
+            status, ok = "match", True
+        else:
+            status, ok = "mismatch", False
+        checks.append({
+            "name": name, "source": "runtime", "status": status, "ok": ok,
+            "expected": expected, "observed": observed,
+            "detail": f"预设 {expected if expected not in (None, '') else '—'} / "
+                      f"实测 {observed if observed not in (None, '') else '未取得'}",
+        })
+    return checks
+
+
 @app.post("/api/v1/profiles/{profile_id}/verify")
 def verify_profile(profile_id: str):
     row = camoufox_profile(profile_id)
     fingerprint = json.loads(row["fingerprint"] or "{}")
     preview = fingerprint_preview(fingerprint, row["os"])
-    checks: list[dict[str, Any]] = []
+    sample = observation.read_current(row)
+    checks = _runtime_checks(preview or {}, sample["values"] if sample else {})
     warnings: list[str] = []
 
     if preview:
         ua_os = _ua_os(preview.get("user_agent") or "")
         ok = ua_os == row["os"]
-        checks.append({"name": "系统 / UA", "ok": ok,
-                       "detail": f"配置 {row['os']}，UA 显示 {ua_os or '未知'}"})
+        checks.append({"name": "系统 / UA", "source": "configuration", "ok": ok,
+                       "detail": f"环境配置 {row['os']}，预设 UA 的系统为 {ua_os or '未知'}"})
         if not ok:
-            warnings.append("指纹 UA 与配置的操作系统不一致")
-        checks.append({"name": "屏幕", "ok": True,
-                       "detail": f"{preview['screen']} @ {preview['color_depth']}bit"})
-        checks.append({"name": "WebGL", "ok": True,
-                       "detail": preview.get("webgl_renderer") or "未知"})
+            warnings.append("预设 UA 与配置的操作系统不一致")
     else:
-        checks.append({"name": "指纹", "ok": False, "detail": "尚未生成指纹预设"})
+        checks.append({"name": "指纹", "source": "configuration", "ok": False, "detail": "尚未生成指纹预设"})
         warnings.append("尚未生成指纹预设")
 
     proxy_result = None
     if not row["proxy_id"]:
-        checks.append({"name": "代理", "ok": False, "detail": "未绑定代理，将使用本机 IP"})
-        warnings.append("未绑定代理，出口 IP 与本机一致")
+        checks.append({"name": "代理", "source": "configuration", "ok": False, "detail": "环境未绑定代理"})
+        warnings.append("环境未绑定代理")
     else:
         with db.session() as conn:
             proxy = conn.execute("SELECT * FROM proxies WHERE id=?", (row["proxy_id"],)).fetchone()
         if proxy is None:
-            checks.append({"name": "代理", "ok": False, "detail": "代理记录不存在"})
+            checks.append({"name": "代理", "source": "configuration", "ok": False, "detail": "代理记录不存在"})
             warnings.append("绑定的代理不存在")
         else:
             proxy_result = proxy_checker.check_and_save(dict(proxy))
@@ -1137,21 +1158,21 @@ def verify_profile(profile_id: str):
                 f"{proxy_result.get('latency_ms') or '?'}ms"
                 if ok else f"不可用：{proxy_result.get('error') or proxy_result['status']}"
             )
-            checks.append({"name": "代理连通", "ok": ok, "detail": detail})
+            checks.append({"name": "代理连通", "source": "proxy", "ok": ok, "detail": detail})
             if not ok:
                 warnings.append(f"代理不可用：{proxy_result.get('error') or proxy_result['status']}")
 
             explicit_tz = (fingerprint.get("overrides") or {}).get("timezone") or fingerprint.get("timezone")
             proxy_tz = proxy_result.get("timezone")
             if explicit_tz and proxy_tz and explicit_tz != proxy_tz:
-                checks.append({"name": "时区", "ok": False,
+                checks.append({"name": "时区", "source": "proxy", "ok": False,
                                "detail": f"手动 {explicit_tz} / 代理 {proxy_tz}"})
                 warnings.append("手动设置的时区与代理出口不一致")
             elif proxy_tz:
-                checks.append({"name": "时区", "ok": True, "detail": "跟随代理出口"})
+                checks.append({"name": "时区", "source": "proxy", "ok": True, "detail": f"代理出口时区 {proxy_tz}"})
 
             if proxy_result.get("locale"):
-                checks.append({"name": "国家 / 语言", "ok": True,
+                checks.append({"name": "国家 / 语言", "source": "proxy", "ok": True,
                                "detail": f"{proxy_result.get('country') or '?'} · {proxy_result['locale']}"})
 
     ok = all(check["ok"] for check in checks)
@@ -1159,6 +1180,7 @@ def verify_profile(profile_id: str):
         "data": {
             "profile_id": profile_id,
             "ok": ok,
+            "measured_at": sample["measured_at"] if sample else None,
             "checks": checks,
             "warnings": warnings,
             "preview": preview,

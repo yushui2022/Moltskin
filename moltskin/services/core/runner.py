@@ -20,6 +20,8 @@ from playwright.sync_api import Error as PWError
 
 from camoufox.sync_api import Camoufox
 
+from . import observation
+
 STOP = False
 
 
@@ -119,6 +121,11 @@ def main() -> int:
     try:
         with Camoufox(**kwargs) as context:
             write_status(status_path, state="running", pid=os.getpid())
+            try:
+                observation.capture(context, plan)
+            except Exception as exc:
+                # Diagnostic failures must leave the user's browser running.
+                print(f"启动读数不可用 ({type(exc).__name__})", flush=True)
 
             manager_url = plan.get("manager_url")
             if manager_url:
