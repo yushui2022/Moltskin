@@ -153,7 +153,7 @@ def main() -> int:
         {"name": "session", "value": "s", "domain": "example.com", "path": "/app"},
         {"name": "secure_only", "value": "x", "domain": ".example.com", "path": "/", "secure": True, "httpOnly": True},
     ]
-    r = data("PUT", f"/profiles/{p1['id']}/cookies", json={"cookies": weird, "mode": "replace"})
+    data("PUT", f"/profiles/{p1['id']}/cookies", json={"cookies": weird, "mode": "replace"})
     got = data("GET", f"/profiles/{p1['id']}/cookies")["cookies"]
     by_name = {c["name"]: c for c in got}
     check("Cookie 数量正确", len(got) == 4, str(len(got)))
