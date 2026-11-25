@@ -617,8 +617,15 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   background: white; border-radius: 50%; }
 .editor-switch input:checked { background: var(--accent); }
 .editor-switch input:checked::before { transform: translateX(13px); }
-.profile-editor .foot { padding: 12px 20px; }
+.profile-editor .foot { padding: 12px 20px; flex-wrap: wrap; }
 .profile-editor .foot .btn { min-width: 66px; height: 35px; }
+#previewPreset { margin-right: auto; color: var(--accent-strong); background: var(--accent-soft); border-color: #c4dcca; }
+#previewPreset:hover:not(:disabled) { background: #d8eadc; }
+#previewPreset[hidden] { display: none; }
+@media (max-width: 400px) {
+  .profile-editor .foot { gap: 5px; }
+  .profile-editor .foot .btn { min-width: 0; padding-inline: 6px; font-size: 12px; }
+}
 @media (max-width: 650px) {
   #profileMask { padding: 8px; }
   .profile-editor.modal { height: min(720px, 96dvh); max-height: 96dvh; }
@@ -822,6 +829,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-.6 4"/><path d="M20 5v6h-6"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3 6h3c4 0 7 12 11 12h4m-3-3 3 3-3 3M3 18h3c1.6 0 3-2 4.4-4m3.2-4C15 8 16 6 18 6h3m-3-3 3 3-3 3"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></symbol>
   <symbol id="i-right" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></symbol>
@@ -1411,7 +1419,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <div class="field" data-engine="chromium" hidden><label for="fLocalFonts">本机字体访问</label>
               <select class="select" id="fLocalFonts"><option value="standard">标准（由站点请求授权）</option><option value="restricted">受限（禁止枚举）</option></select>
             </div>
-            <div class="field full" id="fPresetInfo" hidden><span class="editor-caption">已保存的环境预设</span><dl id="fPresetValues" class="editor-preset"></dl></div>
+            <div class="field full" id="fPresetInfo" hidden><span class="editor-caption" id="fPresetCaption">已保存的环境预设</span><dl id="fPresetValues" class="editor-preset"></dl></div>
           </div>
         </details>
         <details class="editor-section" id="profileNetwork" name="profile-sections">
@@ -1441,6 +1449,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </div>
     </div>
     <div class="foot">
+      <button type="button" class="btn" id="previewPreset" aria-controls="fPresetInfo" hidden><svg class="i" aria-hidden="true"><use href="#i-shuffle"/></svg><span>一键随机生成指纹配置</span></button>
       <button class="btn" data-close="profileMask">取消</button>
       <button class="btn primary" id="confirmProfile">创建窗口</button>
     </div>
@@ -1853,7 +1862,9 @@ async function api(path, options = {}) {
   try { body = await res.json(); } catch (_) { /* 空响应 */ }
   if (!res.ok || (body && body.error)) {
     const msg = body?.error?.message || `请求失败 (${res.status})`;
-    throw new Error(msg);
+    const error = new Error(msg);
+    error.code = body?.error?.code;
+    throw error;
   }
   return body?.data;
 }
@@ -1903,6 +1914,7 @@ function openModal(id, initialFocus = null) {
   }, 40);
 }
 function closeModal(id) {
+  if (id === "profileMask") profileForm = null;
   $(id).classList.remove("show");
   if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
   lastFocused = null;
@@ -2662,6 +2674,68 @@ async function deleteProfile(id) {
 /* ---------------- 创建 / 编辑 ---------------- */
 const editor = $("profileMask");
 const editorNav = editor.querySelector(".editor-nav");
+let profileForm = null;
+
+function newPresetDraftId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  // LAN dashboards served over HTTP still have getRandomValues.
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-");
+}
+
+function canPreviewPreset() {
+  return profileForm && !profileForm.id && $("fEngine").value === "camoufox";
+}
+
+function currentPresetDraft() {
+  return canPreviewPreset() ? profileForm.presets.get($("fOs").value) : null;
+}
+
+function renderPresetAction() {
+  const draft = currentPresetDraft();
+  const button = $("previewPreset");
+  button.hidden = !canPreviewPreset();
+  button.disabled = Boolean(profileForm?.saving || draft?.loading);
+  const label = button.querySelector("span");
+  if (draft?.loading) label.textContent = "正在生成…";
+  else if (draft?.preview) label.textContent = "查看本次配置";
+  else label.textContent = draft ? "重试生成配置" : "一键随机生成指纹配置";
+  $("confirmProfile").disabled = Boolean(profileForm?.saving || (draft && !draft.preview));
+  if (!profileForm?.id) renderEditorPreset(draft?.preview);
+}
+
+$("previewPreset").onclick = async () => {
+  const form = profileForm;
+  if (!canPreviewPreset() || form.saving) return;
+  const os = $("fOs").value;
+  let draft = currentPresetDraft();
+  if (draft?.loading) return;
+  if (!draft?.preview) {
+    draft = { loading: true, preview: null };
+    form.presets.set(os, draft);
+    renderPresetAction();
+    try {
+      form.draftId ??= newPresetDraftId();
+      const result = await api("/profile-preset-preview", {
+        method: "POST", body: JSON.stringify({ os, draft_id: form.draftId }),
+      });
+      if (result?.draft_id !== form.draftId || !result.preview) throw new Error("未取得本次配置，请重试。");
+      draft.preview = result.preview;
+    } catch (error) {
+      if (currentPresetDraft() === draft) toast(error.message, true);
+      return;
+    } finally {
+      draft.loading = false;
+      if (currentPresetDraft() === draft) renderPresetAction();
+    }
+  }
+  if (currentPresetDraft() !== draft) return;
+  showEditorSection("profileBrowser");
+  $("fPresetInfo").scrollIntoView({ block: "nearest" });
+};
 function showEditorSection(id) {
   const section = $(id);
   section.open = true;
@@ -2715,7 +2789,9 @@ $("fName").addEventListener("input", updateEditorName);
 editor.addEventListener("change", renderEditorSettings);
 
 function renderEditorPreset(preview) {
-  const items = [["屏幕", presetScreenSize(preview)], ["User-Agent", preview?.user_agent]].filter(([, value]) => value);
+  const items = [["平台", preview?.platform || preview?.os], ["屏幕", presetScreenSize(preview)],
+    ["User-Agent", preview?.user_agent]].filter(([, value]) => value);
+  $("fPresetCaption").textContent = profileForm?.id ? "已保存的环境预设" : "本次创建将使用的配置";
   $("fPresetValues").replaceChildren();
   $("fPresetInfo").hidden = !items.length;
   for (const [label, value] of items) {
@@ -2755,7 +2831,8 @@ function engineSettings(prefix, creating) {
   return values;
 }
 
-$("fEngine").onchange = () => setEngineFields("f");
+$("fEngine").onchange = () => { setEngineFields("f"); renderPresetAction(); };
+$("fOs").onchange = renderPresetAction;
 $("bEngine").onchange = () => setEngineFields("b");
 
 function updateEditLock(id, status) {
@@ -2765,6 +2842,8 @@ function updateEditLock(id, status) {
 }
 
 async function openProfileModal(id = null) {
+  const form = { id, draftId: null, presets: new Map(), saving: false };
+  profileForm = form;
   state.editingId = id;
   const isEdit = Boolean(id);
   $("profileModalTitle").textContent = isEdit ? "编辑环境" : "创建窗口";
@@ -2778,7 +2857,7 @@ async function openProfileModal(id = null) {
     } catch (err) {
       return toast(err.message, true);
     }
-    if (state.editingId !== id) return;
+    if (profileForm !== form) return;
   }
   $("fName").value = p?.name || "";
   updateEditorName();
@@ -2798,6 +2877,7 @@ async function openProfileModal(id = null) {
   $("fBlockImages").checked = Boolean(p?.block_images);
   $("fNextLaunch").hidden = !isEdit;
   renderEditorPreset(p?.engine === "chromium" ? null : p?.fingerprint_preview);
+  renderPresetAction();
   renderEditorSettings();
   $("profileBasics").open = true;
   openModal("profileMask", $("fName"));
@@ -2819,6 +2899,9 @@ function fillSelects() {
 }
 
 $("confirmProfile").onclick = async () => {
+  const form = profileForm;
+  const draft = currentPresetDraft();
+  if (!form || form.saving || (draft && !draft.preview)) return;
   const name = $("fName").value.trim();
   if (!name) {
     showEditorSection("profileBasics");
@@ -2835,8 +2918,9 @@ $("confirmProfile").onclick = async () => {
     remark: $("fRemark").value.trim(),
     tags: $("fTags").value.split(",").map((x) => x.trim()).filter(Boolean),
   };
-  const btn = $("confirmProfile");
-  btn.disabled = true;
+  if (draft?.preview) payload.preset_draft_id = form.draftId;
+  form.saving = true;
+  renderPresetAction();
   try {
     if (state.editingId) {
       await api(`/profiles/${state.editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
@@ -2845,10 +2929,20 @@ $("confirmProfile").onclick = async () => {
       await api("/profiles", { method: "POST", body: JSON.stringify(payload) });
       toast("创建成功");
     }
-    closeModal("profileMask");
+    if (profileForm === form) closeModal("profileMask");
     await refresh();
-  } catch (err) { toast(err.message, true); }
-  finally { btn.disabled = false; }
+  } catch (err) {
+    if (profileForm !== form) return;
+    if (err.code === "PRESET_DRAFT_EXPIRED" && draft) {
+      form.presets.clear();
+      form.draftId = null;
+      form.presets.set(payload.os, { loading: false, preview: null });
+    }
+    toast(err.message, true);
+  } finally {
+    form.saving = false;
+    if (profileForm === form) renderPresetAction();
+  }
 };
 
 $("newGroupInline").onclick = async () => {

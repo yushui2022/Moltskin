@@ -20,6 +20,7 @@ from threading import Event, Thread
 from contextlib import ExitStack, asynccontextmanager
 from importlib.metadata import version as pkg_version
 from typing import Any, Literal
+from uuid import UUID
 
 from camoufox.fingerprints import get_random_preset
 from camoufox.multiversion import list_installed
@@ -74,6 +75,15 @@ class ProfileUpdate(BaseModel):
     os: str | None = None
     headless: bool | None = None
     fingerprint: dict[str, Any] | None = None
+
+
+class NewProfile(ProfileCreate):
+    preset_draft_id: UUID | None = None
+
+
+class PresetPreviewRequest(BaseModel):
+    os: Literal["windows", "macos", "linux"]
+    draft_id: UUID
 
 
 class ProxyCreate(BaseModel):
@@ -857,56 +867,81 @@ def list_profiles(q: str = "", status: str = "", group_id: str = "",
     }
 
 
+def _draft_cutoff() -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+
+
+@app.post("/api/v1/profile-preset-preview")
+def preview_profile_preset(payload: PresetPreviewRequest):
+    key = (str(payload.draft_id), payload.os)
+    with db.session() as conn:
+        conn.execute("DELETE FROM profile_preset_drafts WHERE created_at < ?", (_draft_cutoff(),))
+        row = conn.execute("SELECT preset FROM profile_preset_drafts WHERE id=? AND os=?", key).fetchone()
+        if row:
+            preset = json.loads(row["preset"])
+        else:
+            preset = get_random_preset(os=payload.os)
+            if not preset:
+                raise HTTPException(503, detail={"code": "PRESET_UNAVAILABLE", "message": "当前系统的内置预设暂不可用"})
+            conn.execute(
+                "INSERT INTO profile_preset_drafts(id, os, preset, created_at) VALUES (?, ?, ?, ?)",
+                (*key, json.dumps(preset, ensure_ascii=False), db.now()),
+            )
+    return {"data": {"draft_id": key[0], "preview": fingerprint_preview({"preset": preset}, payload.os)}}
+
+
 @app.post("/api/v1/profiles", status_code=201)
-def create_profile(payload: ProfileCreate):
+def create_profile(payload: NewProfile):
     _check_engine_options(payload.engine, payload.local_fonts, payload.proxy_id, payload.fingerprint)
     if payload.engine == "chromium" and "os" in payload.model_fields_set and payload.os != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
+    if payload.preset_draft_id and (payload.engine != "camoufox" or payload.fingerprint):
+        raise HTTPException(422, detail={
+            "code": "ENGINE_OPTIONS", "message": "预览配置只能单独用于新建 Camoufox 环境",
+        })
     limit = int(db.get_setting("profile_limit", 200) or 0)
-    if limit > 0:
-        with db.session() as conn:
-            total = conn.execute("SELECT COUNT(*) AS n FROM profiles").fetchone()["n"]
-        if total >= limit:
-            raise HTTPException(
-                409,
-                detail={
-                    "code": "PROFILE_LIMIT",
-                    "message": f"环境数量已达上限（{limit}），可在设置中调整",
-                },
-            )
-    fingerprint = {} if payload.engine == "chromium" else _fingerprint_with_preset(payload.fingerprint, payload.os)
     profile_id = new_id("pf")
     user_data_dir = config.PROFILES_DIR / profile_id
-    user_data_dir.mkdir(parents=True, exist_ok=True)
     ts = db.now()
-    try:
+    with ExitStack() as cleanup:
         with db.session() as conn:
-            conn.execute(
-                "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
-                "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, startup_page, block_images) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
-                (
-                    profile_id,
-                    payload.name.strip(),
-                    payload.group_id or None,
-                    payload.proxy_id or None,
-                    json.dumps(payload.tags, ensure_ascii=False),
-                    payload.remark,
-                    "native" if payload.engine == "chromium" else payload.os,
-                    json.dumps(fingerprint, ensure_ascii=False),
-                    str(user_data_dir),
-                    int(payload.headless),
-                    ts,
-                    ts,
-                    payload.engine,
-                    payload.local_fonts,
-                    payload.startup_page,
-                    int(payload.block_images),
-                ),
-            )
-    except sqlite3.IntegrityError:
-        shutil.rmtree(user_data_dir, ignore_errors=True)
-        raise HTTPException(409, detail={"code": "PROFILE_NAME_EXISTS", "message": "环境名称已存在"})
+            conn.execute("BEGIN IMMEDIATE")
+            if limit > 0 and conn.execute("SELECT COUNT(*) FROM profiles").fetchone()[0] >= limit:
+                raise HTTPException(409, detail={
+                    "code": "PROFILE_LIMIT", "message": f"环境数量已达上限（{limit}），可在设置中调整",
+                })
+            fingerprint = {}
+            if payload.preset_draft_id:
+                draft_id = str(payload.preset_draft_id)
+                row = conn.execute(
+                    "SELECT preset FROM profile_preset_drafts WHERE id=? AND os=? AND created_at>=?",
+                    (draft_id, payload.os, _draft_cutoff()),
+                ).fetchone()
+                if row is None:
+                    raise HTTPException(409, detail={
+                        "code": "PRESET_DRAFT_EXPIRED", "message": "这份预览已失效，请重新生成配置。",
+                    })
+                fingerprint = {"preset": json.loads(row["preset"])}
+                conn.execute("DELETE FROM profile_preset_drafts WHERE id=?", (draft_id,))
+            elif payload.engine == "camoufox":
+                fingerprint = _fingerprint_with_preset(payload.fingerprint, payload.os)
+            try:
+                conn.execute(
+                    "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
+                    "fingerprint, user_data_dir, headless, status, created_at, updated_at, "
+                    "engine, local_fonts, startup_page, block_images) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
+                    (profile_id, payload.name.strip(), payload.group_id or None, payload.proxy_id or None,
+                     json.dumps(payload.tags, ensure_ascii=False), payload.remark,
+                     "native" if payload.engine == "chromium" else payload.os,
+                     json.dumps(fingerprint, ensure_ascii=False), str(user_data_dir), int(payload.headless),
+                     ts, ts, payload.engine, payload.local_fonts, payload.startup_page, int(payload.block_images)),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise HTTPException(409, detail={"code": "PROFILE_NAME_EXISTS", "message": "环境名称已存在"}) from exc
+            user_data_dir.mkdir(mode=0o700)
+            cleanup.callback(user_data_dir.rmdir)
+        cleanup.pop_all()
     db.log("profile.create", profile_id, {"name": payload.name})
     return {"data": serialize_profile(get_profile_row(profile_id))}
 

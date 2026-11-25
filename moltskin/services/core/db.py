@@ -69,6 +69,14 @@ CREATE INDEX IF NOT EXISTS idx_profiles_status ON profiles(status);
 CREATE INDEX IF NOT EXISTS idx_profiles_group  ON profiles(group_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_proxy  ON profiles(proxy_id);
 
+CREATE TABLE IF NOT EXISTS profile_preset_drafts (
+  id          TEXT NOT NULL,
+  os          TEXT NOT NULL,
+  preset      TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  PRIMARY KEY (id, os)
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   id            TEXT PRIMARY KEY,
   profile_id    TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,

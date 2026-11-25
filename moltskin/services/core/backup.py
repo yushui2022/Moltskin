@@ -36,7 +36,8 @@ def create(include_profiles: bool = False) -> Path:
     db_copy = tmp.parent / DB_NAME
     _copy_database(config.DB_PATH.resolve(), db_copy)
 
-    with sqlite3.connect(db_copy) as conn:
+    with closing(sqlite3.connect(db_copy)) as conn, conn:
+        conn.execute("DROP TABLE IF EXISTS profile_preset_drafts")
         conn.row_factory = sqlite3.Row
         profiles = [
             dict(row)
