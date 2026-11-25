@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f7fa">
+  <meta name="referrer" content="no-referrer">
+  <title>窗口工作台 · Moltskin</title>
+  <link rel="icon" href="/favicon-32.png">
+  <style>
+    :root { color-scheme: light; --ink: #1d2636; --muted: #586579; --rule: #e0e5ed; --accent: #3859c7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: #f6f7fa; font: 14px/1.55 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+    h1, h2, p, dl, dd { margin: 0; }
+    [hidden] { display: none !important; }
+    button, a { font: inherit; }
+    button { cursor: pointer; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .bar { border-bottom: 1px solid var(--rule); background: #fff; }
+    .bar-inner, main { width: min(1120px, 100%); margin: 0 auto; padding-inline: clamp(18px, 5vw, 54px); }
+    .bar-inner { display: flex; align-items: center; gap: 16px; min-height: 64px; }
+    .brand { display: flex; align-items: center; gap: 7px; font: bold italic 25px/1 Georgia, serif; letter-spacing: -.06em; }
+    .brand img { width: 33px; height: 26px; }
+    .bar-label { border-left: 1px solid var(--rule); padding-left: 16px; color: var(--muted); }
+    main { padding-block: clamp(24px, 4vw, 42px) 56px; }
+    .heading { margin-bottom: 22px; }
+    h1 { font-size: clamp(25px, 4vw, 36px); line-height: 1.2; letter-spacing: -.035em; overflow-wrap: anywhere; }
+    .meta { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 9px; color: var(--muted); font-size: 13px; }
+    .meta span { overflow-wrap: anywhere; }
+    .meta b { font-weight: 500; color: #37465b; }
+    h2 { font-size: 17px; line-height: 1.45; letter-spacing: -.015em; }
+    .card { border: 1px solid #d7dce4; border-radius: 14px; background: #fff; overflow: hidden; }
+    .network-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 14px;
+      padding: 23px clamp(16px, 3vw, 28px); background: linear-gradient(110deg, #eef3ff, #f6f8fd); border-bottom: 1px solid #dce3f0; }
+    .network-top > div:first-child { min-width: 0; }
+    .network-top h2 { color: #354d88; font-size: 14px; }
+    .ip-line { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 13px; margin-top: 5px; }
+    #ip { font: 600 clamp(23px, 3.7vw, 39px)/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.035em; overflow-wrap: anywhere; }
+    #ip[data-state] { font-family: inherit; font-size: clamp(20px, 3vw, 28px); line-height: 1.5; }
+    #networkStatus { color: var(--muted); align-self: center; font-size: 12px; }
+    .network-fields, .details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(20px, 4vw, 44px); padding: 2px clamp(16px, 3vw, 28px) 12px; }
+    dl > div { display: grid; grid-template-columns: minmax(85px, 31%) minmax(0, 1fr); align-content: start; gap: 5px 12px;
+      border-bottom: 1px solid var(--rule); padding-block: 13px; }
+    dt { color: var(--muted); }
+    dd { font-weight: 500; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .environment { margin-top: 18px; }
+    .card-title { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 19px clamp(16px, 3vw, 28px) 4px; }
+    .runtime-link { color: var(--accent); text-decoration: none; font-size: 13px; }
+    .runtime-link:hover { text-decoration: underline; }
+    .details .wide { grid-column: 1 / -1; grid-template-columns: minmax(85px, calc((100% - clamp(20px, 4vw, 44px)) * .155)) minmax(0, 1fr); }
+    .remark { white-space: pre-wrap; }
+    .ua-value { font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .ua-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .action { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; border: 1px solid #b9c8e9;
+      padding: 3px 11px; border-radius: 7px; font-size: 13px; color: #294896; background: #fff; }
+    .action:hover { background: #eaf0ff; }
+    .feedback, .notice { color: var(--muted); font-size: 13px; }
+    .feedback:empty { display: none; }
+    .notice { margin-bottom: 12px; }
+    @media (max-width: 700px) {
+      .bar-inner { min-height: 54px; }
+      .network-fields, .details { grid-template-columns: minmax(0, 1fr); }
+      dl > div, .details .wide { grid-template-columns: minmax(88px, 31%) minmax(0, 1fr); padding-block: 10px; }
+      .network-top { padding-block: 16px; }
+      .details .ua-row { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header class="bar"><div class="bar-inner">
+    <div class="brand" lang="en"><img src="/logo.svg" alt="">Moltskin</div><span class="bar-label">窗口工作台</span>
+  </div></header>
+  <main>
+    <noscript><p class="notice">请启用 JavaScript 查看窗口与网络信息。</p></noscript>
+    <header class="heading">
+      <h1 id="windowName">当前窗口</h1>
+      <p class="meta">
+        <span>窗口 ID <b id="windowId">—</b></span>
+        <span>启动时间 <b id="startedAt">—</b></span>
+      </p>
+    </header>
+    <section class="card" aria-labelledby="networkHeading">
+      <div class="network-top">
+        <div>
+          <h2 id="networkHeading">当前窗口的出口 IP</h2>
+          <div class="ip-line">
+            <strong id="ip" data-state="loading">正在查询…</strong>
+            <button class="action" type="button" id="copyIp" hidden>复制 IP</button>
+            <button class="action" type="button" id="retryIp" hidden>重新检测</button>
+            <span class="feedback" id="ipCopyStatus" role="status"></span>
+          </div>
+        </div>
+        <p id="networkStatus" role="status">正在连接 IPinfo…</p>
+      </div>
+      <dl class="network-fields">
+        <div><dt>IP 所在地区</dt><dd id="ipRegion">—</dd></div>
+        <div><dt>IP 所在时区</dt><dd id="ipTimezone">—</dd></div>
+        <div><dt>纬度 / 经度</dt><dd id="ipCoordinates">—</dd></div>
+        <div><dt>当地时间</dt><dd id="ipClock">—</dd></div>
+        <div><dt>邮政编码</dt><dd id="ipPostal">—</dd></div>
+        <div><dt>代理设置</dt><dd id="proxy">—</dd></div>
+      </dl>
+    </section>
+    <section class="card environment" aria-labelledby="environmentHeading">
+      <div class="card-title">
+        <h2 id="environmentHeading">窗口环境</h2>
+        <a class="runtime-link" href="/runtime.html" target="_blank" rel="noopener noreferrer">查看本窗口参数 <span aria-hidden="true">↗</span></a>
+      </div>
+      <dl class="details">
+        <div><dt>窗口名称</dt><dd id="environmentName">—</dd></div>
+        <div><dt>所属分组</dt><dd id="group">—</dd></div>
+        <div><dt>内核版本</dt><dd id="kernel">—</dd></div>
+        <div><dt>系统平台</dt><dd id="platform">—</dd></div>
+        <div><dt>CPU 架构</dt><dd id="architecture">—</dd></div>
+        <div><dt>浏览器时区</dt><dd id="browserTimezone">—</dd></div>
+        <div class="wide"><dt>网站首选语言</dt><dd id="language">—</dd></div>
+        <div class="wide"><dt>备注</dt><dd class="remark" id="remark">—</dd></div>
+        <div class="wide ua-row"><dt>User-Agent</dt><dd>
+          <code class="ua-value" id="ua">—</code>
+          <div class="ua-tools"><button class="action" type="button" id="copyUa">复制 UA</button><span class="feedback" id="uaCopyStatus" role="status"></span></div>
+        </dd></div>
+      </dl>
+    </section>
+  </main>
+  <script type="application/json" id="workbenchContext">__WORKBENCH_CONTEXT__</script>
+  <script>
+    "use strict";
+    const element = id => document.getElementById(id);
+    const absent = "浏览器未提供";
+    function show(id, value) { element(id).textContent = value; }
+    const profile = JSON.parse(element("workbenchContext").textContent);
+    show("windowName", profile.name);
+    document.title = profile.name + " · 窗口工作台 · Moltskin";
+    show("environmentName", profile.name);
+    show("windowId", profile.id);
+    const started = new Date(profile.started_at || "");
+    if (!Number.isNaN(started.getTime())) show("startedAt", started.toLocaleString("zh-CN", {hour12: false}));
+    show("group", profile.group_name || "未分组");
+    show("remark", profile.remark || "未填写");
+    show("proxy", profile.proxy_label || "未提供");
+    show("ua", navigator.userAgent);
+    show("language", navigator.languages.join("、") || navigator.language || absent);
+    show("browserTimezone", Intl.DateTimeFormat().resolvedOptions().timeZone || absent);
+    show("platform", navigator.userAgentData?.platform || navigator.platform || absent);
+    show("architecture", absent);
+    const kernelName = profile.engine === "chromium" ? "Chromium" : profile.engine;
+    show("kernel", profile.browser_version ? [kernelName, profile.browser_version].filter(Boolean).join(" ") : absent);
+    async function readBrowser() {
+      try {
+        const hints = await navigator.userAgentData?.getHighEntropyValues(["fullVersionList", "platformVersion", "architecture", "bitness"]);
+        if (!hints) return;
+        const chromium = hints.fullVersionList?.find(item => item.brand === "Chromium");
+        if (!profile.browser_version && chromium?.version) show("kernel", "Chromium " + chromium.version);
+        if (hints.platform) show("platform", [hints.platform, hints.platformVersion].filter(Boolean).join(" "));
+        if (hints.architecture) show("architecture", [hints.architecture, hints.bitness && hints.bitness + " 位"].filter(Boolean).join(" · "));
+      } catch { /* The browser can withhold high-entropy hints. */ }
+    }
+    readBrowser();
+
+    async function copyFrom(sourceId, statusId) {
+      const source = element(sourceId);
+      try {
+        await navigator.clipboard.writeText(source.textContent);
+        show(statusId, "已复制");
+      } catch {
+        window.getSelection().selectAllChildren(source);
+        show(statusId, "已选中文本，可手动复制。");
+      }
+    }
+    element("copyIp").addEventListener("click", () => copyFrom("ip", "ipCopyStatus"));
+    element("copyUa").addEventListener("click", () => copyFrom("ua", "uaCopyStatus"));
+
+    function field(value, maxLength = 100) {
+      return typeof value === "string" && value.length <= maxLength && !/[\u0000-\u001f\u007f]/.test(value) ? value.trim() : "";
+    }
+    function isIp(value) {
+      if (value.includes(":") && /^[0-9a-f:.]+$/i.test(value)) {
+        try { return Boolean(new URL("http://[" + value + "]/").hostname); } catch { return false; }
+      }
+      const octets = value.split(".");
+      return octets.length === 4 && octets.every(part => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255);
+    }
+    function locationLabel(info) {
+      let country = field(info.country, 2).toUpperCase();
+      if (!/^[A-Z]{2}$/.test(country)) country = "";
+      if (country && Intl.DisplayNames) country = new Intl.DisplayNames(["zh-CN"], {type: "region"}).of(country);
+      return [...new Set([country, field(info.region), field(info.city)].filter(Boolean))].join(" · ");
+    }
+    function coordinates(value) {
+      const match = /^(-?\d{1,2}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)$/.exec(field(value, 48));
+      if (!match || Math.abs(Number(match[1])) > 90 || Math.abs(Number(match[2])) > 180) return "";
+      return match[1] + " / " + match[2];
+    }
+    let clock = null;
+    function startClock(zone) {
+      if (!zone) return false;
+      try {
+        const format = new Intl.DateTimeFormat("zh-CN", {
+          timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
+        });
+        show("ipTimezone", zone);
+        const tick = () => show("ipClock", format.format(new Date()));
+        tick();
+        clock = setInterval(tick, 1000);
+        return true;
+      } catch { return false; }
+    }
+    async function fetchJson(url, options = {}) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(url, {
+          ...options, credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store",
+          redirect: "error", signal: controller.signal
+        });
+        if (!response.ok) throw new Error("查询失败");
+        return await response.json();
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    function showExit(info) {
+      const ip = field(info?.ip, 45);
+      if (!isIp(ip)) throw new Error("未收到有效的 IP 地址");
+      show("ip", ip);
+      delete element("ip").dataset.state;
+      element("copyIp").hidden = false;
+      return ip;
+    }
+    function showLocation(info) {
+      const missing = "服务未提供";
+      const region = locationLabel(info);
+      const coords = coordinates(info.loc);
+      const postal = field(info.postal, 24);
+      show("ipRegion", region || missing);
+      show("ipCoordinates", coords || missing);
+      show("ipPostal", postal || missing);
+      show("ipTimezone", missing);
+      show("ipClock", missing);
+      const hasZone = startClock(field(info.timezone));
+      element("retryIp").hidden = Boolean(region && coords && postal && hasZone);
+      return Boolean(region || coords || postal || hasZone);
+    }
+    async function lookupIp() {
+      clearInterval(clock);
+      element("copyIp").hidden = true;
+      element("retryIp").hidden = true;
+      element("ip").dataset.state = "loading";
+      show("ip", "正在查询…");
+      show("networkStatus", "正在连接 IPinfo…");
+      show("ipCopyStatus", "");
+      const networkIds = ["ipRegion", "ipTimezone", "ipCoordinates", "ipClock", "ipPostal"];
+      for (const id of networkIds) show(id, "—");
+      try {
+        const info = await fetchJson("https://ipinfo.io/json");
+        showExit(info);
+        const found = showLocation(info);
+        show("networkStatus", found ? "数据来源 · IPinfo" : "IP 来源 · IPinfo，暂无地理信息");
+        return;
+      } catch {
+        show("networkStatus", "正在通过 ipify 查询出口 IP…");
+      }
+      let ip;
+      try {
+        ip = showExit(await fetchJson("https://api64.ipify.org?format=json"));
+      } catch {
+        element("ip").dataset.state = "error";
+        show("ip", "暂时无法获取");
+        show("networkStatus", "出口 IP 查询失败，可重新检测。");
+        element("retryIp").hidden = false;
+        return;
+      }
+      show("networkStatus", "IP 来源 · ipify，正在查询本地 IP 库…");
+      let locationInfo = {};
+      try {
+        const reply = await fetchJson(window.location.origin + window.location.pathname + "/location", {
+          method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ip})
+        });
+        locationInfo = reply?.data || {};
+      } catch { /* IP lookup succeeded even when local geolocation is unavailable. */ }
+      const found = showLocation(locationInfo);
+      show("networkStatus", found ? "IP 来源 · ipify / 地理信息 · 本地 IP 库" : "IP 来源 · ipify，暂无地理信息");
+    }
+    element("retryIp").addEventListener("click", lookupIp);
+    lookupIp();
+  </script>
+</body>
+</html>

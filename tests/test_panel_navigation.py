@@ -289,6 +289,8 @@ def test_only_installed_build_enables_its_own_permissions(panel):
     panel.locator('button[aria-controls="profileBrowser"]').click()
     panel.locator("#fChromiumVersion").select_option("")
     expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_disabled()
+    panel.locator('button[aria-controls="profileStartup"]').click()
+    expect(panel.locator("#fDashboardHint")).to_have_text("此启动方式默认打开空白页。")
     panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/hardware")
     expect(panel.locator("#profileHardware")).to_have_attribute("open", "")
 
@@ -376,6 +378,32 @@ def test_local_preview_ignores_superseded_requests_and_shows_inline_failures(pan
     expect(result).to_contain_text("本地预览失败：测试内核不可用")
     panel.locator("#fResetPlatformPreview").click()
     expect(result).to_be_empty()
+
+
+def test_chromium_startup_page_distinguishes_workbench_and_manager(panel):
+    panel.goto("http://panel.test/#/windows/new/chromium/browser")
+    panel.locator('button[aria-controls="profileStartup"]').click()
+    startup = panel.locator("#fStartupPage")
+    hint = panel.locator("#fDashboardHint")
+    expect(startup).to_have_value("default")
+    expect(hint).to_contain_text("首个标签页显示当前环境的工作台")
+    panel.locator("#fHeadless").select_option("1")
+    expect(hint).to_contain_text("空白页")
+    startup.select_option(label="管理首页（全部环境）")
+    expect(startup).to_have_value("dashboard")
+    expect(hint).to_be_hidden()
+    startup.select_option(label="空白页")
+    expect(startup).to_have_value("blank")
+    panel.keyboard.press("Escape")
+    panel.locator("#createMenuBtn").click()
+    panel.locator('[data-create="batch"]').click()
+    panel.locator("#bEngine").select_option("chromium")
+    expect(panel.locator("#bDashboardHint")).to_contain_text("当前环境的工作台")
+    panel.locator("#bHeadless").select_option("1")
+    expect(panel.locator("#bDashboardHint")).to_contain_text("空白页")
+    panel.keyboard.press("Escape")
+    panel.get_by_role("link", name="设置", exact=True).click()
+    expect(panel.locator("#sManagerHint")).to_contain_text("无头 Chromium 打开空白页")
 
 
 def test_chromium_manual_ua_validation_save_and_reset(panel):

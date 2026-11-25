@@ -39,9 +39,9 @@ from chromium import native as chromium_native
 
 from . import backup as backup_store
 from . import config, db, extensions, jobs, launcher, observation, proxy_checker, scheduler, selftest, state_sync
-from . import platform_preview, recycle
+from . import platform_preview, recycle, workbench_location
 from . import cookies as cookie_store
-from .security import get_token
+from .security import get_token, workbench_signature
 
 # ---------------------------------------------------------------------------
 # 模型
@@ -552,6 +552,57 @@ def runtime_page(request: Request):
     })
 
 
+WORKBENCH_UNAVAILABLE = "此工作台链接无效或会话已结束，请从当前环境重新打开。"
+
+
+def _active_workbench_session(session_id: str, signature: str) -> sqlite3.Row | None:
+    if (not re.fullmatch(r"ss_[0-9a-f]{12}", session_id) or not re.fullmatch(r"[0-9a-f]{64}", signature)
+            or not hmac.compare_digest(signature, workbench_signature(session_id))):
+        return None
+    with db.session() as conn:
+        # The child can open its first tab before the launcher commits its session and PID.
+        conn.execute("BEGIN IMMEDIATE")
+        return conn.execute(
+            "SELECT p.id, p.name, COALESCE(g.name, '') AS group_name, p.remark, p.engine, "
+            "s.id AS session_id, s.started_at, s.browser_version, COALESCE(px.name, '直连') AS proxy_label "
+            "FROM sessions s JOIN profiles p ON p.id=s.profile_id "
+            "LEFT JOIN groups g ON g.id=p.group_id LEFT JOIN proxies px ON px.id=p.proxy_id "
+            "WHERE s.id=? AND s.id=p.last_session_id AND s.state IN ('starting','running') AND p.engine='chromium'",
+            (session_id,),
+        ).fetchone()
+
+
+@app.get("/workbench/{session_id}/{signature}", response_class=HTMLResponse)
+def session_workbench(session_id: str, signature: str):
+    headers = {
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+                                   "img-src 'self'; font-src 'self'; connect-src 'self' https://ipinfo.io https://api64.ipify.org; "
+                                   "frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    }
+    row = _active_workbench_session(session_id, signature)
+    if row is None:
+        return HTMLResponse(WORKBENCH_UNAVAILABLE, status_code=404, headers=headers)
+    # This JSON lives inside an inert script element. A profile label may contain </script>.
+    context = json.dumps(dict(row), ensure_ascii=True).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
+    template = (config.WEB_DIR / "workbench.html").read_text(encoding="utf-8")
+    return HTMLResponse(template.replace("__WORKBENCH_CONTEXT__", context), headers=headers)
+
+
+class WorkbenchLocationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    ip: Annotated[str, Field(max_length=45), AfterValidator(workbench_location.public_address)]
+
+
+@app.post("/workbench/{session_id}/{signature}/location")
+def session_workbench_location(session_id: str, signature: str, payload: WorkbenchLocationRequest):
+    headers = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    if _active_workbench_session(session_id, signature) is None:
+        return JSONResponse({"error": {"message": WORKBENCH_UNAVAILABLE}}, status_code=404, headers=headers)
+    return JSONResponse({"data": workbench_location.lookup(payload.ip)}, headers=headers)
+
+
 class PlatformPreviewRequest(PlatformPreviewSettings):
     model_config = {"extra": "forbid"}
     chromium_version: str = Field(default="", pattern=rf"^(?:{chromium_native.VERSION_PATTERN})?$")
@@ -922,6 +973,7 @@ def engine():
             "chromium": {"available": bool(builds), "version": chromium_version, "message": problem,
                          "installed_versions": installed_versions,
                          "supports_custom_user_agent": True,
+                         "supports_session_workbench": True,
                          "preview_platforms": config.PREVIEW_PLATFORMS,
                          "preview_architectures": config.PREVIEW_ARCHITECTURES,
                          "chromium_js_heap_limits": config.CHROMIUM_JS_HEAP_LIMITS,

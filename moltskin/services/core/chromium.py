@@ -16,11 +16,12 @@ from chromium.native import (
 )
 
 from . import config
+from .security import workbench_signature
 
 
 def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    chromium_version: str = "", chromium_user_agent: str = "",
-                   block_images: bool = False, open_dashboard: bool = False,
+                   block_images: bool = False, open_dashboard: bool = False, workbench_session: str | None = None,
                    chromium_js_heap_mb: int = 0, chromium_mute_audio: bool = False, chromium_renderer_limit: int = 0,
                    media_capture: str = "standard", geolocation: str = "standard",
                    browser_language: str = "", browser_window_size: str = "") -> tuple[list[str], str]:
@@ -72,7 +73,11 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--window-size=" + browser_window_size.replace("x", ","))
     if headless:
         args.append("--headless")
-    args.append(config.local_dashboard_url() if open_dashboard else "about:blank")
+    if workbench_session:
+        signature = workbench_signature(workbench_session)
+        args.append(f"http://127.0.0.1:{config.PORT}/workbench/{workbench_session}/{signature}")
+    else:
+        args.append(config.local_dashboard_url() if open_dashboard else "about:blank")
     return args, version
 
 

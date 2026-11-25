@@ -74,8 +74,10 @@ Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` sho
 ### Manager page inside the browser
 
 Choose the local dashboard, a blank page, or the engine default when creating or
-editing a profile. By default Chromium opens a blank tab and Camoufox follows the
-dashboard's startup setting. Both engines can also block webpage images per
+editing a profile. With the default startup settings, headed Chromium opens that
+window's workbench, showing its exit IP, environment and browser readings. Headless
+Chromium opens a blank tab. Camoufox follows the dashboard's startup setting.
+Both engines can also block webpage images per
 profile. Changes apply on the next launch and are included in profile exports.
 
 ![Manager inside the browser](docs/screenshots/in-browser.png)

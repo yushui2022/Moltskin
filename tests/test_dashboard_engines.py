@@ -1,6 +1,7 @@
 """Dashboard engine integration with real runner processes and a fake Chromium binary."""
 
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -331,7 +332,7 @@ def test_platform_preview_validation_and_legacy_import(client):
 
 def test_platform_preview_presets_do_not_change_launch_arguments(client):
     settings = {"preview_platform": "Windows", "preview_platform_version": "10.0", "preview_architecture": "arm64"}
-    profile = create_chromium(client, "preview launch")
+    profile = create_chromium(client, "preview launch", startup_page="blank")
     url = f"{PROFILES}/{profile['id']}"
     args_file = Path(profile["user_data_dir"]) / "test-args.json"
     launches = []
@@ -502,6 +503,7 @@ def test_legacy_binary_refuses_unsupported_policy_before_start(client, monkeypat
 @pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="Chromium preview targets macOS and Linux")
 def test_two_native_sessions_and_restart(client, monkeypatch):
     from moltskin.services.core import config
+    from moltskin.services.core.security import workbench_signature
 
     monkeypatch.setattr(config, "OPEN_MANAGER", True)
     monkeypatch.setattr(config, "PORT", 18765)
@@ -528,7 +530,7 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
         assert client.patch(urls[1], json={"geolocation": "standard"}).status_code == 409
         for field, value in (("browser_language", "en-US"), ("browser_timezone", "UTC"), ("browser_window_size", "1440x900")):
             assert client.patch(urls[0], json={field: value}).status_code == 409
-        for profile, restricted in ((a, True), (b, False)):
+        for profile, restricted, session_id in ((a, True, first_sessions[0]), (b, False, first_sessions[1])):
             args = json.loads((Path(profile["user_data_dir"]) / "test-args.json").read_text())
             assert f"--user-data-dir={profile['user_data_dir']}" in args
             assert (RESTRICT_FONTS in args) == restricted
@@ -540,7 +542,7 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
             assert (BLOCK_LOCATION in args) == (profile == b)
             assert "--use-mock-keychain" not in args
             assert "--moltskin-panel-port=18765" in args
-            assert args[-1] == "about:blank"
+            assert args[-1] == f"http://127.0.0.1:18765/workbench/{session_id}/{workbench_signature(session_id)}"
             assert config.MANAGER_URL not in args
         marker = Path(a["user_data_dir"]) / "test-marker"
         marker.write_text("profile A")
@@ -574,6 +576,80 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
     finally:
         for url in urls:
             client.post(url + "/stop")
+
+
+def test_workbench_reads_only_the_current_session(client, monkeypatch):
+    from moltskin.services.core import config, main
+    from moltskin.services.core.security import get_token, workbench_signature
+
+    monkeypatch.setattr(config, "OPEN_MANAGER", True)
+    monkeypatch.setattr(config, "FORCE_HEADLESS", False)
+    group = client.post("/api/v1/groups", json={"name": "研发组"}).raise_for_status().json()["data"]
+    ids = iter(["pf_000000000001", "pf_000000000002"])
+    monkeypatch.setattr(main, "new_id", lambda prefix: next(ids))
+    first = create_chromium(client, "Alpha", group_id=group["id"], remark="</script><b>QA & 验收</b>")
+    second = create_chromium(client, "Beta", remark="独立环境")
+    paths = []
+    try:
+        for profile, version in ((first, "158.0.0.1"), (second, "158.0.0.2")):
+            monkeypatch.setenv("TEST_CHROMIUM_VERSION", version)
+            launched = client.post(f"{PROFILES}/{profile['id']}/launch").raise_for_status().json()["data"]
+            session_id = launched["session_id"]
+            session = client.get(f"/api/v1/sessions/{session_id}").raise_for_status().json()["data"]
+            args = json.loads((Path(profile["user_data_dir"]) / "test-args.json").read_text())
+            path = f"/workbench/{session_id}/{workbench_signature(session_id)}"
+            assert args[-1] == f"http://127.0.0.1:{config.PORT}{path}"
+            paths.append(path)
+            response = client.get(path, headers={"Authorization": ""}).raise_for_status()
+            assert response.headers["referrer-policy"] == "no-referrer"
+            assert response.headers["cache-control"] == "no-store"
+            assert "connect-src 'self' https://ipinfo.io https://api64.ipify.org;" in response.headers["content-security-policy"]
+            assert get_token() not in response.text and get_token() not in args[-1]
+            assert "</script><b>QA" not in response.text
+            embedded = re.search(r'<script\b[^>]*\bid="workbenchContext"[^>]*>(.*?)</script>', response.text, re.S)
+            context = json.loads(embedded.group(1))
+            assert context == {
+                "id": profile["id"], "name": profile["name"], "group_name": "研发组" if profile == first else "",
+                "remark": profile["remark"], "engine": "chromium", "started_at": session["started_at"],
+                "browser_version": version, "session_id": session_id, "proxy_label": "直连",
+            }
+        crossed = paths[0].rsplit("/", 1)[0] + "/" + paths[1].rsplit("/", 1)[1]
+        unknown_id = "ss_000000000000"
+        for invalid in (crossed, paths[0] + "a", f"/workbench/{unknown_id}/{workbench_signature(unknown_id)}"):
+            response = client.get(invalid)
+            assert response.status_code == 404 and first["id"] not in response.text and second["id"] not in response.text
+        client.post(f"{PROFILES}/{first['id']}/stop").raise_for_status()
+        assert client.get(paths[0]).status_code == 404
+        assert client.get(paths[1]).is_success
+        client.delete(f"{PROFILES}/{first['id']}").raise_for_status()
+        assert client.get(paths[0]).status_code == 404
+    finally:
+        for profile in (first, second):
+            client.post(f"{PROFILES}/{profile['id']}/stop")
+
+
+@pytest.mark.parametrize(("startup", "host_allows", "global_manager", "headless", "target"), [
+    ("default", True, False, False, "about:blank"),
+    ("default", False, True, False, "about:blank"),
+    ("default", True, True, True, "about:blank"),
+    ("blank", True, True, False, "about:blank"),
+    ("dashboard", True, False, True, "http://127.0.0.1:18765/#/home"),
+    ("dashboard", False, True, False, "about:blank"),
+])
+def test_chromium_respects_startup_preferences(client, monkeypatch, startup, host_allows, global_manager, headless, target):
+    from moltskin.services.core import config, db
+
+    monkeypatch.setattr(config, "OPEN_MANAGER", host_allows)
+    monkeypatch.setattr(config, "PORT", 18765)
+    db.set_setting("open_manager_on_launch", global_manager)
+    profile = create_chromium(client, "startup preference", startup_page=startup, headless=headless)
+    url = f"{PROFILES}/{profile['id']}"
+    client.post(url + "/launch").raise_for_status()
+    try:
+        args = json.loads((Path(profile["user_data_dir"]) / "test-args.json").read_text())
+        assert args[-1] == target
+    finally:
+        client.post(url + "/stop")
 
 
 @pytest.mark.parametrize(("startup", "host_allows", "global_manager", "target"), [

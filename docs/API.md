@@ -81,11 +81,13 @@ Profiles accept `startup_page` and `block_images` on creation and update. Change
 
 | Value | First tab |
 |-------|-----------|
-| `default` | Camoufox follows the global manager setting. Chromium opens a blank tab. |
+| `default` | Camoufox follows the global manager setting. Headed Chromium opens the session's window workbench when both `MOLTSKIN_OPEN_MANAGER` and the global `open_manager_on_launch` setting allow it. Otherwise Chromium opens a blank tab. |
 | `dashboard` | Open the local dashboard home on the configured service port. Hosts with `MOLTSKIN_OPEN_MANAGER=0` open a blank tab. |
 | `blank` | Open a blank tab in either engine. |
 
 `block_images` defaults to `false`. Set it to `true` to disable page image loading. Existing profiles keep `default` and continue loading images. Both preferences travel with configuration exports and duplicates.
+
+The Chromium workbench URL is scoped to one active session. It displays the window's own environment metadata and reads platform hints and the User-Agent in the viewing browser. The browser asks IPinfo for its exit IP. If that fails, it asks ipify for its address and posts the resulting public IP to the session URL's `/location` endpoint for an optional lookup in the host's installed geolocation database. IP geolocation and the browser's configured time zone are displayed separately.
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/v1/profiles \

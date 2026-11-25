@@ -1637,9 +1637,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <div class="field"><label for="sHeadless">默认无头模式</label>
                 <select class="select" id="sHeadless"><option value="false">否（显示窗口）</option><option value="true">是（后台运行）</option></select>
               </div>
-              <div class="field"><label for="sManager">启动时打开管理页</label>
-                <select class="select" id="sManager"><option value="true">是</option><option value="false">否</option></select>
-                <div class="hint">适用于启动页面选了「沿用默认设置」的 Camoufox 环境。Chromium 默认打开空白页。</div>
+              <div class="field"><label for="sManager">启动时打开本地页面</label>
+                <select class="select" id="sManager" aria-describedby="sManagerHint"><option value="true">是</option><option value="false">否</option></select>
+                <div class="hint" id="sManagerHint">适用于启动页面选择「沿用默认设置」的环境。</div>
               </div>
               <div class="field"><label for="sManagerButton">环境内显示控制台按钮</label>
                 <select class="select" id="sManagerButton"><option value="true">是（侧边栏 + Alt+Shift+M）</option><option value="false">否</option></select>
@@ -1828,8 +1828,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <select class="select" id="fHeadless"><option value="0">显示窗口</option><option value="1">后台运行（无头）</option></select>
             </div>
             <div class="field"><label for="fStartupPage">启动页面</label>
-              <select class="select" id="fStartupPage" aria-describedby="fDashboardHint"><option value="default">沿用默认设置</option><option value="dashboard">本地工作台</option><option value="blank">空白页</option></select>
-              <span class="hint" id="fDashboardHint" hidden>本机已禁用自动打开工作台。</span>
+              <select class="select" id="fStartupPage" aria-describedby="fDashboardHint"><option value="default">沿用默认设置</option><option value="dashboard">管理首页（全部环境）</option><option value="blank">空白页</option></select>
+              <span class="hint" id="fDashboardHint" hidden></span>
             </div>
             <label class="editor-switch"><span>禁止加载网页图片</span><input type="checkbox" id="fBlockImages" role="switch"></label>
             <label class="editor-switch" data-engine="chromium" hidden><span>静音播放</span><input type="checkbox" id="fMuteAudio" role="switch"></label>
@@ -1894,7 +1894,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="field"><label for="bGroup">分组</label><select class="select" id="bGroup"><option value="">未分组</option></select></div>
       <div class="field" data-engine="camoufox"><label for="bProxy">代理</label><select class="select" id="bProxy"><option value="">不使用代理</option></select></div>
       <div class="field"><label for="bStartupPage">启动页面</label>
-        <select class="select" id="bStartupPage"><option value="default">沿用默认设置</option><option value="dashboard">本地工作台</option><option value="blank">空白页</option></select>
+        <select class="select" id="bStartupPage" aria-describedby="bDashboardHint"><option value="default">沿用默认设置</option><option value="dashboard">管理首页（全部环境）</option><option value="blank">空白页</option></select>
+        <span class="hint" id="bDashboardHint" hidden></span>
       </div>
       <div class="field"><label for="bBlockImages">网页图片</label>
         <select class="select" id="bBlockImages"><option value="0">正常加载</option><option value="1">禁止加载图片</option></select>
@@ -3497,6 +3498,23 @@ editor.querySelectorAll(".editor-section").forEach((section) => {
   });
 });
 
+function renderStartupHint(prefix) {
+  const startup = $(prefix + "StartupPage");
+  const hint = $(prefix + "DashboardHint");
+  const blocked = state.engine?.dashboard_startup_available === false;
+  startup.querySelector('[value="dashboard"]').disabled = blocked;
+  let text = "";
+  if (blocked && startup.value !== "blank") {
+    text = "本机已禁用启动时打开本地页面。";
+  } else if (startup.value === "default" && $(prefix + "Engine").value === "chromium" && state.engine) {
+    text = $(prefix + "Headless").value === "1" || !state.engine.chromium?.supports_session_workbench ?
+      "此启动方式默认打开空白页。" :
+      "开启「启动时打开本地页面」后，有头 Chromium 的首个标签页显示当前环境的工作台。关闭该设置或无头运行时打开空白页。";
+  }
+  hint.textContent = text;
+  hint.hidden = !text;
+}
+
 function renderEditorSettings() {
   const chromium = $("fEngine").value === "chromium";
   const engine = state.engine;
@@ -3513,9 +3531,7 @@ function renderEditorSettings() {
   });
   $("fNetworkSummary").textContent = chromium ? "系统网络" : $("fProxy").selectedOptions[0]?.text || "不使用代理";
   const startup = $("fStartupPage");
-  const dashboardBlocked = engine?.dashboard_startup_available === false;
-  startup.querySelector('[value="dashboard"]').disabled = dashboardBlocked;
-  $("fDashboardHint").hidden = !dashboardBlocked;
+  renderStartupHint("f");
   $("fStartupSummary").textContent = [$("fHeadless").selectedOptions[0].text,
     startup.selectedOptions[0]?.text, $("fBlockImages").checked && "禁止图片", chromium && $("fMuteAudio").checked && "静音"].filter(Boolean).join(" · ");
   $("fHardwareSummary").textContent = chromiumResourceFields
@@ -3790,7 +3806,8 @@ function engineSettings(prefix, creating) {
 
 $("fEngine").onchange = () => { clearPlatformPreview(); setEngineFields("f"); renderPresetAction(); };
 $("fOs").onchange = renderPresetAction;
-$("bEngine").onchange = () => setEngineFields("b");
+$("bEngine").onchange = () => { setEngineFields("b"); renderStartupHint("b"); };
+$("bHeadless").onchange = $("bStartupPage").onchange = () => renderStartupHint("b");
 for (const prefix of ["f", "b"]) {
   $(prefix + "PlatformPreview").insertAdjacentHTML("beforeend", `<div class="preview-fields">
     <p class="preview-note">这些设置仅用于本地测试页的 UA-CH 读数。常规网页仍使用实际运行环境，操作系统和 CPU 指令集均由本机提供。</p>
@@ -3993,7 +4010,7 @@ function openBatchModal() {
   $("bMediaCapture").value = "standard";
   $("bGeolocation").value = "standard";
   $("bStartupPage").value = "default";
-  $("bStartupPage").querySelector('[value="dashboard"]').disabled = state.engine?.dashboard_startup_available === false;
+  renderStartupHint("b");
   $("bBlockImages").value = "0";
   setEngineFields("b", {});
   $("bTags").value = "";
@@ -4796,8 +4813,13 @@ async function loadSettings() {
 }
 
 function renderEngine(engine) {
-  $("bStartupPage").querySelector('[value="dashboard"]').disabled = engine.dashboard_startup_available === false;
-  if ($("batchMask").open) setEngineFields("b");
+  $("sManagerHint").textContent = engine.dashboard_startup_available === false ? "本机已禁用启动时打开本地页面。" :
+    "选择「沿用默认设置」并开启此项后，Camoufox 打开管理页。" + (engine.chromium?.supports_session_workbench ?
+      "有头 Chromium 的首个标签页显示当前环境的工作台，无头 Chromium 打开空白页。" : "Chromium 默认打开空白页。");
+  if ($("batchMask").open) {
+    setEngineFields("b");
+    renderStartupHint("b");
+  }
   if (editor.classList.contains("show")) {
     setEngineFields("f");
     renderEditorSettings();

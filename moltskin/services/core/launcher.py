@@ -234,11 +234,14 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             raise LaunchError("ENGINE_OPTIONS", "当前 Chromium 预览版不支持绑定代理", 422)
         try:
             process_env = chromium.launch_environment(profile["browser_timezone"])
+            open_workbench = (not headless and config.OPEN_MANAGER and profile["startup_page"] == "default"
+                              and db.get_setting("open_manager_on_launch", True))
             command, browser_version = chromium.prepare_launch(
                 profile_dir, profile["local_fonts"], headless,
                 chromium_version=profile["chromium_version"],
                 chromium_user_agent=profile["chromium_user_agent"],
                 open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
+                workbench_session=session_id if open_workbench else None,
                 block_images=bool(profile["block_images"]),
                 chromium_js_heap_mb=profile["chromium_js_heap_mb"],
                 chromium_mute_audio=bool(profile["chromium_mute_audio"]),
@@ -303,8 +306,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 )
 
         conn.execute(
-            "INSERT INTO sessions(id, profile_id, state, started_at) VALUES (?, ?, 'starting', ?)",
-            (session_id, profile_id, db.now()),
+            "INSERT INTO sessions(id, profile_id, state, started_at, browser_version) VALUES (?, ?, 'starting', ?, ?)",
+            (session_id, profile_id, db.now(), browser_version),
         )
         conn.execute(
             "UPDATE profiles SET status='running', last_session_id=?, last_opened_at=?, "
