@@ -4,7 +4,7 @@
 
 [中文文档](README.zh-CN.md)
 
-Moltskin is a self-hosted browser for managing isolated profiles. In the **0.4.1 alpha**, each profile has its own data directory, fingerprint preset and proxy settings. The local dashboard and REST API launch [Camoufox (Firefox)](https://github.com/daijro/camoufox). [Changelog](CHANGELOG.md) · [Quick start](#quick-start)
+Moltskin is a self-hosted browser for managing isolated profiles. Each profile has its own data directory. The **0.4.1 alpha** uses Camoufox for fingerprint presets and per-profile proxies. This development branch also supports a native Chromium preview with per-profile permissions. [Camoufox](https://github.com/daijro/camoufox) · [Changelog](CHANGELOG.md) · [Quick start](#quick-start)
 
 ## Chromium roadmap
 
@@ -34,7 +34,7 @@ Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` sho
 ## Why Moltskin
 
 - **Local-first** — profiles, cookies and logs stay on your machine. No cloud account.
-- **Stable identity** — each profile gets one fingerprint preset at creation and keeps it across launches.
+- **Persistent Camoufox presets** — each Camoufox profile saves its fingerprint preset at creation and reuses it across launches.
 - **Isolated by default** — one browser process and one `user_data_dir` per profile.
 - **Auditable kernel** — built on Camoufox, an open-source Firefox fork with C++-level fingerprint patches.
 - **API-first** — manage profiles, proxies and sessions over HTTP, through the Python SDK or with the MCP server.
@@ -46,12 +46,12 @@ Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` sho
 | Create, edit and duplicate profiles. Restore individual profiles from the recycle bin or permanently delete their local data. | ✅ |
 | Launch / stop, persistent cookies and logins | ✅ |
 | One process per profile, duplicate-launch protection | ✅ |
-| Fingerprint preset persisted per profile | ✅ |
-| Fingerprint preview (UA, screen, WebGL, cores) | ✅ |
+| Camoufox fingerprint preset persisted per profile | ✅ |
+| Camoufox fingerprint preview (UA, screen, WebGL, cores) | ✅ |
 | Camoufox preset and browser readings compared on launch, with separate configuration and proxy checks | ✅ |
-| CreepJS self-test with screenshot | ✅ |
+| Camoufox CreepJS self-test with screenshot | ✅ |
 | Proxy pool with exit IP / country / timezone / latency check | ✅ |
-| GeoIP alignment (timezone, locale, coordinates) | ✅ |
+| Camoufox GeoIP alignment (timezone, locale, coordinates) | ✅ |
 | Local API with bearer token | ✅ |
 | Manager UI: dashboard, window list, groups, proxies, logs, settings | ✅ |
 | Sortable columns, pagination, column visibility, table/card views | ✅ |
@@ -231,8 +231,8 @@ with MoltskinClient() as client:
 |---|---|---|---|---|
 | Open source | ✅ | ❌ | ❌ | ❌ |
 | Self-hosted / local data | ✅ | ❌ | ❌ | ❌ |
-| Browser kernel | Camoufox (Firefox) | Chromium + Firefox | Multi | Custom |
-| Stable fingerprint per profile | ✅ | ✅ | ✅ | ✅ |
+| Browser kernel | Camoufox (Firefox), Chromium development preview | Chromium + Firefox | Multi | Custom |
+| Stable fingerprint per profile | Camoufox presets | ✅ | ✅ | ✅ |
 | Team & permissions | 🚧 | ✅ | ✅ | ✅ |
 | MCP / AI agents | 🚧 | ✅ (7.1.5+) | Beta | Bridge |
 | Price | Free | Freemium | Freemium | Paid |

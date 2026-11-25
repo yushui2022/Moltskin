@@ -4,7 +4,7 @@
 
 [English](README.md)
 
-Moltskin 是可自行部署的多环境指纹浏览器。当前仓库的 **0.4.1 alpha** 使用 Camoufox（Firefox）。每个环境有独立的数据目录、指纹预设和代理设置，可从本地控制面板或 REST API 启动。[更新记录](CHANGELOG.md) · [快速开始](#快速开始)
+Moltskin 是可自行部署的多环境指纹浏览器。每个环境有独立的数据目录。**0.4.1 alpha** 使用 Camoufox（Firefox）提供指纹预设和独立代理。当前开发分支也可启动自编 Chromium 预览版，按环境管理网站权限。[更新记录](CHANGELOG.md) · [快速开始](#快速开始)
 
 ## Chromium 开发路线
 
@@ -48,7 +48,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 ## 与 Camoufox 的关系
 
-浏览器内核、指纹生成、代理地理定位全部直接调用 Camoufox 的公开组件：
+Camoufox 环境使用以下公开组件来启动浏览器、生成指纹和处理代理地理定位。
 
 - `Camoufox()` / `persistent_context`：启动与持久化
 - `camoufox.ip.Proxy` / `proxy_exit_geo`：代理出口 IP 与时区
@@ -61,9 +61,9 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 - 创建和复制环境。面板中移入回收站的环境会保留本地浏览器数据，可单独恢复或永久删除。
 - 一键启动 Camoufox（持久化 profile，登录态保留）
-- 环境创建时保存指纹预设，后续启动复用同一份预设
+- Camoufox 环境创建时保存指纹预设，后续启动复用同一份预设
 - Camoufox 环境详情并排显示预设值与最近一次启动的浏览器实测值，可核对 CPU 核数、屏幕、UA 和 WebGL 等字段。缺少读数时显示「未验证」。
-- CreepJS 指纹自检 + 截图
+- Camoufox 的 CreepJS 指纹自检和截图
 - 分组、标签、批量打开/关闭/删除/移动
 - 环境配置可全部导出，也可勾选后单独导出。导入结果列出重名后的名称，以及每条跳过记录的原因。
 - MCP Server（15 个工具）
