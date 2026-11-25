@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f5f6f2">
 <title>Moltskin · 指纹浏览器</title>
 <link rel="icon" href="/logo.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
@@ -82,6 +83,11 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
            overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+.skip-content { position: fixed; inset: 8px auto auto 8px; z-index: 100; padding: 8px 14px;
+  border-radius: 5px; transform: translateY(-160%); background: #fff; color: var(--accent-strong); }
+.skip-content:focus { transform: none; }
+#mainContent:focus { outline: none; }
+
 /* ---------------- shell ---------------- */
 .shell { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); height: 100vh; height: 100dvh; overflow: hidden; }
 .side {
@@ -94,7 +100,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   letter-spacing: -1.4px; }
 .brand-ver { margin-left: auto; color: #67756b; font-size: 10px; white-space: nowrap;
   font-variant-numeric: tabular-nums; }
-.mobile-page { display: none; }
+.mobile-nav-btn, button.mobile-filter-btn, .mobile-select-page { display: none; }
 .nav { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
 .nav-item {
   display: flex; align-items: center; gap: 11px; min-height: 39px; padding: 0 13px;
@@ -119,6 +125,24 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .engine-row strong { font-weight: 500; color: var(--text); }
 .engine-row small { margin-left: auto; color: var(--muted); font-size: 10px; }
 
+@media (min-width: 651px) {
+  .side { background: #183b32; border-color: #17372f; }
+  .side :focus-visible { outline-color: #c3ecd2; }
+  .side .brand { gap: 8px; }
+  .side .brand img { filter: brightness(0) invert(1); }
+  .side .brand-name { color: #f3f7ee; }
+  .side .brand-ver { color: #b6cabe; }
+  .side .nav-item { color: #d9e6dc; }
+  .side .nav-item:hover { color: #fff; background: #264c3f; }
+  .side .nav-item.active { color: #173d2e; background: #cde6d1; box-shadow: none; font-weight: 600; }
+  .side .nav-item .count { color: #aec5b6; }
+  .side .nav-item.active .count { color: #255238; background: #b7d8be; }
+  .side .nav-rule { background: #365649; }
+  .side .engine-card { background: #214439; border-color: #3c5b4f; color: #d6e4da; }
+  .side .engine-row strong { color: #edf4ed; }
+  .side .engine-row small { color: #c3d4c9; }
+}
+
 /* ---------------- page scaffolding ---------------- */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .page { display: none; flex: 1; flex-direction: column; min-height: 0; }
@@ -128,7 +152,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 28px var(--page-gutter) 20px; flex: none;
 }
-.page-title h1 { margin: 0 0 6px; font-size: clamp(23px, 2.3vw, 32px); line-height: 1.22; font-weight: 650; letter-spacing: -.045em; }
+.page-title h1 { margin: 0 0 6px; font-size: clamp(23px, 2.3vw, 32px); line-height: 1.22; font-weight: 650; letter-spacing: -.035em; text-wrap: balance; }
 .page-title p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 .head-actions { display: flex; align-items: center; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
 
@@ -176,7 +200,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   transition: border-color .12s, box-shadow .12s;
 }
 textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
-.input::placeholder { color: #7c8a81; }
+.input::placeholder { color: #627369; }
 .input:focus, .select:focus {
   border-color: var(--accent); box-shadow: 0 0 0 3px rgb(23 98 81 / 13%);
 }
@@ -216,50 +240,39 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; line-height:
   display: inline-flex; padding: 2px; opacity: .7; }
 .chip button:hover { opacity: 1; }
 
+/* Capacity shares one rail so the environment list stays near the top. */
 .quota {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
-  padding: 0 var(--page-gutter, 24px) 20px; flex: none;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 var(--page-gutter) 18px; padding: 13px 0; flex: none;
+  background: #edf2ed; border: 1px solid #d8e2da; border-radius: 11px;
 }
-.quota-card {
-  --meter-color: #32806b; --meter-track: #e5ece8;
-  position: relative; min-width: 0; padding: 15px 19px 14px; overflow: hidden;
-  background: #fff; border: 1px solid #dce4df; border-radius: 12px;
-  box-shadow: 0 1px 3px #193a2c08; color: #1d332b;
+.quota-card { display: grid; grid-template-columns: 1fr auto; align-items: center;
+  min-width: 0; padding: 0 clamp(12px, 1.7vw, 25px); gap: 7px 6px; }
+.quota-card + .quota-card { border-left: 1px solid #cdd9d0; }
+.quota-head { display: flex; gap: 7px; align-items: center; color: #415c50; font-size: 12px; }
+.quota-glyph { display: inline-flex; color: #436b58; }
+.quota-glyph .i { width: 15px; height: 15px; }
+.quota-head a { display: inline-grid; place-items: center; color: #4d695a;
+  width: 24px; height: 24px; border-radius: 4px; }
+.quota-head a:hover { background: #d6e5d7; }
+.quota-head a .i { width: 13px; height: 13px; }
+.quota-value { display: flex; align-items: baseline; gap: 5px; white-space: nowrap;
+  font-variant-numeric: tabular-nums; line-height: 1.2; }
+.quota-value strong { font-weight: 600; font-size: 22px; letter-spacing: -.04em; color: #193e31; }
+.quota-limit { color: #4e6759; font-size: 11px; }
+.quota-meter { grid-column: 1 / -1; height: 3px; background: #d3dfd4; border-radius: 4px; overflow: hidden; }
+.quota-meter span { display: block; height: 100%; background: #33765b; }
+@media (max-width: 850px) {
+  .quota-card { padding-inline: 12px; }
+  .quota-head { gap: 4px; }
 }
-.quota-card:first-child {
-  --meter-color: #b6deb9; --meter-track: #ffffff38;
-  color: #fff; border-color: #185448;
-  background: linear-gradient(110deg, #184d43 8%, #206452);
-}
-.quota-card:first-child::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: repeating-radial-gradient(ellipse at 116% 145%, transparent 0 15px, #e2f4df12 16px, transparent 17px 28px);
-  mask-image: linear-gradient(90deg, transparent 22%, #000);
-}
-.quota-head, .quota-value, .quota-meter { position: relative; }
-.quota-head { display: flex; align-items: center; gap: 7px; min-height: 24px; font-size: 12px; font-weight: 500; }
-.quota-glyph { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; color: #366b58; background: #eaf2eb; }
-.quota-glyph .i { width: 14px; height: 14px; }
-.quota-card:first-child .quota-glyph { background: #ffffff19; color: #e2efde; }
-.quota-card:nth-child(2) .quota-glyph { background: #f7f0df; color: #806531; }
-.quota-head a { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; width: 25px; height: 25px; color: #dbebdf; border-radius: 5px; }
-.quota-head a:hover, .quota-head a:focus-visible { background: #ffffff25; color: #fff; }
-.quota-head a .i { width: 15px; height: 15px; }
-.quota-value { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin: 6px 0 10px; font-variant-numeric: tabular-nums; line-height: 1.15; }
-.quota-value strong { font-size: 32px; font-weight: 600; letter-spacing: -.055em; }
-.quota-limit { font-size: 12px; color: #61746a; }
-.quota-card:first-child .quota-limit { color: #c3dbcf; }
-.quota-meter { height: 3px; background: var(--meter-track); border-radius: 3px; overflow: hidden; }
-.quota-meter span { display: block; height: 100%; background: var(--meter-color); }
 @media (max-width: 650px) {
-  .quota { gap: 6px; padding-bottom: 12px; }
-  .quota-card { padding: 9px 10px; border-radius: 9px; }
-  .quota-head { font-size: 11px; gap: 4px; }
+  .quota { padding: 8px 0; margin-bottom: 12px; }
+  .quota-card { grid-template-columns: 1fr; gap: 4px; padding-inline: 8px; }
+  .quota-head { min-height: 24px; }
   .quota-glyph { display: none; }
-  .quota-head a { width: 21px; height: 22px; }
-  .quota-head a .i { width: 13px; height: 13px; }
-  .quota-value { gap: 3px; margin: 4px 0 9px; }
-  .quota-value strong { font-size: 24px; }
+  .quota-head a { margin-left: auto; }
+  .quota-value strong { font-size: 21px; }
   .quota-limit { font-size: 10px; }
 }
 
@@ -304,9 +317,13 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
 .nowrap { white-space: nowrap; }
 .ellipsis { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.cell-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.cell-name .txt { font-weight: 500; cursor: pointer; overflow: hidden; min-width: 0;
-  text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.cell-name { display: grid; justify-items: start; align-content: center; gap: 5px; min-width: 0; }
+.cell-name .txt { font-size: 14px; line-height: 1.35; font-weight: 600; color: var(--text);
+  cursor: pointer; overflow: hidden; max-width: 100%; text-overflow: ellipsis; white-space: nowrap;
+  background: transparent; border: 0; padding: 0; text-align: left; }
+.profile-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 9px; color: var(--muted); }
+.profile-meta .status, .profile-engine { font-size: 11px; line-height: 1.15; }
+.profile-engine { border-left: 1px solid #cad5cd; padding-left: 8px; }
 .cell-name .txt:hover { color: var(--accent); }
 .cell-name .i { color: var(--dim); width: 14px; height: 14px; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
@@ -365,6 +382,8 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
 #empty[hidden], #empty button[hidden] { display: none; }
 #empty .empty-title { margin: 12px 0 5px; font-size: 18px; font-weight: 600; letter-spacing: -.035em; }
 #empty p { max-width: 35em; margin-bottom: 16px; }
+.empty-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.empty-actions .btn { min-height: 34px; }
 #empty .window-art { width: 202px; height: 118px; position: relative; isolation: isolate; }
 #empty .window-art::before { content: ""; position: absolute; inset: -5px -12px -4px;
   background: radial-gradient(circle, #80a997 1px, transparent 1.3px) 50% 50% / 9px 9px;
@@ -441,6 +460,15 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
 .window-search { position: relative; display: flex; flex: 0 1 280px; min-width: 145px; }
 .window-search .i { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--dim); pointer-events: none; }
 .window-search .input { width: 100%; padding-left: 33px; }
+.search-shortcut { pointer-events: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  font: 11px/18px "Inter", system-ui, sans-serif; border: 1px solid #d6dfd8; padding-inline: 4px;
+  border-radius: 4px; color: #53675b; background: #f7f9f5; }
+#filterBar .window-search .input { padding-right: 47px; }
+#filterBar .window-search:focus-within .search-shortcut { visibility: hidden; }
+@media (pointer: coarse) {
+  .search-shortcut { display: none; }
+  #filterBar .window-search .input { padding-right: 10px; }
+}
 .search-options { gap: 4px; }
 .filter-pickers { margin-left: auto; gap: 6px; }
 #filterChips:empty { display: none !important; }
@@ -453,12 +481,14 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
 #profileTable .column-sort:hover { color: var(--accent-strong); }
 #profileTable .column-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .last-opened { font-variant-numeric: tabular-nums; white-space: nowrap; }
-#windowsCard:has(#empty:not([hidden])) #profileTable { min-width: 0; table-layout: fixed; }
-#windowsCard:has(#empty:not([hidden])) #profileTable th:nth-child(n+3):not(:last-child) { width: auto; }
+#windowsCard:has(#empty:not([hidden])) #profileTable,
+#windowsCard:has(#empty:not([hidden])) .list-foot { display: none; }
+#windowsCard:has(#empty:not([hidden])) #empty { height: 100%; }
 #windowsCard .list-foot { min-height: 44px; padding: 7px 16px; }
 #profileTable th, #profileTable td { padding-left: 9px; padding-right: 9px; }
 #profileTable td.col-actions { z-index: 1; }
-#profileTable td { height: 53px; }
+#profileTable td { height: 58px; }
+#profileTable .profile-identity { max-width: clamp(170px, 22vw, 380px); }
 #profileTable .cfg .stack { max-width: clamp(115px, 11vw, 180px); }
 #profileTable .open-btn:not(.stop), .env-card .open-btn:not(.stop) { color: var(--accent-strong); background: var(--accent-soft); border-color: #c4dcca; }
 #profileTable .open-btn:not(.stop):hover, .env-card .open-btn:not(.stop):hover { background: #d8eadc; }
@@ -549,6 +579,11 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   display: none; align-items: center; justify-content: center; z-index: 80; padding: 24px;
 }
 .mask.show { display: flex; }
+.mask { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; border: 0; color: var(--text); }
+.mask::backdrop { background: transparent; }
+.env-card-name { border: 0; background: transparent; padding: 0; color: inherit; font: inherit; text-align: start; }
+.modal .field-error { color: var(--err); }
+.modal .input[aria-invalid="true"] { border-color: var(--err); }
 .modal {
   width: 620px; max-width: 100%; max-height: 88vh; display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg);
@@ -793,32 +828,73 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 @media (max-width: 650px) {
   .measurement-controls { flex-basis: 100%; }
   .measurement-controls select { flex: 1; min-width: 0; }
+  .scroll > .card:has(> table.grid) { overflow-x: auto; overscroll-behavior-x: contain; }
+  :is(#page-proxies, #page-schedules) .card > table:has(tbody:empty) { display: none; }
   .shell { grid-template: auto minmax(0, 1fr) / minmax(0, 1fr); }
   .side { padding: 0 var(--page-gutter); border-right: 0; border-bottom: 1px solid var(--border); }
   .brand { justify-content: flex-start; gap: 7px; padding: 9px 0; }
   .brand img { width: 29px; height: 27px; }
   .brand-name { display: block; font-size: 23px; }
   .brand-ver, .side .nav, .side-foot { display: none; }
-  .mobile-page { display: inline-block; width: auto; height: 30px; margin-left: auto; font-size: 12px; }
+  .mobile-nav-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin-left: auto;
+    height: 40px; padding: 0 10px; background: transparent; border: 0; border-radius: var(--r-sm);
+    color: var(--accent-strong); cursor: pointer; }
+  .brand { padding-block: 4px; }
+  .mobile-nav-drawer { position: fixed; inset: 0 auto 0 0; width: min(292px, 85vw); max-width: none;
+    height: 100dvh; max-height: none; margin: 0; padding: 14px 14px max(16px, env(safe-area-inset-bottom));
+    background: #f7f8f3; color: var(--text); border: 0; border-right: 1px solid var(--border);
+    box-shadow: var(--shadow-lg); }
+  .mobile-nav-drawer[open] { display: flex; flex-direction: column; }
+  .mobile-nav-drawer::backdrop { background: rgb(19 38 31 / 45%); }
+  .mobile-nav-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 12px; }
+  .mobile-nav-head .brand { gap: 6px; }
+  .mobile-nav-head .icon-btn { width: 40px; height: 40px; color: var(--text); }
+  .mobile-nav-drawer .nav { min-height: 0; }
+  .mobile-nav-drawer .nav-item { justify-content: flex-start; min-height: 44px; padding-inline: 13px; }
+  .mobile-nav-drawer .nav-item span, .mobile-nav-drawer .side-foot, .mobile-nav-drawer .engine-card { display: block; }
   .head-actions { gap: 6px; }
   #page-windows { overflow-y: auto; }
   #page-windows .head-actions { max-width: 100%; }
+  #page-windows .head-actions .btn { height: 40px; }
+  #page-windows .head-actions > .btn { padding: 0 9px; }
+  #page-windows .head-actions > .btn > svg { display: none; }
   #windowsCard { flex: 1 0 auto; min-height: 350px; margin-bottom: 12px; }
-  #windowsCard .list-scroll { flex: 1 0 auto; max-height: 62vh; }
+  #windowsCard .list-scroll { flex: 1 0 auto; max-height: none; }
+  #windowsCard .cards-grid { padding: 10px; gap: 8px; }
+  .env-card .env-card-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+  .env-card-meta > div { flex-direction: column; gap: 2px; }
+  .env-card-meta > div:last-child { grid-column: 1 / -1; flex-direction: row; align-items: baseline; gap: 8px; }
+  .env-card .env-card-meta .k { width: auto; font-size: 11px; }
+  .env-card-foot .open-btn, .env-card-foot .icon-btn { height: 36px; }
+  .env-card-foot .icon-btn { width: 36px; }
+  .env-card .tag { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   #windowsCard .toolbar { padding: 0 8px; gap: 4px; min-height: 44px; }
   #windowsCard .toolbar > .spacer { display: none; }
   #tabs { flex: 1 1 0; gap: 7px; }
   #tabs button { font-size: 12px; padding: 0 1px; gap: 0; }
   #tabs .n { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
   #windowsCard .toolbar > [aria-label="视图"] button { padding-inline: 6px; }
+  #columnsBtn:disabled { display: none; }
   #windowsCard .filter-bar { padding: 9px 10px; gap: 6px; }
-  .window-search { flex-basis: 100%; }
+  #filterBar .window-search { flex: 1 1 0; min-width: 0; }
+  #filterBar .mobile-select-page:not([hidden]) { display: inline-flex; align-items: center; gap: 4px;
+    min-height: 36px; padding-right: 3px; color: var(--muted); cursor: pointer; }
+  .mobile-select-page input { margin: 0; }
+  #filterBar .mobile-filter-btn { display: inline-flex; }
+  #filterBar .mobile-filter-btn[aria-expanded="true"] { background: var(--accent-soft); color: var(--accent-strong); }
+  #filterBar:not(.filters-expanded) :is(.search-options, .filter-pickers) { display: none; }
+  #filterBar.filters-expanded .search-options { margin-right: auto; }
+  #filterBar.filters-expanded .mobile-filter-btn { margin-right: 1px; }
+  #filterBar.filters-expanded::before { content: ""; flex-basis: 100%; order: 1; height: 0; margin-bottom: -6px; }
+  #filterBar.filters-expanded :is(.search-options, .filter-pickers, #filterChips) { order: 2; }
+  #filterBar .input, #filterBar .btn, #filterBar .select { min-height: 36px; }
   .search-options { gap: 3px; }
   .search-options .select { width: auto !important; padding-left: 7px; padding-right: 19px; background-position: right 4px center; }
   .filter-pickers { gap: 4px; }
   .filter-pickers .btn { padding: 0 7px; }
   #windowsCard:has(#empty:not([hidden])) #profileTable { display: none; }
   #windowsCard .list-foot { gap: 3px; padding: 7px 9px; }
+  .pager { flex-wrap: wrap; justify-content: flex-end; }
   .pager .jump { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -874,13 +950,15 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   <symbol id="i-cookie" viewBox="0 0 24 24"><path d="M20.5 12.5A8.5 8.5 0 1 1 11.5 3.5a3.4 3.4 0 0 0 4 4 3.4 3.4 0 0 0 5 5z"/><circle cx="9" cy="10" r=".9" fill="currentColor" stroke="none"/><circle cx="13" cy="15" r=".9" fill="currentColor" stroke="none"/><circle cx="16" cy="10.5" r=".9" fill="currentColor" stroke="none"/></symbol>
 </svg>
 
+<a class="skip-content" id="skipContent" href="#mainContent">跳到主要内容</a>
 <div class="shell">
   <aside class="side" aria-label="主导航">
     <div class="brand">
       <img src="/logo.svg" width="30" height="30" alt="">
       <div class="brand-name">Moltskin</div>
       <span class="brand-ver">v0.4.1</span>
-      <select class="select mobile-page" id="mobilePage" aria-label="切换页面"></select>
+      <button type="button" class="mobile-nav-btn" id="mobileNavBtn" aria-controls="mobileNavDrawer"
+        aria-expanded="false" aria-haspopup="dialog"><svg class="i" aria-hidden="true"><use href="#i-list"/></svg>导航</button>
     </div>
 
     <nav class="nav" id="nav">
@@ -926,8 +1004,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
     </div>
   </aside>
 
-  <main class="main">
-    <div class="error-banner" id="errorBanner" style="display:none;margin:12px 24px 0;padding:9px 12px;border:1px solid #f2c7c3;background:#fdf3f2;border-radius:8px;color:#a5362d;font-size:12px;align-items:center;justify-content:space-between">
+  <dialog class="mobile-nav-drawer" id="mobileNavDrawer" aria-label="主导航">
+    <div class="mobile-nav-head">
+      <div class="brand"><img src="/logo.svg" width="29" height="27" alt=""><span class="brand-name">Moltskin</span></div>
+      <button class="icon-btn" id="mobileNavClose" type="button" aria-label="关闭导航" autofocus><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+  </dialog>
+  <main class="main" id="mainContent" tabindex="-1">
+    <div class="error-banner" id="errorBanner" role="alert" style="display:none;margin:12px 24px 0;padding:9px 12px;border:1px solid #f2c7c3;background:#fdf3f2;border-radius:8px;color:#a5362d;font-size:12px;align-items:center;justify-content:space-between">
       <span>无法连接本地服务，请确认 Moltskin 正在运行。</span>
       <button class="btn small" id="retryBtn">重试</button>
     </div>
@@ -985,13 +1069,13 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           <p>管理独立浏览器环境、代理与登录状态</p>
         </div>
         <div class="head-actions">
-          <div class="split">
-            <button class="btn primary" data-action="create"><svg class="i"><use href="#i-plus"/></svg>创建窗口</button>
-            <button class="btn primary caret-btn" id="createMenuBtn" title="更多创建方式"><svg class="i"><use href="#i-chev"/></svg></button>
-          </div>
           <button class="btn" data-action="import"><svg class="i"><use href="#i-import"/></svg>导入</button>
           <button class="btn" data-action="export"><svg class="i"><use href="#i-export"/></svg>导出</button>
           <button class="btn" id="trashBtn" aria-haspopup="dialog"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>回收站</button>
+          <div class="split">
+            <button class="btn primary" data-action="create"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>创建窗口</button>
+            <button class="btn primary caret-btn" id="createMenuBtn" title="更多创建方式" aria-label="更多创建方式"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
+          </div>
         </div>
       </header>
 
@@ -1000,28 +1084,31 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="card list-card" id="windowsCard">
         <div class="toolbar">
           <div class="segmented" id="tabs" role="group" aria-label="按状态筛选">
-            <button data-tab="all" class="active">全部<span class="n" id="tabAll">0</span></button>
-            <button data-tab="running">已打开<span class="n" id="tabRunning">0</span></button>
-            <button data-tab="stopped">已关闭<span class="n" id="tabStopped">0</span></button>
-            <button data-tab="crashed">异常<span class="n" id="tabCrashed">0</span></button>
-            <button data-tab="unopened">未打开<span class="n" id="tabUnopened">0</span></button>
+            <button data-tab="all" aria-pressed="true" class="active">全部<span class="n" id="tabAll">0</span></button>
+            <button data-tab="running" aria-pressed="false">已打开<span class="n" id="tabRunning">0</span></button>
+            <button data-tab="stopped" aria-pressed="false">未运行<span class="n" id="tabStopped">0</span></button>
+            <button data-tab="crashed" aria-pressed="false">异常<span class="n" id="tabCrashed">0</span></button>
+            <button data-tab="unopened" aria-pressed="false">未打开<span class="n" id="tabUnopened">0</span></button>
           </div>
           <div class="spacer"></div>
 
           <div class="segmented" role="group" aria-label="视图">
-            <button id="viewTable" class="active" title="表格视图"><svg class="i"><use href="#i-list"/></svg></button>
-            <button id="viewGrid" title="卡片视图"><svg class="i"><use href="#i-grid"/></svg></button>
+            <button id="viewTable" class="active" title="表格视图" aria-label="表格视图"><svg class="i"><use href="#i-list"/></svg></button>
+            <button id="viewGrid" title="卡片视图" aria-label="卡片视图"><svg class="i"><use href="#i-grid"/></svg></button>
           </div>
-          <button class="btn icon" id="columnsBtn" title="显示列"><svg class="i"><use href="#i-columns"/></svg></button>
-          <button class="btn icon" id="refreshBtn" title="刷新列表"><svg class="i"><use href="#i-refresh"/></svg></button>
+          <button class="btn icon" id="columnsBtn" title="显示列" aria-label="显示列"><svg class="i"><use href="#i-columns"/></svg></button>
+          <button class="btn icon" id="refreshBtn" title="刷新列表" aria-label="刷新列表"><svg class="i"><use href="#i-refresh"/></svg></button>
         </div>
 
         <div class="filter-bar" id="filterBar">
+          <label class="mobile-select-page" id="mobileSelectLabel" hidden><input type="checkbox" id="mobileSelectAll" aria-label="选择本页全部环境">全选</label>
           <label class="window-search">
             <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
-            <input class="input" id="searchInput" placeholder="搜索窗口名称 / 备注 / IP" aria-label="搜索环境">
+            <input class="input" type="search" id="searchInput" name="profileSearch" autocomplete="off" placeholder="搜索名称、备注或 IP…" aria-label="搜索环境" aria-keyshortcuts="Meta+K Control+K">
+            <kbd class="search-shortcut" id="searchShortcut" aria-hidden="true"></kbd>
           </label>
-          <div class="field-row search-options">
+          <button type="button" class="btn mobile-filter-btn" id="mobileFilterBtn" aria-expanded="false" aria-controls="searchOptions filterPickers">筛选</button>
+          <div class="field-row search-options" id="searchOptions">
             <select class="select" id="searchField" style="width:104px" aria-label="搜索字段">
               <option value="all">全部字段</option>
               <option value="name">窗口名称</option>
@@ -1035,7 +1122,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <option value="equals">等于</option>
             </select>
           </div>
-          <div class="field-row filter-pickers">
+          <div class="field-row filter-pickers" id="filterPickers">
             <button class="btn" id="groupFilterBtn"><svg class="i"><use href="#i-folder"/></svg>分组</button>
             <button class="btn" id="tagFilterBtn"><svg class="i"><use href="#i-tag"/></svg>标签</button>
           </div>
@@ -1066,12 +1153,15 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           <div class="empty" id="empty" hidden>
             <div class="window-art" aria-hidden="true">
               <span class="window-sheet back"></span><span class="window-sheet mid"></span>
-              <div class="window-front"><div class="window-bar"></div><div class="window-canvas"><img src="/logo.svg" alt=""></div></div>
+              <div class="window-front"><div class="window-bar"></div><div class="window-canvas"><img src="/logo.svg" width="52" height="38" alt=""></div></div>
             </div>
             <div class="empty-title" id="windowEmptyTitle">还没有浏览器环境</div>
             <p id="windowEmptyHint">选择浏览器内核，为第一个环境命名。</p>
-            <button class="btn primary" id="windowEmptyCreate" data-action="create"><svg class="i"><use href="#i-plus"/></svg>创建窗口</button>
-            <button class="btn" id="windowEmptyReset" hidden>查看全部环境</button>
+            <div class="empty-actions">
+              <button class="btn primary" id="windowEmptyCreate" data-action="create"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>创建窗口</button>
+              <button class="btn" id="windowEmptyImport" data-action="import"><svg class="i" aria-hidden="true"><use href="#i-import"/></svg>导入配置</button>
+              <button class="btn" id="windowEmptyReset" hidden>查看全部环境</button>
+            </div>
           </div>
         </div>
         <div class="list-foot">
@@ -1127,16 +1217,16 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="scroll" style="padding-bottom:24px">
         <div class="card">
           <form class="proxy-form" id="proxyForm" style="display:none">
-            <div class="field"><label>名称</label><input class="input" id="pName" placeholder="PH-01" required></div>
-            <div class="field"><label>协议</label>
+            <div class="field"><label for="pName">名称</label><input class="input" id="pName" placeholder="PH-01" required></div>
+            <div class="field"><label for="pProtocol">协议</label>
               <select class="select" id="pProtocol">
                 <option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option>
               </select>
             </div>
-            <div class="field"><label>主机</label><input class="input" id="pHost" placeholder="1.2.3.4" required></div>
-            <div class="field"><label>端口</label><input class="input" id="pPort" type="number" placeholder="8080" required></div>
-            <div class="field"><label>用户名</label><input class="input" id="pUser" placeholder="可选"></div>
-            <div class="field"><label>密码</label><input class="input" id="pPass" type="password" placeholder="可选"></div>
+            <div class="field"><label for="pHost">主机</label><input class="input" id="pHost" placeholder="1.2.3.4" required></div>
+            <div class="field"><label for="pPort">端口</label><input class="input" id="pPort" type="number" placeholder="8080" required></div>
+            <div class="field"><label for="pUser">用户名</label><input class="input" id="pUser" placeholder="可选"></div>
+            <div class="field"><label for="pPass">密码</label><input class="input" id="pPass" type="password" placeholder="可选"></div>
             <div class="actions" style="grid-column:1/-1;justify-content:flex-end">
               <button class="btn small" type="button" id="cancelProxy">取消</button>
               <button class="btn small primary" type="submit">保存并检测</button>
@@ -1246,7 +1336,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           <p>本机所有环境、代理与会话操作记录</p>
         </div>
         <div class="head-actions">
-          <select class="select" id="logAction" style="width:150px">
+          <select class="select" id="logAction" aria-label="按操作类型筛选日志" style="width:150px">
             <option value="">全部动作</option>
             <option value="profile">环境</option>
             <option value="proxy">代理</option>
@@ -1258,7 +1348,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </header>
       <div class="page-body" style="padding:0 24px 20px">
         <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
-          <div class="list-scroll">
+          <div class="list-scroll" role="region" aria-label="操作日志列表" tabindex="0">
             <table class="grid" style="min-width:820px">
               <thead>
                 <tr>
@@ -1300,31 +1390,31 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           <div class="panel">
             <div class="panel-head">运行</div>
             <div class="panel-body">
-              <div class="field"><label>最大同时运行</label><input class="input" id="sMax" type="number" min="1" max="200"></div>
-              <div class="field"><label>默认无头模式</label>
+              <div class="field"><label for="sMax">最大同时运行</label><input class="input" id="sMax" type="number" min="1" max="200"></div>
+              <div class="field"><label for="sHeadless">默认无头模式</label>
                 <select class="select" id="sHeadless"><option value="false">否（显示窗口）</option><option value="true">是（后台运行）</option></select>
               </div>
-              <div class="field"><label>启动时打开管理页</label>
+              <div class="field"><label for="sManager">启动时打开管理页</label>
                 <select class="select" id="sManager"><option value="true">是</option><option value="false">否</option></select>
                 <div class="hint">适用于启动页面选了「沿用默认设置」的 Camoufox 环境。Chromium 默认打开空白页。</div>
               </div>
-              <div class="field"><label>环境内显示控制台按钮</label>
+              <div class="field"><label for="sManagerButton">环境内显示控制台按钮</label>
                 <select class="select" id="sManagerButton"><option value="true">是（侧边栏 + Alt+Shift+M）</option><option value="false">否</option></select>
                 <div class="hint">在 Camoufox 窗口左侧显示返回管理控制台的按钮</div>
               </div>
-              <div class="field"><label>环境上限</label><input class="input" id="sProfileLimit" type="number" min="1"></div>
-              <div class="field"><label>每日打开上限</label><input class="input" id="sDailyLimit" type="number" min="1"></div>
+              <div class="field"><label for="sProfileLimit">环境上限</label><input class="input" id="sProfileLimit" type="number" min="1"></div>
+              <div class="field"><label for="sDailyLimit">每日打开上限</label><input class="input" id="sDailyLimit" type="number" min="1"></div>
             </div>
           </div>
 
           <div class="panel">
             <div class="panel-head">代理</div>
             <div class="panel-body">
-              <div class="field"><label>检测地址</label><input class="input" id="sProxyUrl" placeholder="https://ipinfo.io/json"></div>
-              <div class="field"><label>巡检间隔（分钟）</label><input class="input" id="sProxyHealth" type="number" min="0" max="1440">
+              <div class="field"><label for="sProxyUrl">检测地址</label><input class="input" id="sProxyUrl" type="url" spellcheck="false" placeholder="https://ipinfo.io/json"></div>
+              <div class="field"><label for="sProxyHealth">巡检间隔（分钟）</label><input class="input" id="sProxyHealth" type="number" min="0" max="1440">
                 <div class="hint">0 = 关闭后台巡检</div>
               </div>
-              <div class="field"><label>启动前必须代理可用</label>
+              <div class="field"><label for="sRequireProxy">启动前必须代理可用</label>
                 <select class="select" id="sRequireProxy"><option value="false">否</option><option value="true">是</option></select>
               </div>
             </div>
@@ -1396,8 +1486,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 <div class="pop" id="pop"></div>
 
 <!-- 创建 / 编辑环境 -->
-<div class="mask" id="profileMask">
-  <div class="modal profile-editor" aria-labelledby="profileModalTitle">
+<dialog class="mask" id="profileMask" aria-labelledby="profileModalTitle">
+  <div class="modal profile-editor">
     <div class="head">
       <span class="editor-mark" aria-hidden="true"><svg class="i"><use href="#i-window"/></svg></span>
       <span id="profileModalTitle">创建窗口</span>
@@ -1414,7 +1504,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <details class="editor-section" id="profileBasics" name="profile-sections" open>
           <summary><strong>基本信息</strong><span class="editor-summary" id="fBasicSummary"></span><svg class="i"><use href="#i-chev"/></svg></summary>
           <div class="editor-fields">
-            <div class="field full"><label for="fName">窗口名称 <span class="required-mark" aria-hidden="true">*</span></label><input class="input" id="fName" required placeholder="例如：店铺-菲律宾-01" data-initial-focus></div>
+            <div class="field full"><label for="fName">窗口名称 <span class="required-mark" aria-hidden="true">*</span></label><input class="input" id="fName" required aria-describedby="fNameError" placeholder="例如：店铺-菲律宾-01" data-initial-focus><span id="fNameError" class="hint field-error" hidden></span></div>
             <div class="field"><label for="fGroup">分组</label>
               <div class="field-row"><select class="select" id="fGroup"><option value="">未分组</option></select><button class="btn" type="button" id="newGroupInline">新建</button></div>
             </div>
@@ -1471,16 +1561,16 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <button class="btn primary" id="confirmProfile">创建窗口</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 批量创建 -->
-<div class="mask" id="batchMask">
+<dialog class="mask" id="batchMask" aria-labelledby="batchTitle">
   <div class="modal" style="width:520px">
-    <div class="head">批量创建窗口<button class="x" data-close="batchMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="head"><span id="batchTitle">批量创建窗口</span><button class="x" data-close="batchMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body">
-      <div class="field"><label>数量</label><input class="input" id="bCount" type="number" min="1" max="200" value="5"></div>
-      <div class="field"><label>起始序号</label><input class="input" id="bStart" type="number" min="1" value="1"></div>
-      <div class="field full"><label>名称前缀</label><input class="input" id="bPrefix" placeholder="环境">
+      <div class="field"><label for="bCount">数量</label><input class="input" id="bCount" type="number" min="1" max="200" value="5"></div>
+      <div class="field"><label for="bStart">起始序号</label><input class="input" id="bStart" type="number" min="1" value="1"></div>
+      <div class="field full"><label for="bPrefix">名称前缀</label><input class="input" id="bPrefix" placeholder="环境">
         <div class="hint" id="batchPreview" style="margin-top:4px"></div>
       </div>
       <div class="field"><label for="bEngine">浏览器内核</label>
@@ -1493,10 +1583,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="field" data-engine="camoufox"><label for="bOs">操作系统</label>
         <select class="select" id="bOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
       </div>
-      <div class="field"><label>启动方式</label>
+      <div class="field"><label for="bHeadless">启动方式</label>
         <select class="select" id="bHeadless"><option value="0">有头（显示窗口）</option><option value="1">无头（后台）</option></select>
       </div>
-      <div class="field"><label>分组</label><select class="select" id="bGroup"><option value="">未分组</option></select></div>
+      <div class="field"><label for="bGroup">分组</label><select class="select" id="bGroup"><option value="">未分组</option></select></div>
       <div class="field" data-engine="camoufox"><label for="bProxy">代理</label><select class="select" id="bProxy"><option value="">不使用代理</option></select></div>
       <div class="field"><label for="bStartupPage">启动页面</label>
         <select class="select" id="bStartupPage"><option value="default">沿用默认设置</option><option value="dashboard">本地工作台</option><option value="blank">空白页</option></select>
@@ -1504,22 +1594,22 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="field"><label for="bBlockImages">网页图片</label>
         <select class="select" id="bBlockImages"><option value="0">正常加载</option><option value="1">禁止加载图片</option></select>
       </div>
-      <div class="field full"><label>标签</label><input class="input" id="bTags" placeholder="用逗号分隔，应用到全部新环境"></div>
+      <div class="field full"><label for="bTags">标签</label><input class="input" id="bTags" placeholder="用逗号分隔，应用到全部新环境"></div>
     </div>
     <div class="foot">
       <button class="btn" data-close="batchMask">取消</button>
       <button class="btn primary" id="confirmBatch">开始创建</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 批量导入代理 -->
-<div class="mask" id="bulkProxyMask">
+<dialog class="mask" id="bulkProxyMask" aria-labelledby="bulkProxyTitle">
   <div class="modal" style="width:560px">
-    <div class="head">批量导入代理<button class="x" data-close="bulkProxyMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="head"><span id="bulkProxyTitle">批量导入代理</span><button class="x" data-close="bulkProxyMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single">
       <div class="field">
-        <label>每行一个代理</label>
+        <label for="bulkProxyText">每行一个代理</label>
         <textarea class="input" id="bulkProxyText" rows="9" spellcheck="false"
           placeholder="socks5://user:pass@1.2.3.4:1080&#10;http://5.6.7.8:8080&#10;9.9.9.9:3128:user:pass"></textarea>
         <div class="hint">支持 <code>协议://用户:密码@主机:端口</code>、<code>主机:端口:用户:密码</code>、<code>主机:端口</code>。协议默认 http。</div>
@@ -1531,21 +1621,21 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <button class="btn primary" id="confirmBulkProxy">导入</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 导入 Cookie -->
-<div class="mask" id="cookieMask">
+<dialog class="mask" id="cookieMask" aria-labelledby="cookieTitle">
   <div class="modal" style="width:600px">
-    <div class="head">导入 Cookie<button class="x" data-close="cookieMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="head"><span id="cookieTitle">导入 Cookie</span><button class="x" data-close="cookieMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single">
       <div class="field">
-        <label>粘贴 Cookie</label>
+        <label for="cookieText">粘贴 Cookie</label>
         <textarea class="input" id="cookieText" rows="8" spellcheck="false"
           placeholder='支持三种格式：&#10;1) JSON 数组 [{"name":"sid","value":"...","domain":".example.com"}]&#10;2) Playwright storage_state {"cookies":[...]}&#10;3) Netscape cookies.txt（制表符分隔）'></textarea>
-        <div class="hint">或选择文件：<input type="file" id="cookieFile" accept=".json,.txt,text/plain,application/json" style="margin-top:6px"></div>
+        <div class="hint">或选择文件：<input type="file" id="cookieFile" aria-label="选择 Cookie 文件" accept=".json,.txt,text/plain,application/json" style="margin-top:6px"></div>
       </div>
       <div class="field" style="margin-top:10px">
-        <label>写入方式</label>
+        <label for="cookieMode">写入方式</label>
         <select class="select" id="cookieMode">
           <option value="merge">合并（同名 Cookie 覆盖，其余保留）</option>
           <option value="replace">替换（先清空现有 Cookie）</option>
@@ -1557,25 +1647,25 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <button class="btn primary" id="cookieImportOk">导入</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 新建 / 编辑定时任务 -->
-<div class="mask" id="scheduleMask">
+<dialog class="mask" id="scheduleMask" aria-labelledby="scheduleModalTitle">
   <div class="modal" style="width:560px">
-    <div class="head"><span id="scheduleModalTitle">新建定时任务</span><button class="x" data-close="scheduleMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="head"><span id="scheduleModalTitle">新建定时任务</span><button class="x" data-close="scheduleMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body">
-      <div class="field full"><label>名称</label><input class="input" id="scName" placeholder="例如：早班自动开机"></div>
-      <div class="field"><label>动作</label>
+      <div class="field full"><label for="scName">名称</label><input class="input" id="scName" placeholder="例如：早班自动开机"></div>
+      <div class="field"><label for="scAction">动作</label>
         <select class="select" id="scAction"><option value="launch">打开环境</option><option value="stop">关闭环境</option></select>
       </div>
-      <div class="field"><label>触发方式</label>
+      <div class="field"><label for="scMode">触发方式</label>
         <select class="select" id="scMode">
           <option value="daily">每天定时</option>
           <option value="interval">固定间隔</option>
         </select>
       </div>
-      <div class="field" id="scTimeWrap"><label>时间</label><input class="input" id="scTime" type="time" value="09:00"></div>
-      <div class="field" id="scIntervalWrap" style="display:none"><label>间隔（分钟）</label><input class="input" id="scInterval" type="number" min="1" max="1440" value="60"></div>
+      <div class="field" id="scTimeWrap"><label for="scTime">时间</label><input class="input" id="scTime" type="time" value="09:00"></div>
+      <div class="field" id="scIntervalWrap" style="display:none"><label for="scInterval">间隔（分钟）</label><input class="input" id="scInterval" type="number" min="1" max="1440" value="60"></div>
       <div class="field full" id="scWeekWrap"><label>星期</label>
         <div class="weekdays" id="scWeekdays">
           <label><input type="checkbox" value="1" checked>一</label>
@@ -1587,14 +1677,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           <label><input type="checkbox" value="7">日</label>
         </div>
       </div>
-      <div class="field"><label>目标</label>
+      <div class="field"><label for="scTarget">目标</label>
         <select class="select" id="scTarget">
           <option value="all">全部环境</option>
           <option value="group">指定分组</option>
           <option value="ids">指定环境</option>
         </select>
       </div>
-      <div class="field" id="scTargetWrap" style="display:none"><label id="scTargetLabel">选择</label>
+      <div class="field" id="scTargetWrap" style="display:none"><label id="scTargetLabel" for="scTargetValue">选择</label>
         <select class="select" id="scTargetValue"></select>
       </div>
     </div>
@@ -1603,7 +1693,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <button class="btn primary" id="saveSchedule">保存</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 环境回收站 -->
 <dialog class="modal trash-dialog" id="trashDialog" aria-labelledby="trashTitle">
@@ -1629,8 +1719,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 </dialog>
 
 <!-- 环境配置导入结果 -->
-<div class="mask" id="importReportMask">
-  <div class="modal" aria-labelledby="importReportTitle">
+<dialog class="mask" id="importReportMask" aria-labelledby="importReportTitle">
+  <div class="modal">
     <div class="head"><span id="importReportTitle">环境配置导入结果</span></div>
     <div class="body single">
       <p id="importReportSummary"></p>
@@ -1639,12 +1729,12 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
     </div>
     <div class="foot"><button class="btn primary" data-close="importReportMask">完成</button></div>
   </div>
-</div>
+</dialog>
 
 <!-- 任务进度 -->
-<div class="mask" id="jobMask">
+<dialog class="mask" id="jobMask" aria-labelledby="jobTitle">
   <div class="modal" style="width:520px">
-    <div class="head"><span id="jobTitle">批量操作</span><button class="x" data-close="jobMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="head"><span id="jobTitle">批量操作</span><button class="x" data-close="jobMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single">
       <div class="job-bar"><span id="jobBarFill"></span></div>
       <div class="hint" id="jobSummary" style="margin:10px 0 6px">准备中…</div>
@@ -1654,11 +1744,11 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <button class="btn" id="jobClose" data-close="jobMask">关闭</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 环境详情 -->
-<div class="mask" id="detailMask">
-  <div class="modal wide" aria-labelledby="detailName">
+<dialog class="mask" id="detailMask" aria-labelledby="detailName">
+  <div class="modal wide">
     <div class="head">环境详情<button class="x" data-close="detailMask" aria-label="关闭环境详情"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single">
       <div class="detail-head">
@@ -1712,14 +1802,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </section>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 文本输入弹窗 -->
-<div class="mask" id="promptMask">
+<dialog class="mask" id="promptMask" aria-labelledby="promptTitle">
   <div class="modal" style="width:420px">
-    <div class="head"><span id="promptTitle">输入</span><button class="x" data-close="promptMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="head"><span id="promptTitle">输入</span><button class="x" data-close="promptMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single">
-      <div class="field"><label id="promptLabel">内容</label><input class="input" id="promptInput"></div>
+      <div class="field"><label id="promptLabel" for="promptInput">内容</label><input class="input" id="promptInput" aria-describedby="promptHint"></div>
       <div class="field" id="promptHintWrap" style="margin-top:8px"><div class="hint" id="promptHint"></div></div>
     </div>
     <div class="foot">
@@ -1727,34 +1817,34 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <button class="btn primary" id="promptOk">确定</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 选择弹窗 -->
-<div class="mask" id="chooseMask">
+<dialog class="mask" id="chooseMask" aria-labelledby="chooseTitle">
   <div class="modal" style="width:420px">
-    <div class="head"><span id="chooseTitle">选择</span><button class="x" data-close="chooseMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="head"><span id="chooseTitle">选择</span><button class="x" data-close="chooseMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single">
-      <div class="field"><label id="chooseLabel">选项</label><select class="select" id="chooseSelect"></select></div>
-      <div class="field" id="chooseExtra" style="margin-top:8px;display:none"><label>新分组名称</label><input class="input" id="chooseInput" placeholder="留空则使用所选分组"></div>
+      <div class="field"><label id="chooseLabel" for="chooseSelect">选项</label><select class="select" id="chooseSelect"></select></div>
+      <div class="field" id="chooseExtra" style="margin-top:8px;display:none"><label for="chooseInput">新分组名称</label><input class="input" id="chooseInput" placeholder="留空则使用所选分组"></div>
     </div>
     <div class="foot">
       <button class="btn" data-close="chooseMask">取消</button>
       <button class="btn primary" id="chooseOk">确定</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- 确认弹窗 -->
-<div class="mask" id="confirmMask">
+<dialog class="mask" id="confirmMask" aria-labelledby="confirmTitle" aria-describedby="confirmText">
   <div class="modal" style="width:400px">
-    <div class="head"><span id="confirmTitle">确认</span><button class="x" data-close="confirmMask"><svg class="i"><use href="#i-x"/></svg></button></div>
+    <div class="head"><span id="confirmTitle">确认</span><button class="x" data-close="confirmMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single"><div id="confirmText" class="muted" style="line-height:1.65"></div></div>
     <div class="foot">
       <button class="btn" data-close="confirmMask">取消</button>
       <button class="btn primary" id="confirmOk">确定</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <input type="file" id="importFile" accept="application/json,.json" hidden>
 <input type="file" id="extFile" accept=".xpi,.zip,application/zip,application/x-xpinstall" hidden>
@@ -1765,12 +1855,19 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 const TOKEN = "__MOLTSKIN_TOKEN__";
 const $ = (id) => document.getElementById(id);
 
+$("skipContent").onclick = (event) => {
+  event.preventDefault();
+  $("mainContent").focus();
+};
+
 const COLUMNS = [
+  { key: "sequence", label: "序号", visible: 0 },
   { key: "group", label: "分组" },
   { key: "proxy", label: "代理 IP" },
   { key: "tags", label: "标签" },
-  { key: "remark", label: "备注" },
-  { key: "created", label: "创建时间" },
+  { key: "remark", label: "备注", visible: 0 },
+  { key: "created", label: "创建时间", visible: 0 },
+  { key: "config", label: "配置", visible: 0 },
   { key: "browser_version", label: "上次启动版本", visible: 0 },
   { key: "last_opened", label: "最近打开时间" },
 ];
@@ -1784,6 +1881,15 @@ function loadColumns() {
   }
 }
 
+const phoneLayout = matchMedia("(max-width: 650px)");
+function viewPreferenceKey() {
+  return phoneLayout.matches ? "moltskin.mobileView" : "moltskin.view";
+}
+function preferredView() {
+  const saved = localStorage.getItem(viewPreferenceKey());
+  return saved === "grid" || saved === "table" ? saved : (phoneLayout.matches ? "grid" : "table");
+}
+
 const state = {
   page: "windows",
   profiles: [], proxies: [], groups: [], stats: null, tags: [], engine: null,
@@ -1791,7 +1897,7 @@ const state = {
   tab: "all", q: "", field: "all", op: "contains", groupId: "", tag: "",
   sort: "last_opened", order: "desc",
   pageNo: 1, pageSize: 10,
-  view: localStorage.getItem("moltskin.view") || "table",
+  view: preferredView(),
   columns: loadColumns(),
   selected: new Set(), busy: new Set(),
   logs: { page: 1, pageSize: 20, action: "", total: 0 },
@@ -1849,7 +1955,7 @@ function esc(value) {
   })[ch]);
 }
 function icon(name, cls = "") {
-  return `<svg class="i ${cls}"><use href="#i-${name}"/></svg>`;
+  return `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 }
 function fmtTime(value) {
   if (!value) return "—";
@@ -1886,6 +1992,7 @@ function proxyLabel(p) {
 let toastTimer;
 function toast(msg, isErr = false) {
   const el = $("toast");
+  (document.activeElement?.closest("dialog[open]") || document.body).append(el);
   el.textContent = msg;
   el.className = "toast show" + (isErr ? " err" : "");
   clearTimeout(toastTimer);
@@ -1917,6 +2024,7 @@ async function api(path, options = {}) {
 const pop = $("pop");
 let popAnchor = null;
 function closePop() {
+  if (pop.contains(document.activeElement)) popAnchor?.focus({ preventScroll: true });
   pop.classList.remove("show");
   pop.innerHTML = "";
   popAnchor = null;
@@ -1934,6 +2042,7 @@ function openPop(anchor, html, { align = "left" } = {}) {
   pop.style.left = left + "px";
   pop.style.top = top + "px";
   popAnchor = anchor;
+  pop.querySelector('button:not(:disabled), input:not(:disabled)')?.focus({ preventScroll: true });
 }
 document.addEventListener("click", (e) => {
   if (!pop.classList.contains("show")) return;
@@ -1947,30 +2056,45 @@ document.addEventListener("scroll", (e) => {
 }, true);
 
 /* ---------------- 弹窗 ---------------- */
-let lastFocused = null;
 function openModal(id, initialFocus = null) {
-  lastFocused = document.activeElement;
-  $(id).classList.add("show");
-  setTimeout(() => {
-    if (!$(id).classList.contains("show")) return;
-    const first = initialFocus || $(id).querySelector("[data-initial-focus]") || $(id).querySelector("input:not([type=hidden]), select, button.primary");
-    first?.focus();
-  }, 40);
+  const dialog = $(id);
+  if (dialog.open) return;
+  dialog.classList.add("show");
+  dialog.showModal();
+  const first = initialFocus || dialog.querySelector("[data-initial-focus]")
+    || dialog.querySelector("input:enabled:not([type=hidden]), select:enabled, textarea:enabled, button.primary");
+  first?.focus();
 }
-function closeModal(id, confirmed = false) {
+function closeModal(id, result = null) {
+  const dialog = $(id);
+  if (!dialog.open) return;
   if (id === "profileMask") profileForm = null;
-  $(id).classList.remove("show");
-  if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
-  lastFocused = null;
+  dialog.close();
+  dialog.classList.remove("show");
+  if (dialog.contains($("toast"))) (document.activeElement?.closest("dialog[open]") || document.body).append($("toast"));
   if (id === "confirmMask") {
-    confirmResolve?.(confirmed);
+    confirmResolve?.(result === true);
     confirmResolve = null;
+  } else if (id === "promptMask") {
+    promptResolve?.(result);
+    promptResolve = null;
+  } else if (id === "chooseMask") {
+    chooseResolve?.(result);
+    chooseResolve = null;
   }
 }
 document.querySelectorAll(".mask").forEach((mask) => {
-  const dialog = mask.querySelector(".modal");
-  dialog?.setAttribute("role", "dialog");
-  dialog?.setAttribute("aria-modal", "true");
+  mask.addEventListener("cancel", (e) => { e.preventDefault(); closeModal(mask.id); });
+  mask.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const items = [...mask.querySelectorAll("button:enabled, input:enabled, select:enabled, textarea:enabled, summary, a[href]")]
+      .filter(el => el.tabIndex >= 0 && el.checkVisibility() && !el.closest("[hidden]"));
+    const edge = e.shiftKey ? items[0] : items.at(-1);
+    if (edge && edge === document.activeElement) {
+      e.preventDefault();
+      (e.shiftKey ? items.at(-1) : items[0]).focus();
+    }
+  });
   mask.querySelectorAll("[data-close]").forEach((el) => {
     el.addEventListener("click", () => closeModal(el.dataset.close));
   });
@@ -1984,18 +2108,19 @@ function askText({ title, label, value = "", hint = "" }) {
   $("promptInput").value = value;
   $("promptHint").textContent = hint;
   $("promptHintWrap").style.display = hint ? "" : "none";
-  openModal("promptMask");
-  setTimeout(() => { $("promptInput").focus(); $("promptInput").select(); }, 60);
+  openModal("promptMask", $("promptInput"));
+  $("promptInput").select();
   return new Promise((resolve) => { promptResolve = resolve; });
 }
 $("promptOk").onclick = () => {
   const v = $("promptInput").value;
-  closeModal("promptMask");
-  promptResolve?.(v);
-  promptResolve = null;
+  closeModal("promptMask", v);
 };
 $("promptInput").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") $("promptOk").click();
+  if (e.key === "Enter" && !e.isComposing) {
+    e.preventDefault();
+    $("promptOk").click();
+  }
 });
 
 let chooseResolve = null;
@@ -2013,9 +2138,7 @@ function askChoose({ title, label, options, value = "", extra = false, extraLabe
 $("chooseOk").onclick = () => {
   const value = $("chooseSelect").value;
   const extraVal = $("chooseInput").value.trim();
-  closeModal("chooseMask");
-  chooseResolve?.({ value, extra: extraVal });
-  chooseResolve = null;
+  closeModal("chooseMask", { value, extra: extraVal });
 };
 
 let confirmResolve = null;
@@ -2025,16 +2148,44 @@ function askConfirm({ title, text, okText = "确定", danger = false }) {
   const ok = $("confirmOk");
   ok.textContent = okText;
   ok.className = "btn " + (danger ? "danger" : "primary");
-  openModal("confirmMask");
+  openModal("confirmMask", $("confirmMask").querySelector(".foot [data-close]"));
   return new Promise((resolve) => { confirmResolve = resolve; });
 }
 $("confirmOk").onclick = () => closeModal("confirmMask", true);
 
 /* ---------------- 路由 ---------------- */
+const mobileNav = $("mobileNavDrawer");
+const desktopNav = document.querySelector(".side");
+const navFoot = desktopNav.querySelector(".side-foot");
+function placeNavigation() {
+  const drawerWasOpen = mobileNav.open;
+  if (drawerWasOpen) mobileNav.close();
+  (phoneLayout.matches ? mobileNav : desktopNav).append($("nav"), navFoot);
+  if (drawerWasOpen && !phoneLayout.matches) desktopNav.querySelector('[aria-current="page"]')?.focus();
+}
+placeNavigation();
+$("mobileNavBtn").onclick = () => {
+  closePop();
+  mobileNav.showModal();
+  $("mobileNavBtn").setAttribute("aria-expanded", "true");
+};
+$("mobileNavClose").onclick = () => mobileNav.close();
+mobileNav.addEventListener("close", () => $("mobileNavBtn").setAttribute("aria-expanded", "false"));
+mobileNav.addEventListener("click", (e) => {
+  if (e.target !== mobileNav) return;
+  const r = mobileNav.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX >= r.right || e.clientY < r.top || e.clientY >= r.bottom) mobileNav.close();
+});
+phoneLayout.addEventListener("change", () => {
+  placeNavigation();
+  setView(preferredView());
+});
+
 function go(page) {
   if (!document.getElementById("page-" + page)) page = "windows";
+  const fromDrawer = mobileNav.open;
+  if (fromDrawer) mobileNav.close();
   state.page = page;
-  $("mobilePage").value = page;
   document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.dataset.page === page));
   document.querySelectorAll(".nav-item").forEach((n) => {
     const active = n.dataset.page === page;
@@ -2050,14 +2201,17 @@ function go(page) {
   if (page === "extensions") { renderExtensions(); loadExtensions(); }
   if (page === "schedules") { renderSchedules(); loadSchedules(); }
   if (location.hash !== "#/" + page) history.replaceState(null, "", "#/" + page);
+  if (fromDrawer) {
+    const title = $("page-" + page).querySelector("h1");
+    title.tabIndex = -1;
+    title.focus({ preventScroll: true });
+  }
 }
-$("mobilePage").onchange = (event) => go(event.target.value);
 window.addEventListener("hashchange", () => go(location.hash.slice(2)));
 document.querySelectorAll(".nav-item").forEach((n) => {
   const label = n.querySelector("span").textContent.trim();
   n.setAttribute("aria-label", label);
   n.title = label;
-  $("mobilePage").add(new Option(label, n.dataset.page));
   n.addEventListener("click", (e) => {
     e.preventDefault();
     go(n.dataset.page);
@@ -2083,14 +2237,14 @@ function theadHtml() {
   };
   return `
     <th style="--column-width:38px"><input type="checkbox" id="selectAll" aria-label="全选"></th>
-    <th style="--column-width:56px">序号</th>
+    ${sortBtn("name", "窗口名称", 235)}
+    ${c.sequence ? '<th style="--column-width:56px">序号</th>' : ""}
     ${c.group ? `<th style="--column-width:120px">分组</th>` : ""}
-    ${sortBtn("name", "窗口名称")}
     ${c.proxy ? `<th style="--column-width:180px">代理 IP</th>` : ""}
     ${c.tags ? `<th style="--column-width:140px">标签</th>` : ""}
     ${c.remark ? `<th style="--column-width:120px">备注</th>` : ""}
     ${c.created ? sortBtn("created_at", "创建时间", 110) : ""}
-    <th style="--column-width:190px">配置</th>
+    ${c.config ? '<th style="--column-width:190px">配置</th>' : ""}
     ${c.browser_version ? '<th style="--column-width:130px" title="上次成功启动的浏览器内核版本">上次启动版本</th>' : ""}
     ${c.last_opened ? sortBtn("last_opened", "最近打开时间", 128) : ""}
     <th class="col-actions" style="--column-width:106px">操作</th>`;
@@ -2149,8 +2303,9 @@ function filtered() {
 }
 
 function statusHtml(p) {
-  const st = STATUS[p.status] || [p.status, "s-ready"];
-  return `<span class="status"><span class="dot-s ${st[1]}"></span>${st[0]}</span>`;
+  const unopened = p.status === "ready" && !p.last_opened_at && !p.open_count;
+  const st = unopened ? ["未打开", "s-ready"] : STATUS[p.status] || [p.status, "s-ready"];
+  return `<span class="status"><span class="dot-s ${st[1]}" aria-hidden="true"></span>${esc(st[0])}</span>`;
 }
 
 function engineName(p) {
@@ -2193,14 +2348,14 @@ function rowHtml(p, index) {
   }
   return `<tr class="${state.selected.has(p.id) ? "selected" : ""}">
     <td><input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}"></td>
-    <td class="dim">${(state.pageNo - 1) * state.pageSize + index + 1}</td>
-    ${c.group ? `<td class="muted ellipsis" title="${esc(p.group?.name || "未分组")}">${esc(p.group?.name || "未分组")}</td>` : ""}
-    <td>
+    <td class="profile-identity">
       <div class="cell-name">
-        <span class="status-dot ${(STATUS[p.status] || ["", "s-ready"])[1]}"></span>
-        <span class="txt" data-action="detail" data-id="${p.id}" title="${esc(p.name)}">${esc(p.name)}</span>
+        <button type="button" class="txt" data-action="detail" data-id="${p.id}" aria-haspopup="dialog" title="${esc(p.name)}">${esc(p.name)}</button>
+        <span class="profile-meta">${statusHtml(p)}<span class="profile-engine" title="${esc(cfg)}" translate="no">${p.engine === "chromium" ? "Chromium" : "Camoufox"}</span></span>
       </div>
     </td>
+    ${c.sequence ? `<td class="dim">${(state.pageNo - 1) * state.pageSize + index + 1}</td>` : ""}
+    ${c.group ? `<td class="muted ellipsis" title="${esc(p.group?.name || "未分组")}">${esc(p.group?.name || "未分组")}</td>` : ""}
     ${c.proxy ? `<td>
       <div class="ip-cell">
         <span class="badge">${proxy.flag || icon("globe")}</span>
@@ -2213,7 +2368,7 @@ function rowHtml(p, index) {
     ${c.tags ? `<td><div style="display:flex;gap:3px;overflow:hidden;white-space:nowrap">${(p.tags || []).map((t) => `<span class="tag">${esc(t)}</span>`).join("") || '<span class="dim">—</span>'}</div></td>` : ""}
     ${c.remark ? `<td class="muted ellipsis" title="${esc(p.remark || "")}">${esc(p.remark || "—")}</td>` : ""}
     ${c.created ? `<td class="muted nowrap">${esc(fmtTime(p.created_at))}</td>` : ""}
-    <td>
+    ${c.config ? `<td>
       <div class="cfg">
         ${icon("finger")}
         <div class="stack">
@@ -2221,7 +2376,7 @@ function rowHtml(p, index) {
           <span class="sub">打开 ${p.open_count || 0} 次</span>
         </div>
       </div>
-    </td>
+    </td>` : ""}
     ${c.browser_version ? `<td class="muted nowrap">${esc(lastBrowserVersion(p))}</td>` : ""}
     ${c.last_opened ? `<td class="muted nowrap">${lastOpenedHtml(p.last_opened_at)}</td>` : ""}
     <td class="col-actions">
@@ -2248,7 +2403,7 @@ function cardHtml(p) {
     <div class="env-card-head">
       <input type="checkbox" data-select="${p.id}" ${state.selected.has(p.id) ? "checked" : ""} aria-label="选择 ${esc(p.name)}">
       <div class="grow">
-        <div class="env-card-name" data-action="detail" data-id="${p.id}">${esc(p.name)}</div>
+        <button type="button" class="env-card-name" data-action="detail" data-id="${p.id}" aria-haspopup="dialog">${esc(p.name)}</button>
         <div class="env-card-sub">${engineName(p)} · ${esc(p.group?.name || "未分组")}</div>
       </div>
       ${statusHtml(p)}
@@ -2277,7 +2432,15 @@ function renderList() {
   const start = (state.pageNo - 1) * state.pageSize;
   const pageItems = list.slice(start, start + state.pageSize);
 
-  const focusedSort = document.activeElement.closest("th[data-sort]")?.dataset.sort;
+  const focused = document.activeElement;
+  const focusedSort = focused.closest("th[data-sort]")?.dataset.sort;
+  let rowControl;
+  if (focused.closest("#rows, #cards")) {
+    const { id, action, menu, select } = focused.dataset;
+    if (id && action) rowControl = `[data-action="${CSS.escape(action)}"][data-id="${CSS.escape(id)}"]`;
+    else if (menu) rowControl = `[data-menu="${CSS.escape(menu)}"]`;
+    else if (select) rowControl = `[data-select="${CSS.escape(select)}"]`;
+  }
   $("theadRow").innerHTML = theadHtml();
   if (focusedSort) $("theadRow").querySelector(`[data-sort="${focusedSort}"] button`)?.focus({ preventScroll: true });
   $("rows").innerHTML = pageItems.map(rowHtml).join("");
@@ -2286,7 +2449,13 @@ function renderList() {
   const tableMode = state.view === "table";
   $("profileTable").style.display = tableMode ? "" : "none";
   $("cards").style.display = tableMode ? "none" : "";
-  const empty = !state.loading && list.length === 0;
+  if (rowControl) {
+    const replacement = $(tableMode ? "rows" : "cards").querySelector(rowControl);
+    (replacement && !replacement.disabled ? replacement : $("searchInput")).focus({ preventScroll: true });
+  } else if (focused.id === "selectAll") {
+    $("selectAll")?.focus({ preventScroll: true });
+  }
+  const empty = Boolean(state.stats) && !state.loading && list.length === 0;
   $("empty").hidden = !empty;
   if (empty) {
     const filteredOut = state.profiles.length > 0;
@@ -2294,6 +2463,7 @@ function renderList() {
     $("windowEmptyHint").textContent = filteredOut
       ? "试试其他关键词，或清除当前筛选条件。" : "选择浏览器内核，为第一个环境命名。";
     $("windowEmptyCreate").hidden = filteredOut;
+    $("windowEmptyImport").hidden = filteredOut;
     $("windowEmptyReset").hidden = !filteredOut;
   }
 
@@ -2301,8 +2471,8 @@ function renderList() {
   $("pager").innerHTML = pagerHtml(state.pageNo, totalPages, "data-page");
 
   const selectedHere = pageItems.filter((p) => state.selected.has(p.id)).length;
-  const selectAll = $("selectAll");
-  if (selectAll) {
+  $("mobileSelectLabel").hidden = tableMode || !pageItems.length;
+  for (const selectAll of [$("selectAll"), $("mobileSelectAll")]) {
     selectAll.checked = selectedHere > 0 && selectedHere === pageItems.length;
     selectAll.indeterminate = selectedHere > 0 && selectedHere < pageItems.length;
   }
@@ -2314,7 +2484,7 @@ function renderList() {
 
 function pagerHtml(current, total, attr, pageSize = state.pageSize) {
   const pages = [];
-  const push = (n) => pages.push(`<button ${attr}="${n}" class="${n === current ? "active" : ""}">${n}</button>`);
+  const push = (n) => pages.push(`<button ${attr}="${n}" class="${n === current ? "active" : ""}" aria-label="第 ${n} 页" ${n === current ? 'aria-current="page"' : ""}>${n}</button>`);
   if (total <= 7) {
     for (let i = 1; i <= total; i++) push(i);
   } else {
@@ -2327,8 +2497,8 @@ function pagerHtml(current, total, attr, pageSize = state.pageSize) {
   return `<button ${attr}="${Math.max(1, current - 1)}" ${current === 1 ? "disabled" : ""} aria-label="上一页">${icon("left")}</button>
     ${pages.join("")}
     <button ${attr}="${Math.min(total, current + 1)}" ${current === total ? "disabled" : ""} aria-label="下一页">${icon("right")}</button>
-    <span class="jump">前往<input type="number" min="1" max="${total}" value="${current}" data-jump="${attr}">页</span>
-    <select class="select page-size" data-pagesize="${attr}">${[10, 20, 50, 100].map((n) =>
+    <span class="jump">前往<input aria-label="跳转到页码" inputmode="numeric" type="number" min="1" max="${total}" value="${current}" data-jump="${attr}">页</span>
+    <select class="select page-size" aria-label="每页显示条数" data-pagesize="${attr}">${[10, 20, 50, 100].map((n) =>
       `<option value="${n}" ${n === pageSize ? "selected" : ""}>${n} 条/页</option>`).join("")}</select>`;
 }
 
@@ -2383,7 +2553,11 @@ function renderFilterBar() {
 function setTab(tab) {
   state.tab = tab;
   state.pageNo = 1;
-  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  document.querySelectorAll("#tabs button").forEach((button) => {
+    const active = button.dataset.tab === tab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
   renderList();
 }
 
@@ -2421,11 +2595,15 @@ $("searchInput").addEventListener("input", (e) => {
 $("searchField").addEventListener("change", (e) => { state.field = e.target.value; state.pageNo = 1; renderList(); });
 $("searchOp").addEventListener("change", (e) => { state.op = e.target.value; state.pageNo = 1; renderList(); });
 
-$("viewTable").onclick = () => setView("table");
-$("viewGrid").onclick = () => setView("grid");
-function setView(view) {
+$("mobileFilterBtn").onclick = (e) => {
+  const expanded = $("filterBar").classList.toggle("filters-expanded");
+  e.currentTarget.setAttribute("aria-expanded", String(expanded));
+};
+$("viewTable").onclick = () => setView("table", true);
+$("viewGrid").onclick = () => setView("grid", true);
+function setView(view, remember = false) {
   state.view = view;
-  localStorage.setItem("moltskin.view", view);
+  if (remember) localStorage.setItem(viewPreferenceKey(), view);
   $("viewTable").classList.toggle("active", view === "table");
   $("viewGrid").classList.toggle("active", view === "grid");
   $("viewTable").setAttribute("aria-pressed", view === "table");
@@ -2534,13 +2712,16 @@ function onSelectChange(e) {
 }
 $("rows").addEventListener("change", onSelectChange);
 $("cards").addEventListener("change", onSelectChange);
-$("profileTable").addEventListener("change", (e) => {
-  if (e.target.id !== "selectAll") return;
+function selectPage(e) {
   const list = filtered();
   const start = (state.pageNo - 1) * state.pageSize;
   const pageItems = list.slice(start, start + state.pageSize);
   pageItems.forEach((p) => e.target.checked ? state.selected.add(p.id) : state.selected.delete(p.id));
   renderList();
+}
+$("mobileSelectAll").addEventListener("change", selectPage);
+$("profileTable").addEventListener("change", (e) => {
+  if (e.target.id === "selectAll") selectPage(e);
 });
 
 /* 行内操作 */
@@ -2916,15 +3097,6 @@ editor.querySelectorAll(".editor-section").forEach((section) => {
     }
   });
 });
-editor.addEventListener("keydown", (event) => {
-  if (event.key !== "Tab") return;
-  const focusable = [...editor.querySelectorAll("button:enabled, input:enabled, select:enabled, summary")]
-    .filter((el) => el.checkVisibility() && !el.closest("details:not([open]) .editor-fields"));
-  const edge = event.shiftKey ? focusable[0] : focusable.at(-1);
-  if (document.activeElement !== edge) return;
-  event.preventDefault();
-  (event.shiftKey ? focusable.at(-1) : focusable[0]).focus();
-});
 
 function renderEditorSettings() {
   const chromium = $("fEngine").value === "chromium";
@@ -2946,6 +3118,16 @@ function renderEditorSettings() {
 }
 function updateEditorName() {
   $("fBasicSummary").textContent = $("fName").value.trim() || "待填写名称";
+  $("fName").removeAttribute("aria-invalid");
+  $("fNameError").textContent = "";
+  $("fNameError").hidden = true;
+}
+function reportNameError(message) {
+  $("profileBasics").open = true;
+  $("fNameError").textContent = message;
+  $("fNameError").hidden = false;
+  $("fName").setAttribute("aria-invalid", "true");
+  $("fName").focus();
 }
 $("fName").addEventListener("input", updateEditorName);
 editor.addEventListener("change", renderEditorSettings);
@@ -3065,11 +3247,8 @@ $("confirmProfile").onclick = async () => {
   const draft = currentPresetDraft();
   if (!form || form.saving || (draft && !draft.preview)) return;
   const name = $("fName").value.trim();
-  if (!name) {
-    showEditorSection("profileBasics");
-    $("fName").focus();
-    return toast("请填写窗口名称", true);
-  }
+  if (!name) return reportNameError("请填写窗口名称");
+  if (Array.from(name).length > 120) return reportNameError("窗口名称最多 120 个字符");
   const payload = {
     name,
     ...engineSettings("f", !state.editingId),
@@ -3095,6 +3274,7 @@ $("confirmProfile").onclick = async () => {
     await refresh();
   } catch (err) {
     if (profileForm !== form) return;
+    if (err.code === "PROFILE_NAME_EXISTS") return reportNameError("已有同名窗口，请换一个名称");
     if (err.code === "PRESET_DRAFT_EXPIRED" && draft) {
       form.presets.clear();
       form.draftId = null;
@@ -3439,12 +3619,9 @@ $("groupRows").addEventListener("click", async (e) => {
   const del = e.target.closest("[data-group-del]");
   const open = e.target.closest("[data-group-open]");
   if (open) {
-    state.groupId = open.dataset.groupOpen === "__none__" ? "__none__" : open.dataset.groupOpen;
-    state.tab = "all";
-    state.pageNo = 1;
-    document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === "all"));
+    state.groupId = open.dataset.groupOpen;
     go("windows");
-    renderList();
+    setTab("all");
     return;
   }
   if (rename) {
@@ -4512,8 +4689,11 @@ $("refreshBtn").onclick = async (e) => {
 
 /* ---------------- 键盘 ---------------- */
 document.addEventListener("keydown", (e) => {
-  if (trashDialog.open) return;
   const meta = e.metaKey || e.ctrlKey;
+  if (document.querySelector("dialog[open]")) {
+    if (meta && ["k", "n"].includes(e.key.toLowerCase())) e.preventDefault();
+    return;
+  }
   if (meta && e.key.toLowerCase() === "k") {
     e.preventDefault();
     go("windows");
@@ -4524,13 +4704,12 @@ document.addEventListener("keydown", (e) => {
     openProfileModal();
   }
   if (e.key === "Escape") {
-    if (pop.classList.contains("show")) return closePop();
-    document.querySelectorAll(".mask.show").forEach((m) => closeModal(m.id));
+    if (pop.classList.contains("show")) closePop();
   }
 });
 
 function canAutoRefresh() {
-  if (trashDialog.open || document.querySelector(".mask.show")) return false;
+  if (mobileNav.open || trashDialog.open || document.querySelector(".mask.show")) return false;
   if (pop.classList.contains("show")) return false;
   const active = document.activeElement;
   if (active && (active.tagName === "INPUT" || active.tagName === "SELECT" || active.tagName === "TEXTAREA")) return false;
@@ -4539,6 +4718,7 @@ function canAutoRefresh() {
 
 /* ---------------- 启动 ---------------- */
 (function init() {
+  $("searchShortcut").textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl K";
   setView(state.view);
   fillSelects();
   renderList();
