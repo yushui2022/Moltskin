@@ -138,6 +138,9 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.locator("#bPrefix").fill("Media batch")
     panel.locator("#bCount").fill("2")
     panel.locator("#bEngine").select_option("chromium")
+    panel.locator("#bPreviewPlatform").select_option("Linux")
+    panel.locator("#bPreviewArchitecture").select_option("arm64")
+    panel.locator("#bPreviewPlatformVersion").fill("6.1")
     panel.locator("#bUserAgent").fill("Moltskin-Batch-QA/1.0")
     panel.locator("#bBrowserLanguage").select_option("en-GB")
     panel.locator("#bBrowserTimezone").select_option("Europe/London")
@@ -151,6 +154,7 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     for name in ("Media batch-1", "Media batch-2"):
         panel.get_by_role("button", name=name, exact=True).click()
         expect(panel.locator("#fingerprintPreview")).to_contain_text("Moltskin-Batch-QA/1.0")
+        expect(panel.locator("#fingerprintPreview")).to_contain_text("Linux · arm64 · 系统版本 6.1")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("en-GB")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("Europe/London")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("1440 × 900")
@@ -209,7 +213,8 @@ def test_chromium_fingerprint_choices_saved_by_window_and_locked_while_running(p
     expect(language).to_be_disabled()
     expect(timezone).to_be_disabled()
     expect(size).to_be_disabled()
-    for control in ("fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio", "fUserAgent", "fResetUserAgent"):
+    for control in ("fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio", "fUserAgent", "fResetUserAgent",
+                    "fPreviewPlatform", "fPreviewPlatformVersion", "fPreviewArchitecture", "fResetPlatformPreview"):
         expect(panel.locator("#" + control)).to_be_disabled()
     expect(panel.locator("#fRegionHint")).to_contain_text("关闭此窗口后")
 
@@ -270,6 +275,9 @@ def test_only_installed_build_enables_its_own_permissions(panel):
     panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/browser")
     expect(panel.locator("#profileBrowser")).to_have_attribute("open", "")
     expect(panel.locator("#fUserAgent")).to_be_disabled()
+    for field in ("PreviewPlatform", "PreviewArchitecture", "PreviewPlatformVersion", "RunPlatformPreview"):
+        expect(panel.locator("#f" + field)).to_be_disabled()
+    expect(panel.locator("#fPreviewAvailability")).to_contain_text("当前服务版本")
     expect(panel.locator("#fUserAgentHint")).to_contain_text("当前服务版本")
     hint = panel.locator("#fChromiumVersionHint")
     expect(hint).to_contain_text("缺少默认内核")
@@ -283,6 +291,91 @@ def test_only_installed_build_enables_its_own_permissions(panel):
     expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_disabled()
     panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/hardware")
     expect(panel.locator("#profileHardware")).to_have_attribute("open", "")
+
+
+def test_local_platform_preview_measures_draft_and_restores_saved_choices(panel):
+    panel.set_viewport_size({"width": 320, "height": 720})
+    panel.locator("#windowEmptyCreate").click()
+    panel.locator("#fName").fill("Platform QA")
+    browser_tab = panel.locator('button[aria-controls="profileBrowser"]')
+    browser_tab.click()
+    fields = panel.locator("#fPlatformPreview")
+    expect(fields).to_be_hidden()
+    panel.locator("#fEngine").select_option("chromium")
+    expect(fields).to_contain_text("常规网页仍使用实际运行环境")
+    assert fields.evaluate("el => el.scrollWidth <= el.clientWidth")
+    platform = fields.get_by_label("测试系统", exact=True)
+    arch = fields.get_by_label("测试处理器架构")
+    version = fields.get_by_label("系统版本（可选）")
+    run = fields.get_by_role("button", name="运行本地预览")
+    result = fields.get_by_role("status", include_hidden=True)
+    pin = probe(default_binary())[1]
+    panel.locator("#fChromiumVersion").select_option(pin)
+    platform.select_option("Windows")
+    arch.select_option("x86_64")
+    for invalid in ("15..1", "６", "1.2.3.4", "123456"):
+        version.fill(invalid)
+        expect(run).to_be_disabled()
+        expect(panel.locator("#fPreviewVersionError")).to_be_visible()
+    panel.locator('button[aria-controls="profileStartup"]').click()
+    panel.locator("#confirmProfile").click()
+    expect(version).to_be_focused()
+    version.fill("15.4.1")
+    settings = {"preview_platform": "Windows", "preview_architecture": "x86_64", "preview_platform_version": "15.4.1"}
+    with panel.expect_response("**/chromium/platform-preview") as measured:
+        run.click()
+    assert measured.value.request.post_data_json == {**settings, "chromium_version": pin}
+    assert measured.value.ok
+    expect(result).to_contain_text("系统 Windows · 系统版本 15.4.1 · 架构 x86 · 位数 64")
+    version.fill("")
+    run.click()
+    expect(result).to_contain_text("系统 Windows · 系统版本 浏览器未提供 · 架构 x86 · 位数 64")
+    version.fill("15.4.1")
+    arch.select_option("")
+    expect(result).to_be_empty()
+    expect(platform).to_have_value("Windows")
+    expect(version).to_have_value("15.4.1")
+    arch.select_option("x86_64")
+    with panel.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/profiles")) as created:
+        panel.locator("#confirmProfile").click()
+    profile = created.value.json()["data"]
+    assert {k: profile[k] for k in settings} == settings
+    panel.get_by_role("button", name="Platform QA", exact=True).click()
+    expect(panel.locator("#fingerprintPreview")).to_contain_text("Windows · x86_64 · 系统版本 15.4.1")
+    panel.get_by_role("button", name="编辑指纹设置").click()
+    browser_tab.click()
+    expect(platform).to_have_value("Windows")
+    expect(arch).to_have_value("x86_64")
+    expect(version).to_have_value("15.4.1")
+    expect(result).to_be_empty()
+    fields.get_by_role("button", name="重置预览设置").click()
+    for field in (platform, arch, version):
+        expect(field).to_have_value("")
+    with panel.expect_response(lambda r: r.request.method == "PATCH") as updated:
+        panel.locator("#confirmProfile").click()
+    assert all(updated.value.json()["data"][key] == "" for key in settings)
+
+
+def test_local_preview_ignores_superseded_requests_and_shows_inline_failures(panel):
+    panel.goto("http://panel.test/#/windows/new/chromium/browser")
+    endpoint = "**/chromium/platform-preview"
+    pending = []
+    panel.route(endpoint, lambda route: pending.append(route))
+    run = panel.locator("#fRunPlatformPreview")
+    result = panel.locator("#fPlatformPreviewResult")
+    with panel.expect_request(endpoint):
+        run.click()
+    expect(run).to_be_disabled()
+    expect(result).to_contain_text("正在读取")
+    panel.locator("#fPreviewArchitecture").select_option("arm64")
+    pending.pop().fulfill(json={"data": {"platform": "过期", "architecture": "x86", "bitness": "64", "platform_version": ""}})
+    expect(result).to_be_empty()
+    expect(run).to_be_enabled()
+    panel.route(endpoint, lambda route: route.fulfill(status=503, json={"error": {"message": "测试内核不可用"}}))
+    run.click()
+    expect(result).to_contain_text("本地预览失败：测试内核不可用")
+    panel.locator("#fResetPlatformPreview").click()
+    expect(result).to_be_empty()
 
 
 def test_chromium_manual_ua_validation_save_and_reset(panel):

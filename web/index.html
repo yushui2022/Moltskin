@@ -760,6 +760,18 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .editor-readout { display: flex; align-items: center; min-height: 35px; padding: 6px 10px; border-radius: var(--r-md);
   background: var(--panel-2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .editor-caption { font-size: 12px; color: var(--muted); }
+.platform-preview { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 10px 12px 12px;
+  border: 1px solid var(--border-soft); border-radius: var(--r-md); }
+.platform-preview legend { padding: 0 5px; font-weight: 600; font-size: 12px; }
+.platform-preview .preview-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.platform-preview .preview-note, .platform-preview .preview-result { grid-column: 1 / -1; margin: 0;
+  font-size: 12px; line-height: 1.55; color: var(--muted); overflow-wrap: anywhere; }
+.platform-preview .preview-result:not(:empty) { padding: 8px 10px; background: var(--panel-2); border-radius: var(--r-sm); }
+.platform-preview .preview-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
+.platform-preview .preview-result:empty { display: none; }
+@media (max-width: 480px) {
+  .platform-preview .preview-fields { grid-template-columns: minmax(0, 1fr); }
+}
 .editor-preset { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 14px;
   padding: 10px 12px; margin: 0; border-radius: 8px; background: var(--panel-2); font-size: 12px; line-height: 1.5; }
 .editor-preset dt { color: var(--muted); }
@@ -1756,8 +1768,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             </div>
             <div class="field" data-engine="camoufox"><label for="fEngineVersion">本机内核版本</label><output class="editor-readout" id="fEngineVersion"></output></div>
             <div class="field" data-engine="chromium" hidden><label for="fChromiumVersion">启动内核版本</label><select class="select" id="fChromiumVersion" aria-describedby="fChromiumVersionHint"><option value="">跟随本机默认</option></select><span class="hint" id="fChromiumVersionHint"></span></div>
-            <div class="field" data-engine="chromium" hidden><label for="fHostOs">运行系统</label><output class="editor-readout" id="fHostOs"></output></div>
-            <div class="field" data-engine="chromium" hidden><label for="fHostArch">处理器架构</label><output class="editor-readout" id="fHostArch"></output></div>
+            <div class="field full" data-engine="chromium" hidden><span class="hint">本机运行环境　<span id="fHostOs"></span> · <span id="fHostArch"></span></span></div>
+            <fieldset class="platform-preview" id="fPlatformPreview" data-engine="chromium" hidden><legend>本地兼容性预览</legend></fieldset>
             <div class="field full ua-field" data-engine="chromium" hidden>
               <div class="ua-label"><label for="fUserAgent">User-Agent</label><button type="button" id="fResetUserAgent" disabled>恢复默认</button></div>
               <textarea class="input" id="fUserAgent" rows="2" dir="ltr" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="留空使用所选内核的默认 User-Agent" aria-describedby="fUserAgentHint fUserAgentError"></textarea>
@@ -1850,6 +1862,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserLanguage">网站首选语言</label><select class="select" id="bBrowserLanguage"><option value="">浏览器默认</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bChromiumVersion">启动内核版本</label><select class="select" id="bChromiumVersion" aria-describedby="bChromiumVersionHint"><option value="">跟随本机默认</option></select><span class="hint" id="bChromiumVersionHint"></span></div>
+      <fieldset class="platform-preview" id="bPlatformPreview" data-engine="chromium" hidden><legend>本地兼容性预览</legend></fieldset>
       <div class="field full ua-field" data-engine="chromium" hidden>
         <div class="ua-label"><label for="bUserAgent">User-Agent</label><button type="button" id="bResetUserAgent" disabled>恢复默认</button></div>
         <textarea class="input" id="bUserAgent" rows="2" dir="ltr" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="留空使用所选内核的默认 User-Agent" aria-describedby="bUserAgentHint bUserAgentError"></textarea>
@@ -2405,7 +2418,10 @@ function closeModal(id, result = null) {
     $("bulkProxyPreview").hidden = true;
     $("bulkProxyResult").textContent = "";
   }
-  if (id === "profileMask") profileForm = null;
+  if (id === "profileMask") {
+    profileForm = null;
+    clearPlatformPreview();
+  }
   if (id === "cookieMask") {
     cookieImportTarget = null;
     $("cookieFile").value = "";
@@ -3588,6 +3604,89 @@ function validateUserAgent(prefix, focusInvalid = false) {
   return !message;
 }
 
+const platformPreviewChoices = [
+  {control: "PreviewPlatform", key: "preview_platform", options: "preview_platforms", fallback: "跟随本机系统"},
+  {control: "PreviewArchitecture", key: "preview_architecture", options: "preview_architectures", fallback: "跟随本机架构"},
+];
+let platformPreviewRequest = null;
+
+function platformPreviewSettings(prefix) {
+  return {
+    preview_platform: $(prefix + "PreviewPlatform").value,
+    preview_architecture: $(prefix + "PreviewArchitecture").value,
+    preview_platform_version: $(prefix + "PreviewPlatformVersion").value,
+  };
+}
+
+function clearPlatformPreview() {
+  platformPreviewRequest?.abort();
+  platformPreviewRequest = null;
+  $("fPlatformPreviewResult").textContent = "";
+}
+
+function updatePlatformPreviewActions(prefix, focusInvalid = false) {
+  const version = $(prefix + "PreviewPlatformVersion");
+  const invalid = $(prefix + "Engine").value === "chromium" && !version.disabled && version.validity.patternMismatch;
+  version.setAttribute("aria-invalid", String(invalid));
+  $(prefix + "PreviewVersionError").hidden = !invalid;
+  const settings = platformPreviewSettings(prefix);
+  $(prefix + "ResetPlatformPreview").disabled = version.disabled || !Object.values(settings).some(Boolean);
+  if (prefix === "f") {
+    const build = $("fChromiumVersion");
+    const hasBuild = build.value ? !build.selectedOptions[0]?.disabled : Boolean(state.engine?.chromium?.version);
+    $("fRunPlatformPreview").disabled = version.disabled || !hasBuild || invalid || Boolean(platformPreviewRequest);
+  }
+  if (invalid && focusInvalid) {
+    if (prefix === "f") showEditorSection("profileBrowser");
+    version.focus();
+  }
+  return !invalid;
+}
+
+function setPlatformPreviewFields(prefix, info, saved, locked) {
+  const supported = platformPreviewChoices.every(field => info?.[field.options]?.length);
+  for (const {control, key, options, fallback} of platformPreviewChoices) {
+    const input = $(prefix + control);
+    const value = saved ? saved[key] || "" : input.value;
+    const choices = [["", fallback], ...(info?.[options] || []).filter(Boolean).map(v => [v, v])];
+    if (value && !choices.some(([key]) => key === value)) choices.push([value, value + "（已保存）"]);
+    updateOptions(input, choices, value);
+    input.disabled = locked || !supported;
+  }
+  const version = $(prefix + "PreviewPlatformVersion");
+  if (saved) version.value = saved.preview_platform_version || "";
+  version.disabled = locked || !supported;
+  const note = $(prefix + "PreviewAvailability");
+  note.textContent = !state.engine ? "正在读取预览选项…" : !supported ? "当前服务版本未提供本地预览。" :
+    locked ? "关闭此窗口后可修改预览设置。" : "";
+  note.hidden = !note.textContent;
+  updatePlatformPreviewActions(prefix);
+}
+
+async function runPlatformPreview() {
+  const button = $("fRunPlatformPreview");
+  if (button.disabled || !profileForm) return;
+  const result = $("fPlatformPreviewResult");
+  const request = new AbortController();
+  platformPreviewRequest = request;
+  button.disabled = true;
+  result.textContent = "正在读取本地测试页…";
+  try {
+    const data = await api("/chromium/platform-preview", {method: "POST", signal: request.signal,
+      body: JSON.stringify({...platformPreviewSettings("f"), chromium_version: $("fChromiumVersion").value})});
+    if (platformPreviewRequest !== request) return;
+    const readings = [["系统", data.platform], ["系统版本", data.platform_version], ["架构", data.architecture], ["位数", data.bitness]];
+    result.textContent = "UA-CH 实测　" + readings.map(([label, value]) => label + " " + (value || "浏览器未提供")).join(" · ");
+  } catch (err) {
+    if (platformPreviewRequest === request) result.textContent = "本地预览失败：" + err.message;
+  } finally {
+    if (platformPreviewRequest === request) {
+      platformPreviewRequest = null;
+      updatePlatformPreviewActions("f");
+    }
+  }
+}
+
 function setEngineFields(prefix, saved = null) {
   const select = $(prefix + "Engine");
   const chromium = select.value === "chromium";
@@ -3606,6 +3705,7 @@ function setEngineFields(prefix, saved = null) {
     "下次启动生效。最多 512 个可打印 ASCII 字符。Client Hints 由 Chromium 处理。";
   validateUserAgent(prefix);
   const capabilities = setChromiumBuildChoices(prefix, info, saved ? saved.chromium_version || "" : null, locked);
+  setPlatformPreviewFields(prefix, info, saved, locked);
   for (const field of chromiumResourceFields) {
     const control = $(prefix + field.control);
     const limits = info?.[field.options] || [];
@@ -3664,6 +3764,7 @@ function engineSettings(prefix, creating) {
     const ua = $(prefix + "UserAgent");
     if (!ua.disabled) values.chromium_user_agent = ua.value;
     if (!version.disabled && !version.selectedOptions[0]?.disabled) values.chromium_version = version.value;
+    if (!$(prefix + "PreviewPlatformVersion").disabled) Object.assign(values, platformPreviewSettings(prefix));
     for (const field of chromiumResourceFields) {
       const control = $(prefix + field.control);
       if (!control.disabled) values[field.key] = Number(control.value);
@@ -3687,11 +3788,40 @@ function engineSettings(prefix, creating) {
   return values;
 }
 
-$("fEngine").onchange = () => { setEngineFields("f"); renderPresetAction(); };
+$("fEngine").onchange = () => { clearPlatformPreview(); setEngineFields("f"); renderPresetAction(); };
 $("fOs").onchange = renderPresetAction;
 $("bEngine").onchange = () => setEngineFields("b");
 for (const prefix of ["f", "b"]) {
-  $(prefix + "ChromiumVersion").onchange = () => setEngineFields(prefix);
+  $(prefix + "PlatformPreview").insertAdjacentHTML("beforeend", `<div class="preview-fields">
+    <p class="preview-note">这些设置仅用于本地测试页的 UA-CH 读数。常规网页仍使用实际运行环境，操作系统和 CPU 指令集均由本机提供。</p>
+    <div class="field"><label for="${prefix}PreviewPlatform">测试系统</label><select class="select" id="${prefix}PreviewPlatform"><option value="">跟随本机系统</option></select></div>
+    <div class="field"><label for="${prefix}PreviewArchitecture">测试处理器架构</label><select class="select" id="${prefix}PreviewArchitecture"><option value="">跟随本机架构</option></select></div>
+    <div class="field full"><label for="${prefix}PreviewPlatformVersion">系统版本（可选）</label>
+      <input class="input" id="${prefix}PreviewPlatformVersion" pattern="[0-9]{1,5}([.][0-9]{1,5}){0,2}" placeholder="例如 15.4.1" dir="ltr" spellcheck="false" aria-describedby="${prefix}PreviewVersionHint ${prefix}PreviewVersionError">
+      <span class="hint" id="${prefix}PreviewVersionHint">UA-CH 的 platformVersion。留空时，同一系统沿用本机读数，跨系统则留空。</span>
+      <span class="hint field-error" id="${prefix}PreviewVersionError" aria-live="polite" hidden>请输入 1 至 3 段数字，每段 1 至 5 位，以英文句点分隔。</span>
+    </div>
+    <p class="preview-note" id="${prefix}PreviewAvailability" hidden></p>
+    <div class="preview-actions">${prefix === "f" ? '<button class="btn" id="fRunPlatformPreview" type="button">运行本地预览</button>' : ""}
+      <button class="btn" id="${prefix}ResetPlatformPreview" type="button">重置预览设置</button></div>
+    ${prefix === "f" ? '<p class="preview-result" id="fPlatformPreviewResult" role="status"></p>' : ""}
+  </div>`);
+  const changed = () => {
+    if (prefix === "f") clearPlatformPreview();
+    updatePlatformPreviewActions(prefix);
+  };
+  $(prefix + "PreviewPlatform").onchange = changed;
+  $(prefix + "PreviewArchitecture").onchange = changed;
+  $(prefix + "PreviewPlatformVersion").oninput = changed;
+  $(prefix + "ResetPlatformPreview").onclick = () => {
+    for (const control of ["PreviewPlatform", "PreviewArchitecture", "PreviewPlatformVersion"]) $(prefix + control).value = "";
+    changed();
+    $(prefix + "PreviewPlatform").focus();
+  };
+  $(prefix + "ChromiumVersion").onchange = () => {
+    if (prefix === "f") clearPlatformPreview();
+    setEngineFields(prefix);
+  };
   const ua = $(prefix + "UserAgent");
   ua.oninput = () => validateUserAgent(prefix);
   $(prefix + "ResetUserAgent").onclick = () => {
@@ -3700,6 +3830,7 @@ for (const prefix of ["f", "b"]) {
     ua.focus();
   };
 }
+$("fRunPlatformPreview").onclick = runPlatformPreview;
 
 function updateEditLock(id, status) {
   if (!$("profileMask").classList.contains("show") || state.editingId !== id || $("fEngine").value !== "chromium") return;
@@ -3708,6 +3839,7 @@ function updateEditLock(id, status) {
 }
 
 async function openProfileModal(id = null, {engine = "camoufox", section = "profileBasics"} = {}) {
+  clearPlatformPreview();
   const form = { id, draftId: null, presets: new Map(), saving: false };
   profileForm = form;
   state.editingId = id;
@@ -3774,7 +3906,7 @@ $("confirmProfile").onclick = async () => {
   const name = $("fName").value.trim();
   if (!name) return reportNameError("请填写窗口名称");
   if (Array.from(name).length > 120) return reportNameError("窗口名称最多 120 个字符");
-  if (!validateUserAgent("f", true)) return;
+  if (!updatePlatformPreviewActions("f", true) || !validateUserAgent("f", true)) return;
   const payload = {
     name,
     ...engineSettings("f", !state.editingId),
@@ -3892,7 +4024,7 @@ function fillBatchSelects() {
     `<option value="${p.id}">${esc(p.name)} · ${esc(p.host)}:${p.port}</option>`).join("");
 }
 $("confirmBatch").onclick = async () => {
-  if (!validateUserAgent("b", true)) return;
+  if (!updatePlatformPreviewActions("b", true) || !validateUserAgent("b", true)) return;
   const count = Math.max(1, Math.min(200, Number($("bCount").value) || 1));
   const prefix = $("bPrefix").value.trim() || "环境";
   const start = Math.max(1, Number($("bStart").value) || 1);
@@ -4025,6 +4157,7 @@ function openDetail(id, initialFocus = null) {
     const defaultVersion = info?.version ? "跟随本机默认 · " + info.version : "跟随本机默认";
     $("fingerprintPreview").innerHTML = `<div class="kv"><div class="k">启动内核版本</div><div class="v">${esc(p.chromium_version || defaultVersion)}</div></div>
       <div class="kv"><div class="k">运行系统</div><div class="v">${esc([info?.host_os, info?.host_arch].filter(Boolean).join(" · ") || "未提供")}</div></div>
+      <div class="kv full"><div class="k">本地兼容性预览设置</div><div class="v">${esc([p.preview_platform || "跟随本机系统", p.preview_architecture || "跟随本机架构", p.preview_platform_version && "系统版本 " + p.preview_platform_version].filter(Boolean).join(" · "))}</div></div>
       <div class="kv full"><div class="k">User-Agent</div><div class="v">${esc(p.chromium_user_agent || "跟随内核默认")}</div></div>
       <div class="kv"><div class="k">网站首选语言</div><div class="v">${esc(regionLabel(p.browser_language) || "浏览器默认")}</div></div>
       <div class="kv"><div class="k">时区</div><div class="v">${esc(regionLabel(p.browser_timezone) || "跟随系统")}</div></div>

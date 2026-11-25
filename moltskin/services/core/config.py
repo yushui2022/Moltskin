@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path, PureWindowsPath
+from typing import Literal, get_args
 
 # moltskin/services/core/config.py -> 项目根目录
 ROOT = Path(__file__).resolve().parents[3]
@@ -23,6 +24,10 @@ MANAGER_URL = os.environ.get("MOLTSKIN_MANAGER_URL", f"http://127.0.0.1:{PORT}")
 
 CHROMIUM_JS_HEAP_LIMITS = (256, 512, 1024)
 CHROMIUM_RENDERER_LIMITS = (2, 4, 8)
+PreviewPlatform = Literal["Windows", "macOS", "Linux"]
+PreviewArchitecture = Literal["arm64", "x86_64"]
+PREVIEW_PLATFORMS = get_args(PreviewPlatform)
+PREVIEW_ARCHITECTURES = get_args(PreviewArchitecture)
 CHROMIUM_BROWSER_LANGUAGES = ("zh-CN", "en-US", "en-GB", "ja-JP", "de-DE", "fr-FR")
 CHROMIUM_BROWSER_WINDOW_SIZES = ("1024x768", "1280x800", "1440x900", "1920x1080")
 CHROMIUM_BROWSER_TIMEZONES = (

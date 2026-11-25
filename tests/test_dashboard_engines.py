@@ -181,6 +181,9 @@ def test_migrate_existing_camoufox_profile(data_dir):
         conn.execute("ALTER TABLE profiles DROP COLUMN browser_window_size")
         conn.execute("ALTER TABLE profiles DROP COLUMN chromium_version")
         conn.execute("ALTER TABLE profiles DROP COLUMN chromium_user_agent")
+        conn.execute("ALTER TABLE profiles DROP COLUMN preview_platform")
+        conn.execute("ALTER TABLE profiles DROP COLUMN preview_platform_version")
+        conn.execute("ALTER TABLE profiles DROP COLUMN preview_architecture")
         conn.execute("ALTER TABLE profiles DROP COLUMN engine")
         conn.execute("ALTER TABLE profiles DROP COLUMN startup_page")
         conn.execute("ALTER TABLE profiles DROP COLUMN block_images")
@@ -196,6 +199,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
     assert row["engine"] == "camoufox"
     assert row["chromium_version"] == ""
     assert row["chromium_user_agent"] == ""
+    assert row["preview_platform"] == row["preview_platform_version"] == row["preview_architecture"] == ""
     assert row["media_capture"] == row["geolocation"] == "standard"
     assert row["browser_language"] == row["browser_timezone"] == row["browser_window_size"] == ""
     assert row["user_data_dir"] == str(data_dir / "old-profile")
@@ -269,6 +273,79 @@ def test_chromium_window_settings_survive_partial_edits_duplication_and_import(c
     reset = client.patch(url, json=defaults).raise_for_status().json()["data"]
     assert defaults.items() <= reset.items()
     assert client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).json()["version"] == 1
+
+
+def test_platform_preview_roundtrip_and_independent_settings(client):
+    options = client.get("/api/v1/engine").raise_for_status().json()["data"]["chromium"]
+    assert options["preview_platforms"] == ["Windows", "macOS", "Linux"]
+    assert options["preview_architectures"] == ["arm64", "x86_64"]
+    settings = {"preview_platform": "macOS", "preview_platform_version": "15.4.1", "preview_architecture": "arm64"}
+    defaults = dict.fromkeys(settings, "")
+    source = create_chromium(client, "preview", **settings)
+    assert source["os"] == "native" and settings.items() <= source.items()
+    url = f"{PROFILES}/{source['id']}"
+    copy = client.post(url + "/duplicate").raise_for_status().json()["data"]
+    assert copy["id"] != source["id"] and settings.items() <= copy.items()
+    selection = {"ids": [source["id"]]}
+    export_url = "/api/v1/export/profiles"
+    exported = client.post(export_url, json=selection).raise_for_status().json()
+    assert exported["version"] == 7 and settings.items() <= exported["profiles"][0].items()
+    imported = client.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]
+    assert imported["created"] == 1 and not imported["skipped"]
+    listed = client.get(PROFILES).raise_for_status().json()["data"]["items"]
+    assert len(listed) == 3 and all(settings.items() <= p.items() for p in listed)
+
+    for key, value in settings.items():
+        reset = client.patch(url, json=defaults).raise_for_status().json()["data"]
+        assert defaults.items() <= reset.items()
+        assert client.post(export_url, json=selection).json()["version"] == 1
+        edited = client.patch(url, json={key: value}).raise_for_status().json()["data"]
+        assert {**defaults, key: value}.items() <= edited.items()
+        assert client.post(export_url, json=selection).json()["version"] == 7
+    assert settings.items() <= client.get(f"{PROFILES}/{copy['id']}").json()["data"].items()
+
+
+def test_platform_preview_validation_and_legacy_import(client):
+    chrome = create_chromium(client, "native")
+    url = f"{PROFILES}/{chrome['id']}"
+    for invalid in ({"preview_platform": "Darwin"}, {"preview_architecture": "x86"}):
+        assert client.patch(url, json=invalid).status_code == 422
+    for version in (None, 15, "１", "123456", "1.", ".2", "1.2.3.4", "1\n"):
+        assert client.patch(url, json={"preview_platform_version": version}).status_code == 422
+    fox = client.post(PROFILES, json={"name": "fox"}).raise_for_status().json()["data"]
+    fox_url = f"{PROFILES}/{fox['id']}"
+    incompatible = [{"name": key, key: value} for key, value in (
+        ("preview_platform", "Linux"), ("preview_architecture", "x86_64"), ("preview_platform_version", "1"))]
+    for row in incompatible:
+        assert client.post(PROFILES, json=row).status_code == 422
+        assert client.patch(fox_url, json=row).status_code == 422
+    imported = client.post("/api/v1/import/profiles", json={"profiles": incompatible}).raise_for_status().json()["data"]
+    assert imported["created"] == 0 and len(imported["skipped"]) == len(incompatible)
+    legacy = {"version": 6, "profiles": [{"name": "legacy", "engine": "chromium", "chromium_user_agent": "Legacy/1"}]}
+    assert client.post("/api/v1/import/profiles", json=legacy).raise_for_status().json()["data"]["created"] == 1
+    listed = client.get(PROFILES).raise_for_status().json()["data"]["items"]
+    old = next(p for p in listed if p["name"] == "legacy")
+    assert old["preview_platform"] == old["preview_platform_version"] == old["preview_architecture"] == ""
+    assert client.get("/api/v1/export/profiles").json()["version"] == 6
+
+
+def test_platform_preview_presets_do_not_change_launch_arguments(client):
+    settings = {"preview_platform": "Windows", "preview_platform_version": "10.0", "preview_architecture": "arm64"}
+    profile = create_chromium(client, "preview launch")
+    url = f"{PROFILES}/{profile['id']}"
+    args_file = Path(profile["user_data_dir"]) / "test-args.json"
+    launches = []
+    for changes in ({}, settings):
+        client.patch(url, json=changes).raise_for_status()
+        client.post(url + "/launch").raise_for_status()
+        try:
+            launches.append(json.loads(args_file.read_text()))
+            for key, value in settings.items():
+                blocked = client.patch(url, json={key: "" if changes else value})
+                assert blocked.status_code == 409 and blocked.json()["error"]["code"] == "PROFILE_RUNNING"
+        finally:
+            client.post(url + "/stop").raise_for_status()
+    assert launches[0] == launches[1]
 
 
 def test_manual_user_agent_roundtrip_and_launch(client):

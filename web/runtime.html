@@ -44,6 +44,8 @@
       <dl>
         <div><dt>Chromium 版本</dt><dd id="version">—</dd></div>
         <div><dt>平台</dt><dd id="platform">—</dd></div>
+        <div><dt>系统版本 <small lang="en">UA-CH</small></dt><dd id="platformVersion">—</dd></div>
+        <div><dt>处理器架构</dt><dd id="architecture">—</dd></div>
         <div><dt>网站语言</dt><dd id="language">—</dd></div>
         <div><dt>时区</dt><dd id="timezone">—</dd></div>
         <div class="wide"><dt>HTTP 请求头 UA</dt><dd><code id="httpUa">__HTTP_USER_AGENT__</code></dd></div>
@@ -97,15 +99,18 @@
     show("heap", heapLimit ? Math.round(heapLimit / 1048576) + " MiB" : null);
     showGeometry();
     window.addEventListener("resize", showGeometry);
-    async function showChromiumVersion() {
+    async function showPlatformHints() {
       try {
-        const hints = await navigator.userAgentData?.getHighEntropyValues(["fullVersionList"]);
+        const hints = await navigator.userAgentData?.getHighEntropyValues(
+          ["fullVersionList", "platformVersion", "architecture", "bitness"]);
         show("version", hints?.fullVersionList?.find(entry => entry.brand === "Chromium")?.version);
+        show("platformVersion", hints?.platformVersion || unavailable);
+        show("architecture", [hints?.architecture, hints?.bitness && hints.bitness + " 位"].filter(Boolean).join(" · ") || unavailable);
       } catch {
-        show("version", unavailable);
+        for (const id of ["version", "platformVersion", "architecture"]) show(id, unavailable);
       }
     }
-    showChromiumVersion();
+    showPlatformHints();
   </script>
 </body>
 </html>

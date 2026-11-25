@@ -102,6 +102,12 @@ curl -X POST http://127.0.0.1:8765/api/v1/profiles \
 
 A fingerprint preset is generated immediately and reused on every launch.
 
+### Local platform compatibility preview
+
+Chromium profiles accept `preview_platform` (Windows, macOS, Linux), `preview_architecture` (arm64 or x86_64) and `preview_platform_version` (one to three dot-separated numeric components of up to five digits each). All three default to empty. The editor reads platform and architecture choices from `chromium.preview_platforms` and `chromium.preview_architectures` in the engine response.
+
+An authenticated `POST /api/v1/chromium/platform-preview` accepts these three optional values and an optional installed `chromium_version`. It runs a fresh offline diagnostics document and returns its observed UA Client Hints as `data.platform`, `data.platform_version`, `data.architecture`, and `data.bitness`. An empty version follows the native value when the selected platform matches the host, and yields an empty reading when switching to another platform. Working windows use their ordinary browser launch settings independently of the preview.
+
 ### Launch / stop
 
 Profiles return `browser_version`, the engine version recorded at their last successful launch.
@@ -341,7 +347,7 @@ curl -X POST .../import/profiles -H "Authorization: Bearer $TOKEN" \
 
 GET exports every environment. POST exports only the requested profile IDs in the same file format. A rename preserves the selection. If an ID no longer exists, the server returns HTTP 409 with `PROFILE_SELECTION_CHANGED` and `missing_ids` so the caller can refresh the selection.
 
-Pass the entire export to the importer to preserve its format version. A custom Chromium User-Agent requires format `6`. A pinned Chromium version, audio muting, renderer limit, or JS heap limit requires format `5`. A custom website language, time zone, or initial window size requires format `4`. Geolocation blocking requires `3` and media capture blocking requires `2`. The exporter selects the highest format needed by the selected profiles, starting at `1`. This release reads all six formats.
+Pass the entire export to the importer to preserve its format version. Saved platform compatibility preview settings require format `7`. A custom Chromium User-Agent requires format `6`. A pinned Chromium version, audio muting, renderer limit, or JS heap limit requires format `5`. A custom website language, time zone, or initial window size requires format `4`. Geolocation blocking requires `3` and media capture blocking requires `2`. The exporter selects the highest format needed by the selected profiles, starting at `1`. This release reads formats `1` through `7`.
 Legacy unversioned files remain compatible. An unsupported version returns HTTP 422 before any profiles are created.
 
 The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font, media and location policies, and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.
