@@ -58,6 +58,14 @@ def profile_directory(profile_id: str) -> Path:
     return path
 
 
+def stored_profile_directory(profile_id: str, saved: str | None) -> Path:
+    """Check a managed profile's recorded path against the directory assigned to its ID."""
+    path = profile_directory(profile_id)
+    if not isinstance(saved, str) or Path(saved).absolute() not in (path, (PROFILES_DIR / profile_id).absolute()):
+        raise ValueError("环境记录的目录与环境 ID 不匹配")
+    return path
+
+
 def ensure_dirs() -> None:
     for path in (DATA_DIR, PROFILES_DIR, RUN_DIR, LOG_DIR, SELFTEST_DIR):
         path.mkdir(parents=True, exist_ok=True)

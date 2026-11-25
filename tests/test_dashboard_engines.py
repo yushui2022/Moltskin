@@ -68,6 +68,103 @@ def create_chromium(client, name, **options):
     return profile
 
 
+def test_directory_mismatch_refuses_launch_and_single_or_batch_data_deletion(client, monkeypatch):
+    from moltskin.services.core import chromium, db
+
+    first = create_chromium(client, "first")
+    other = create_chromium(client, "other")
+    disposable = create_chromium(client, "disposable")
+    for profile in (first, other):
+        (Path(profile["user_data_dir"]) / "marker").write_text(profile["id"])
+    with db.session() as conn:
+        conn.execute("UPDATE profiles SET user_data_dir=? WHERE id=?", (other["user_data_dir"], first["id"]))
+
+    monkeypatch.setattr(chromium, "prepare_launch", lambda *a, **kw: pytest.fail("unexpected launch preparation"))
+    url = f"{PROFILES}/{first['id']}"
+    for response in (client.post(url + "/launch"), client.delete(url, params={"delete_data": True})):
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "INVALID_PROFILE_DIRECTORY"
+    result = client.post(PROFILES + "/batch", json={
+        "action": "delete", "delete_data": True, "ids": [first["id"], disposable["id"]],
+    }).raise_for_status().json()["data"]
+    assert result["results"][0]["error"]["code"] == "INVALID_PROFILE_DIRECTORY"
+    assert (result["ok"], result["failed"]) == (1, 1)
+    assert not Path(disposable["user_data_dir"]).exists()
+    for profile in (first, other):
+        assert client.get(f"{PROFILES}/{profile['id']}").is_success
+        assert (Path(profile["user_data_dir"]) / "marker").read_text() == profile["id"]
+    assert client.delete(url).is_success  # Metadata-only removal never touches either directory.
+    assert Path(first["user_data_dir"]).exists() and Path(other["user_data_dir"]).exists()
+
+
+def test_launch_reservation_rechecks_changed_directory(client, monkeypatch):
+    from moltskin.services.core import chromium, db
+
+    first = create_chromium(client, "reserving")
+    other = create_chromium(client, "other")
+    prepare = chromium.prepare_launch
+
+    def change_record(*args, **kwargs):
+        command, version = prepare(*args, **kwargs)
+        with db.session() as conn:
+            conn.execute("UPDATE profiles SET user_data_dir=? WHERE id=?", (other["user_data_dir"], first["id"]))
+        return command, version
+
+    monkeypatch.setattr(chromium, "prepare_launch", change_record)
+    response = client.post(f"{PROFILES}/{first['id']}/launch")
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "INVALID_PROFILE_DIRECTORY"
+    with db.session() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+    assert not any((Path(p["user_data_dir"]) / "test-args.json").exists() for p in (first, other))
+
+
+def test_chromium_accepts_linked_parent_directory(client, data_dir, monkeypatch):
+    from moltskin.services.core import config
+
+    alias = data_dir / "profiles-alias"
+    alias.symlink_to(config.PROFILES_DIR, target_is_directory=True)
+    monkeypatch.setattr(config, "PROFILES_DIR", alias)
+    profile = create_chromium(client, "linked storage")
+    path = Path(profile["user_data_dir"])
+    assert path.parent == alias
+    url = f"{PROFILES}/{profile['id']}"
+    try:
+        client.post(url + "/launch").raise_for_status()
+        args = json.loads((path / "test-args.json").read_text())
+        assert f"--user-data-dir={path.resolve()}" in args
+    finally:
+        client.post(url + "/stop").raise_for_status()
+    client.delete(url, params={"delete_data": True}).raise_for_status()
+    assert not path.exists() and alias.is_symlink()
+
+
+def test_owned_directory_in_use_refuses_data_deletion(client, monkeypatch):
+    from moltskin.services.core import recycle
+
+    p = create_chromium(client, "directory still open")
+    path = Path(p["user_data_dir"])
+    monkeypatch.setattr(recycle, "chromium_owns_directory", lambda directory: directory == path.resolve())
+    url = f"{PROFILES}/{p['id']}"
+    result = client.delete(url, params={"delete_data": True})
+    assert result.status_code == 409
+    assert result.json()["error"]["code"] == "PROFILE_RUNNING"
+    assert path.is_dir() and client.get(url).is_success
+
+
+def test_legacy_camoufox_custom_directory_remains_supported(client, data_dir):
+    from moltskin.services.core import db
+
+    profile = client.post(PROFILES, json={"name": "old-profile", "engine": "camoufox"}).raise_for_status().json()["data"]
+    custom = data_dir / "legacy-storage" / "not-the-profile-id"
+    custom.parent.mkdir()
+    Path(profile["user_data_dir"]).rename(custom)
+    with db.session() as conn:
+        conn.execute("UPDATE profiles SET user_data_dir=? WHERE id=?", (str(custom), profile["id"]))
+    client.delete(f"{PROFILES}/{profile['id']}", params={"delete_data": True}).raise_for_status()
+    assert not custom.exists()
+
+
 def test_migrate_existing_camoufox_profile(data_dir):
     from moltskin.services.core import db
 

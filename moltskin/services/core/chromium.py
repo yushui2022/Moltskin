@@ -34,7 +34,7 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError(f"当前内核缺少 {GEOLOCATION_CAPABILITY} 补丁，请更新内核以阻止地理位置访问")
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
-    args = [str(binary), f"--user-data-dir={profile_dir.resolve()}", "--no-first-run", "--no-default-browser-check"]
+    args = [str(binary), f"--user-data-dir={profile_dir.absolute()}", "--no-first-run", "--no-default-browser-check"]
     if not 1 <= config.PORT <= 65535:
         raise ValueError("控制台端口须在 1 到 65535 之间")
     if config.PORT != 8765:

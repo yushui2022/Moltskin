@@ -15,7 +15,8 @@ Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` sho
 | Build the engine | Build a pinned Chromium revision on Linux x86-64 and macOS arm64. Launch each build from a clean profile and record its version and checksum. |
 | Launch both engines | Choose the engine for each new profile in the dashboard. Existing Camoufox profiles keep their data. Separate Chromium profiles can run and restart independently. |
 | Ship a native privacy setting | Exercise local font access, media capture and location permissions on the same test origin in two profiles. Swap policies and restart to verify each profile independently. |
-| Migrate profiles and run them remotely | Camoufox accepts individual Hubstudio cookie exports. Import a separate Hubstudio cookie file into each of two Chromium profiles. Verify both accounts on the same test site after restart. On a Linux node, check that each authorized user sees and controls only their own session. |
+| Site compatibility and profile isolation | Check web font loading, fallback and text layout with local font enumeration restricted. On the same origin, verify local storage, IndexedDB and Cache Storage in two profiles. Restart them, clear the test records in one and check that the other still reads its own data. |
+| Remote sessions on Linux | Verify that two team members can operate their own sessions on a Linux node. Test reconnection and access revocation. |
 | Maintain releases | Track upstream Beta and Stable, apply our patches on upgrade branches, build both platforms and test profile upgrades and recovery before publishing. |
 
 **Planned GitHub automation.** When someone reports a bug, the bot will ask for missing details or reproduce it and open a draft fix with a regression test. On new or updated pull requests, it will report the tested commit, what failed before the change and what passed afterward. Maintainers review and merge. [Contributing](CONTRIBUTING.md)

@@ -186,11 +186,21 @@ def _camoufox_command(profile, proxy, session_id, headless, status_path):
     return [sys.executable, "-m", "moltskin.services.core.runner", "--plan", str(plan_path)]
 
 
+def _chromium_directory(profile) -> Path:
+    try:
+        return config.stored_profile_directory(profile["id"], profile["user_data_dir"])
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise LaunchError("INVALID_PROFILE_DIRECTORY", "环境目录异常，请检查数据目录。") from exc
+
+
 def launch(profile_id: str, actor: str = "local") -> dict:
     with db.session() as conn:
         profile = conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
         if profile is None:
             raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
+        is_chromium = profile["engine"] == "chromium"
+        if is_chromium:
+            profile_dir = _chromium_directory(profile)
 
         session = _active_session(conn, profile_id)
         if session:
@@ -216,9 +226,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
     status_path = config.RUN_DIR / f"{session_id}.json"
     log_path = config.RUN_DIR / f"{session_id}.log"
 
-    profile_dir = Path(profile["user_data_dir"])
     headless = config.FORCE_HEADLESS or bool(profile["headless"]) or bool(db.get_setting("headless", False))
-    is_chromium = profile["engine"] == "chromium"
     browser_version = None
     if is_chromium:
         if proxy:
@@ -254,6 +262,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                          "proxy_id", "startup_page", "block_images")
         if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
+        if is_chromium and _chromium_directory(current) != profile_dir:
+            raise LaunchError("INVALID_PROFILE_DIRECTORY", "环境目录已变更，请检查数据目录。")
 
         active_count = conn.execute(
             "SELECT COUNT(*) AS n FROM sessions WHERE state IN ('starting','running','stopping')"

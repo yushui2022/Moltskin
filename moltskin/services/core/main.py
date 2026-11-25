@@ -1115,14 +1115,9 @@ def purge_trashed_profile(profile_id: str):
 def delete_profile(profile_id: str, delete_data: bool = False):
     with db.session() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT status, user_data_dir FROM profiles WHERE id=?", (profile_id,)).fetchone()
-        if row is None:
-            raise HTTPException(404, detail={"code": "PROFILE_NOT_FOUND", "message": "环境不存在"})
-        if row["status"] == "running":
-            raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境"})
-        conn.execute("DELETE FROM profiles WHERE id=?", (profile_id,))
-    if delete_data:
-        shutil.rmtree(row["user_data_dir"], ignore_errors=True)
+        directory = recycle.remove_profile_record(conn, profile_id, delete_data)
+    if directory is not None:
+        shutil.rmtree(directory, ignore_errors=True)
     db.log("profile.delete", profile_id, {"delete_data": delete_data})
     return {"data": {"id": profile_id, "deleted": True}}
 
@@ -1234,20 +1229,14 @@ def batch_profiles(payload: BatchRequest):
         with db.session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             for profile_id in payload.ids:
-                row = conn.execute("SELECT status, user_data_dir FROM profiles WHERE id=?", (profile_id,)).fetchone()
-                if row is None:
-                    results.append({"id": profile_id, "ok": False,
-                                    "error": {"code": "PROFILE_NOT_FOUND", "message": "环境不存在"}})
-                    continue
-                if row["status"] == "running":
-                    results.append({"id": profile_id, "ok": False,
-                                    "error": {"code": "PROFILE_RUNNING", "message": "请先关闭环境"}})
-                    continue
-                conn.execute("DELETE FROM profiles WHERE id=?", (profile_id,))
-                if payload.delete_data:
-                    import shutil as _shutil
-                    _shutil.rmtree(row["user_data_dir"], ignore_errors=True)
-                results.append({"id": profile_id, "ok": True})
+                try:
+                    directory = recycle.remove_profile_record(conn, profile_id, payload.delete_data)
+                except HTTPException as exc:
+                    results.append({"id": profile_id, "ok": False, "error": exc.detail})
+                else:
+                    if directory is not None:
+                        shutil.rmtree(directory, ignore_errors=True)
+                    results.append({"id": profile_id, "ok": True})
 
     db.log("profiles.batch", None, {"action": action, "count": len(payload.ids), "ok": sum(1 for r in results if r["ok"])})
     return {"data": {"results": results, "ok": sum(1 for r in results if r["ok"]), "failed": sum(1 for r in results if not r["ok"])}}

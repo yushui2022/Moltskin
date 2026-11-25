@@ -114,7 +114,9 @@ if [ "$(uname -s)" = Darwin ]; then
 fi
 "$browser" --version --moltskin-capabilities
 python3 chromium/check_local_fonts.py "$browser"
-MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m pytest -q tests/test_chromium_media_capture.py tests/test_chromium_geolocation.py
+MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m pytest -q \
+  tests/test_chromium_font_rendering.py tests/test_chromium_storage_isolation.py \
+  tests/test_chromium_media_capture.py tests/test_chromium_geolocation.py
 ```
 
 测试在本机启动临时网页和两个独立的浏览器，给相同站点授予字体权限。通过条件为标准环境读到至少一种字体，限制环境读到零种。关闭后交换两边的策略，使用原数据目录重启，再次检查字体数量和各自的站点存储标记。测试只记录数量。
@@ -126,3 +128,7 @@ MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m p
 测试也在发起采集前通过 `enumerateDevices()` 检查了音视频输入设备。标准环境能读取获准设备的名称、设备 ID 和分组 ID。阻止环境中，每类只出现一条匿名记录，三个字段均为空。回归测试只记录这些字段是否存在。
 
 定位回归在两个临时 Chromium 环境中为同一本地站点授予权限，并仅使用模拟坐标。标准环境的单次和持续定位均返回测试坐标。阻止环境的权限状态为 `denied`，两个接口都返回 `PERMISSION_DENIED`。交换设置并重启后再次检查。
+
+**网页字体。** 在这台 Mac 上，两个环境交换字体策略前后，测试段落从缺失字体回退到等宽字体时，每一行的宽度、位置和高度均一致。衬线字体对照组的排版存在可测量的差异。测试页从本机 HTTP 服务加载了一款图标字体，并确认 Chromium 实际用它绘制了测试字符。此用例覆盖拉丁段落和一个图标字形。
+
+**同站点存储。** 两个临时环境通过面板的启动和停止 API 各启停三次。同一测试站点在两个环境里用同名键分别写入 A、B 标记，覆盖 `localStorage`、IndexedDB 和 Cache Storage。两边重启后各自读回原值。在 B 保持打开时修改并清除 A 的测试数据，再重启两个环境，A 的三项记录都已清除，B 三项都读回了 B。Linux 实机结果待补。

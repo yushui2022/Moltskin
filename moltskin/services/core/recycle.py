@@ -39,12 +39,26 @@ def reserve_profile(profile_id: str):
 
 def _profile_dir(profile_id: str, saved: str | None) -> Path:
     try:
-        path = config.profile_directory(profile_id)
-    except ValueError as exc:
+        return config.stored_profile_directory(profile_id, saved)
+    except (ValueError, OSError, RuntimeError) as exc:
         raise _error(409, "INVALID_PROFILE_DIRECTORY", "环境目录异常，请检查数据目录。") from exc
-    if not isinstance(saved, str) or Path(saved).absolute() not in (path, (config.PROFILES_DIR / profile_id).absolute()):
-        raise _error(409, "INVALID_PROFILE_DIRECTORY", "环境目录异常，请检查数据目录。")
-    return path
+
+
+def remove_profile_record(conn: sqlite3.Connection, profile_id: str, delete_data: bool) -> str | None:
+    """Remove a stopped profile and return the validated data directory when requested."""
+    row = conn.execute("SELECT engine, status, user_data_dir FROM profiles WHERE id=?", (profile_id,)).fetchone()
+    if row is None:
+        raise _error(404, "PROFILE_NOT_FOUND", "环境不存在")
+    if row["status"] == "running":
+        raise _error(409, "PROFILE_RUNNING", "请先关闭环境")
+    directory = row["user_data_dir"] if delete_data else None
+    if delete_data and row["engine"] == "chromium":
+        path = _profile_dir(profile_id, directory)
+        if chromium_owns_directory(path):
+            raise _error(409, "PROFILE_RUNNING", "请先关闭环境")
+        directory = str(path)
+    conn.execute("DELETE FROM profiles WHERE id=?", (profile_id,))
+    return directory
 
 
 def _log(conn: sqlite3.Connection, action: str, profile_id: str, detail: dict | None = None):
