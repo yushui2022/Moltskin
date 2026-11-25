@@ -115,6 +115,25 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   mask-image: linear-gradient(105deg, transparent 18%, #000 94%), linear-gradient(#000 56%, transparent);
   mask-composite: intersect;
 }
+.window-emblem {
+  position: relative; isolation: isolate; display: grid; place-items: center; flex: none;
+  width: 5em; height: 3.5em; overflow: hidden; padding-top: .55em;
+  border: 1px solid #a9bdb8; border-radius: .55em; background: #f4f8f6;
+}
+.window-emblem::before, .window-emblem::after { content: ""; position: absolute; }
+.window-emblem::before {
+  inset: 0 0 auto; height: .55em; background: #e4ede9; border-bottom: 1px solid #baccc6;
+}
+.window-emblem::after {
+  top: .19em; left: .42em; width: .19em; height: .19em; border-radius: 50%;
+  background: #788f87; box-shadow: .36em 0 #788f87, .72em 0 #788f87;
+}
+.window-emblem .camo-print {
+  z-index: -1; right: 0; bottom: 0; width: 216px; height: 84px;
+  transform: scale(var(--print-scale)); transform-origin: bottom right;
+  mask-image: linear-gradient(110deg, transparent 16%, #000 100%);
+}
+.window-emblem img { display: block; width: 3em; height: auto; }
 .brand img { flex: none; width: 32px; height: 32px; object-fit: contain; display: block; }
 .brand-name { font: bold italic 24px/1 Georgia, "Times New Roman", serif; color: var(--text);
   letter-spacing: -1.4px; }
@@ -538,11 +557,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .kpi .v small { font-size: 13px; font-weight: 400; color: var(--dim); margin-left: 3px; }
 .kpi .s { color: var(--dim); font-size: 11.5px; margin-top: 4px; }
 .home-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 12px; }
-.home-measurements { display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
-  margin-bottom: 16px; padding: 16px; }
-.home-measurements .module-icon { display: grid; place-items: center; flex: none;
-  width: 40px; height: 40px; border-radius: var(--r-md); color: var(--accent); background: var(--accent-soft); }
-.home-measurements .module-icon .i { width: 21px; height: 21px; }
+#page-home .scroll { padding-inline: var(--page-gutter); }
+.home-measurements { display: grid; align-items: center; grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px 16px; margin-bottom: 16px; padding: 16px; }
+.home-measurements .window-emblem { font-size: 16px; --print-scale: .4; }
 .home-measurements h2 { margin: 0; font-size: 16px; }
 .home-measurements p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .measurement-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: auto; min-width: 0; }
@@ -632,9 +650,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 /* Environment editor */
 .profile-editor.modal { width: 810px; height: min(662px, 88dvh); }
 .profile-editor .head { padding: 14px 20px; gap: 11px; font-size: 17px; font-weight: 600; }
-.editor-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px;
-  background: var(--accent-soft); color: var(--accent); }
-.editor-mark .i { width: 19px; height: 19px; }
+.profile-editor .window-emblem { font-size: 10px; --print-scale: .25; }
 .editor-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 127px minmax(0, 1fr); }
 .editor-nav { padding: 15px 8px; border-right: 1px solid var(--border-soft); background: var(--bg);
   display: flex; flex-direction: column; gap: 6px; overflow: auto; }
@@ -834,7 +850,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   .proxy-form { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 650px) {
-  .measurement-controls { flex-basis: 100%; }
+  .home-measurements { grid-template-columns: auto minmax(0, 1fr); gap: 12px; padding: 14px; }
+  .home-measurements .window-emblem { font-size: 12px; --print-scale: .3; }
+  .measurement-controls { grid-column: 1 / -1; margin-left: 0; }
   .measurement-controls select { flex: 1; min-width: 0; }
   .scroll > .card:has(> table.grid) { overflow-x: auto; overscroll-behavior-x: contain; }
   :is(#page-proxies, #page-schedules) .card > table:has(tbody:empty) { display: none; }
@@ -1045,7 +1063,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="scroll">
         <div class="kpis" id="kpis"></div>
         <section class="panel home-measurements" id="homeMeasurements" aria-labelledby="homeMeasurementTitle">
-          <span class="module-icon" aria-hidden="true"><svg class="i"><use href="#i-finger"/></svg></span>
+          <span class="window-emblem" aria-hidden="true"><span class="camo-print"></span><img src="/logo.svg" width="48" height="34" alt=""></span>
           <div>
             <h2 id="homeMeasurementTitle">浏览器实测</h2>
             <p id="homeMeasurementHint">正在读取环境…</p>
@@ -1503,7 +1521,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 <dialog class="mask" id="profileMask" aria-labelledby="profileModalTitle">
   <div class="modal profile-editor">
     <div class="head">
-      <span class="editor-mark" aria-hidden="true"><svg class="i"><use href="#i-window"/></svg></span>
+      <span class="window-emblem" aria-hidden="true"><span class="camo-print"></span><img src="/logo.svg" width="30" height="21" alt=""></span>
       <span id="profileModalTitle">创建窗口</span>
       <button class="x" data-close="profileMask" aria-label="关闭窗口设置"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
