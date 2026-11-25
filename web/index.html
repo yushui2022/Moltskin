@@ -1500,7 +1500,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <h3 style="margin:0 0 8px;font-size:14px">1. 准备 Camoufox 代理（可选）</h3>
             <p class="muted" style="margin:0 0 16px">在「代理 IP」添加 HTTP 或 SOCKS5 代理并检测，确认出口 IP 与目标地区一致。</p>
             <h3 style="margin:0 0 8px;font-size:14px">2. 创建环境</h3>
-            <p class="muted" style="margin:0 0 16px">选择内核和启动页面。两个内核都可以禁止加载网页图片。Camoufox 可以设置操作系统和代理。Moltskin Chromium 可以管理本机字体、摄像头和麦克风的访问权限。</p>
+            <p class="muted" style="margin:0 0 16px">选择内核和启动页面。两个内核都可以禁止加载网页图片。Camoufox 可以设置操作系统和代理。Moltskin Chromium 可以管理本机字体、摄像头、麦克风和地理位置的访问权限。</p>
             <h3 style="margin:0 0 8px;font-size:14px">3. 打开窗口</h3>
             <p class="muted" style="margin:0 0 16px">点击「打开」启动所选内核。登录状态保存在该环境自己的数据目录里。</p>
             <h3 style="margin:0 0 8px;font-size:14px">常见问题</h3>
@@ -1562,6 +1562,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <select class="select" id="fMediaCapture" aria-describedby="fMediaHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
               <span class="hint" id="fMediaHint"></span>
             </div>
+            <div class="field" data-engine="chromium" hidden><label for="fGeolocation">地理位置</label>
+              <select class="select" id="fGeolocation" aria-describedby="fLocationHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
+              <span class="hint" id="fLocationHint"></span>
+            </div>
             <div class="field full" id="fPresetInfo" hidden><span class="editor-caption" id="fPresetCaption">已保存的环境预设</span><dl id="fPresetValues" class="editor-preset"></dl></div>
           </div>
         </details>
@@ -1620,6 +1624,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <select class="select" id="bMediaCapture" aria-describedby="bMediaHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
         <span class="hint" id="bMediaHint"></span>
       </div>
+      <div class="field" data-engine="chromium" hidden><label for="bGeolocation">地理位置</label>
+        <select class="select" id="bGeolocation" aria-describedby="bLocationHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
+        <span class="hint" id="bLocationHint"></span>
+      </div>
       <div class="field" data-engine="camoufox"><label for="bOs">操作系统</label>
         <select class="select" id="bOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
       </div>
@@ -1668,17 +1676,21 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   <div class="modal" style="width:600px">
     <div class="head"><span id="cookieTitle">导入 Cookie</span><button class="x" data-close="cookieMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
     <div class="body single">
+      <div id="cookieTarget" class="muted" style="margin-bottom:12px"></div>
       <div class="field">
-        <label for="cookieText">粘贴 Cookie</label>
-        <textarea class="input" id="cookieText" rows="8" spellcheck="false"
-          placeholder='支持三种格式：&#10;1) JSON 数组 [{"name":"sid","value":"...","domain":".example.com"}]&#10;2) Playwright storage_state {"cookies":[...]}&#10;3) Netscape cookies.txt（制表符分隔）'></textarea>
-        <div class="hint">或选择文件：<input type="file" id="cookieFile" aria-label="选择 Cookie 文件" accept=".json,.txt,text/plain,application/json" style="margin-top:6px"></div>
+        <label for="cookieFile">选择此环境的 Cookie 文件</label>
+        <input type="file" id="cookieFile" accept=".json,.txt,text/plain,application/json" aria-describedby="cookieFileHint">
+        <div class="hint" id="cookieFileHint">支持 Hubstudio 单环境导出的 TXT / JSON、Playwright 和 Netscape 文件。</div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label for="cookieText">或粘贴 Cookie 内容</label>
+        <textarea class="input" id="cookieText" rows="5" spellcheck="false" placeholder="粘贴单个环境的完整导出内容"></textarea>
       </div>
       <div class="field" style="margin-top:10px">
         <label for="cookieMode">写入方式</label>
         <select class="select" id="cookieMode">
           <option value="merge">合并（同名 Cookie 覆盖，其余保留）</option>
-          <option value="replace">替换（先清空现有 Cookie）</option>
+          <option value="replace">替换（校验通过后覆盖此环境）</option>
         </select>
       </div>
     </div>
@@ -2109,6 +2121,11 @@ function closeModal(id, result = null) {
   const dialog = $(id);
   if (!dialog.open) return;
   if (id === "profileMask") profileForm = null;
+  if (id === "cookieMask") {
+    cookieImportTarget = null;
+    $("cookieFile").value = "";
+    $("cookieText").value = "";
+  }
   dialog.close();
   dialog.classList.remove("show");
   if (dialog.contains($("toast"))) (document.activeElement?.closest("dialog[open]") || document.body).append($("toast"));
@@ -2379,7 +2396,8 @@ function rowHtml(p, index) {
   const preview = p.fingerprint_preview;
   let cfg = "Camoufox · 未生成预设";
   if (p.engine === "chromium") {
-    cfg = `Chromium · 字体${fontsLabel(p)}` + (p.media_capture === "blocked" ? " · 音视频采集已阻止" : "");
+    cfg = [`Chromium · 字体${fontsLabel(p)}`, p.media_capture === "blocked" && "音视频采集已阻止",
+      p.geolocation === "blocked" && "位置已阻止"].filter(Boolean).join(" · ");
   } else if (preview) {
     const os = { macos: "macOS", linux: "Linux", windows: "Win" }[preview.os];
     const cores = preview.hardware_concurrency;
@@ -3195,15 +3213,19 @@ function setEngineFields(prefix) {
   }
   const hint = $(prefix + "EngineHint");
   const unavailable = state.engine?.chromium?.available === false;
-  const media = $(prefix + "MediaCapture");
-  const supportsMedia = state.engine?.chromium?.supports_media_capture_policy;
   const locked = $(prefix + "LocalFonts").disabled;
-  media.disabled = locked || supportsMedia === undefined;
-  media.querySelector('[value="blocked"]').disabled = !supportsMedia;
-  $(prefix + "MediaHint").textContent = !state.engine ? "正在读取内核信息…" :
-    supportsMedia === undefined ? "更新本地控制服务后可设置采集权限。" :
-    !supportsMedia ? "需要安装支持媒体权限的 Moltskin Chromium，才能以阻止模式启动。" :
-    "选择阻止后，已经授权的网站也无法采集。";
+  for (const [field, hintId, supported, label, message] of [
+    ["MediaCapture", "MediaHint", state.engine?.chromium?.supports_media_capture_policy, "媒体", "已经授权的网站也无法采集。"],
+    ["Geolocation", "LocationHint", state.engine?.chromium?.supports_geolocation_policy, "定位", "已经授权的网站也无法读取位置。"],
+  ]) {
+    const control = $(prefix + field);
+    control.disabled = locked || supported === undefined;
+    control.querySelector('[value="blocked"]').disabled = !supported;
+    $(prefix + hintId).textContent = !state.engine ? "正在读取内核信息…" :
+      supported === undefined ? `更新本地控制服务后可设置${label}权限。` :
+      !supported ? `需要安装支持${label}权限的 Moltskin Chromium，才能以阻止模式启动。` :
+      "选择阻止后，" + message;
+  }
   hint.textContent = chromium && unavailable ? "本机 Chromium 暂不可用，可先保存环境配置。" : "";
   if (chromium && locked) {
     hint.textContent += "关闭环境后可更改权限。";
@@ -3219,6 +3241,8 @@ function engineSettings(prefix, creating) {
     if (!fonts.disabled) values.local_fonts = fonts.value;
     const media = $(prefix + "MediaCapture");
     if (!media.disabled) values.media_capture = media.value;
+    const location = $(prefix + "Geolocation");
+    if (!location.disabled) values.geolocation = location.value;
   } else {
     values.proxy_id = $(prefix + "Proxy").value || null;
     if (creating) values.os = $(prefix + "Os").value;
@@ -3261,6 +3285,7 @@ async function openProfileModal(id = null) {
   $("fLocalFonts").value = p?.local_fonts || "standard";
   $("fLocalFonts").disabled = p?.status === "running";
   $("fMediaCapture").value = p?.media_capture || "standard";
+  $("fGeolocation").value = p?.geolocation || "standard";
   setEngineFields("f");
   $("fOs").value = p?.os || "windows";
   $("fOs").disabled = isEdit;
@@ -3316,7 +3341,8 @@ $("confirmProfile").onclick = async () => {
   renderPresetAction();
   try {
     if (state.editingId) {
-      await api(`/profiles/${state.editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      const saved = await api(`/profiles/${state.editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      state.profiles = state.profiles.map(profile => profile.id === saved.id ? saved : profile);
       toast("已保存");
     } else {
       await api("/profiles", { method: "POST", body: JSON.stringify(payload) });
@@ -3379,6 +3405,7 @@ function openBatchModal() {
   $("bEngine").value = "camoufox";
   $("bLocalFonts").value = "standard";
   $("bMediaCapture").value = "standard";
+  $("bGeolocation").value = "standard";
   $("bStartupPage").value = "default";
   $("bStartupPage").querySelector('[value="dashboard"]').disabled = state.engine?.dashboard_startup_available === false;
   $("bBlockImages").value = "0";
@@ -3531,6 +3558,7 @@ function openDetail(id, initialFocus = null) {
   if (chromium) {
     $("fingerprintPreview").innerHTML = `<div class="kv"><div class="k">本机字体访问</div><div class="v">${fontsLabel(p)}</div></div>
       <div class="kv"><div class="k">摄像头和麦克风</div><div class="v">${p.media_capture === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
+      <div class="kv"><div class="k">地理位置</div><div class="v">${p.geolocation === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
       <div class="kv"><div class="k">启动方式</div><div class="v">${p.headless ? "无头（后台）" : "有头（显示窗口）"}</div></div>`;
     openModal("detailMask");
     return;
@@ -4322,58 +4350,67 @@ async function loadCookieSummary(id) {
   const box = $("cookieSummary");
   try {
     const data = await api(`/profiles/${id}/cookies`);
+    if (detailId !== id) return;
     const domains = new Set(data.cookies.map((c) => c.domain));
     box.textContent = data.total
       ? `共 ${data.total} 条，覆盖 ${domains.size} 个域名`
       : "该环境还没有 Cookie";
   } catch (err) {
-    box.textContent = err.message;
+    if (detailId === id) box.textContent = err.message;
   }
 }
 
 $("cookieRefresh").onclick = () => detailId && loadCookieSummary(detailId);
 
+let cookieImportTarget = null;
 $("cookieImportBtn").onclick = () => {
-  if (!detailId) return;
+  const profile = state.profiles.find((p) => p.id === detailId);
+  if (!profile) return;
+  cookieImportTarget = { id: profile.id, name: profile.name };
+  $("cookieTarget").textContent = `目标环境　${profile.name}（${profile.id}）`;
+  $("cookieFile").value = "";
   $("cookieText").value = "";
   $("cookieMode").value = "merge";
+  setCookieImportBusy(false);
   openModal("cookieMask");
 };
 
-$("cookieFile").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  $("cookieText").value = await file.text();
-  e.target.value = "";
+$("cookieFile").addEventListener("change", () => {
+  if ($("cookieFile").files.length) $("cookieText").value = "";
+});
+$("cookieText").addEventListener("input", () => {
+  if ($("cookieText").value) $("cookieFile").value = "";
 });
 
+function setCookieImportBusy(busy) {
+  for (const id of ["cookieFile", "cookieText", "cookieMode", "cookieImportOk"]) {
+    $(id).disabled = busy;
+  }
+  $("cookieImportOk").textContent = busy ? "正在导入…" : "导入";
+}
+
 $("cookieImportOk").onclick = async () => {
-  if (!detailId) return;
-  const text = $("cookieText").value.trim();
-  if (!text) return toast("请粘贴或选择 Cookie", true);
-  const btn = $("cookieImportOk");
-  btn.disabled = true;
+  const target = cookieImportTarget;
+  if (!target || $("cookieImportOk").disabled) return;
+  const file = $("cookieFile").files[0];
+  const pasted = $("cookieText").value.trim();
+  const mode = $("cookieMode").value;
+  if (!file && !pasted) return toast("请选择文件或粘贴 Cookie 内容", true);
+  setCookieImportBusy(true);
   try {
-    let payload;
-    try {
-      payload = JSON.parse(text);
-    } catch (_) {
-      payload = text;
-    }
-    const body = typeof payload === "string"
-      ? { text: payload, mode: $("cookieMode").value }
-      : { cookies: payload, mode: $("cookieMode").value };
-    const result = await api(`/profiles/${detailId}/cookies`, {
+    const text = file ? await file.text() : pasted;
+    if (target !== cookieImportTarget) return;
+    const result = await api(`/profiles/${target.id}/cookies`, {
       method: "PUT",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ text, mode }),
     });
-    toast(`已写入 ${result.applied} 条 Cookie`);
-    closeModal("cookieMask");
-    await loadCookieSummary(detailId);
+    if (target === cookieImportTarget) closeModal("cookieMask");
+    toast(`已向「${target.name}」写入 ${result.applied} 条 Cookie`);
+    if (detailId === target.id) await loadCookieSummary(target.id);
   } catch (err) {
-    toast(err.message, true);
+    if (target === cookieImportTarget) toast(err.message, true);
   } finally {
-    btn.disabled = false;
+    if (target === cookieImportTarget) setCookieImportBusy(false);
   }
 };
 
@@ -4384,11 +4421,15 @@ async function exportCookies(format) {
     const res = await fetch(`/api/v1/profiles/${detailId}/cookies/export?format=${format}`, {
       headers: { Authorization: "Bearer " + TOKEN },
     });
-    if (!res.ok) throw new Error("导出失败");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error?.message || "导出失败");
+    }
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `cookies-${(p?.name || detailId).replace(/[^\w\-]+/g, "_")}.${format === "netscape" ? "txt" : "json"}`;
+    const name = (p?.name || detailId).replace(/[^\p{L}\p{N}_.-]+/gu, "_").slice(0, 40);
+    a.download = `cookies-${name}.${format === "netscape" ? "txt" : "json"}`;
     a.click();
     URL.revokeObjectURL(a.href);
     toast("已导出");

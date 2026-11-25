@@ -1,0 +1,61 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index ebca9ee..87aec26 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -443,6 +443,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+     if (command_line.HasSwitch("moltskin-capabilities")) {
+       puts("moltskin-disable-local-font-access");
+       puts("moltskin-block-media-capture");
++      puts("moltskin-block-geolocation");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+diff --git a/content/browser/permissions/permission_overrides.cc b/content/browser/permissions/permission_overrides.cc
+index 918ced3..2fef799 100644
+--- a/content/browser/permissions/permission_overrides.cc
++++ b/content/browser/permissions/permission_overrides.cc
+@@ -8,6 +8,7 @@
+ #include <optional>
+ #include <utility>
+
++#include "base/command_line.h"
+ #include "base/containers/map_util.h"
+ #include "base/feature_list.h"
+ #include "base/types/optional_ref.h"
+@@ -16,6 +17,7 @@
+ #include "components/content_settings/core/common/features.h"
+ #include "content/browser/permissions/permission_util.h"
+ #include "content/public/browser/permission_result.h"
++#include "content/public/common/moltskin_switches.h"
+ #include "third_party/abseil-cpp/absl/functional/overload.h"
+ #include "third_party/blink/public/common/permissions/permission_utils.h"
+ #include "url/gurl.h"
+@@ -116,6 +118,14 @@ std::optional<blink::mojom::PermissionStatus> PermissionOverrides::GetStatus(
+     const url::Origin& requesting_origin,
+     const url::Origin& embedding_origin,
+     blink::PermissionType permission) const {
++  // Get() maps approximate geolocation to GEOLOCATION before this lookup.
++  // The process policy takes precedence over both stored and DevTools grants.
++  if (permission == blink::PermissionType::GEOLOCATION &&
++      base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinBlockGeolocation)) {
++    return PermissionStatus::DENIED;
++  }
++
+   const auto* status = base::FindOrNull(
+       overrides_,
+       PermissionKey(requesting_origin, embedding_origin, permission));
+diff --git a/content/public/common/moltskin_switches.h b/content/public/common/moltskin_switches.h
+index 68825f4..8bfce96 100644
+--- a/content/public/common/moltskin_switches.h
++++ b/content/public/common/moltskin_switches.h
+@@ -7,6 +7,9 @@
+
+ namespace switches {
+
++// Denies both precise and approximate geolocation for this browser process.
++inline constexpr char kMoltskinBlockGeolocation[] = "moltskin-block-geolocation";
++
+ // Denies microphone and camera capture for this Moltskin browser process.
+ inline constexpr char kMoltskinBlockMediaCapture[] =
+     "moltskin-block-media-capture";

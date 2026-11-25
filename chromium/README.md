@@ -1,16 +1,16 @@
 # Moltskin Chromium 开发预览
 
-本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录、本机字体权限和摄像头与麦克风采集权限。
+本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录、本机字体、摄像头与麦克风采集、地理位置三类权限。
 
 ## 打开浏览器内的控制面板
 
 应用下方补丁并构建 Chromium，按项目快速开始安装 Python 依赖。在仓库根目录用同一 Python 环境运行 `python chromium/open_panel.py`。启动器会启动或复用本机控制服务，在 Moltskin Chromium 里打开管理标签页。macOS 也可以运行一次 `python chromium/install_panel_macos.py`，以后双击用户「应用程序」目录中的 `Moltskin.app` 即可打开。
 
-在管理页点击「创建窗口」，填写名称，在「浏览器与系统」选择 Moltskin Chromium，并设置字体和媒体权限，然后在列表中点「打开」。工作环境默认打开空白页。点击地址栏右侧、头像左侧的 Moltskin 变色龙按钮即可打开控制面板首页。已有面板标签时，按钮会切回该标签并回到首页，工作标签会保留。在地址栏输入 `chrome://moltskin/` 也可以回到面板。这个浏览器入口在当前标签页打开本机服务，地址栏会显示实际的回环地址。要修改权限，先关闭对应环境，编辑后再次打开。
+在管理页点击「创建窗口」，填写名称，在「浏览器与系统」选择 Moltskin Chromium，并设置字体、媒体和定位权限，然后在列表中点「打开」。工作环境默认打开空白页。点击地址栏右侧、头像左侧的 Moltskin 变色龙按钮即可打开控制面板首页。已有面板标签时，按钮会切回该标签并回到首页，工作标签会保留。在地址栏输入 `chrome://moltskin/` 也可以回到面板。这个浏览器入口在当前标签页打开本机服务，地址栏会显示实际的回环地址。要修改权限，先关闭对应环境，编辑后再次打开。
 
 已有环境继续使用创建时的内核。面板根据环境 ID 分配数据目录，命令行预览的数据位于自己的目录中。如果开发包放在自定义路径，启动面板前设置 `MOLTSKIN_CHROMIUM_BINARY`，指向 Mac 的 `Chromium.app` 或 Linux 的 `chrome` 可执行文件。面板会显示实际检测到的内核版本。
 
-Chromium 环境可在浏览器中登录并保留本机数据。面板里的 Cookie 文件管理、跨环境状态同步和备份中的登录态目前仅支持 Camoufox。Chromium 环境的名称、字体和采集策略随面板数据库一起备份。
+Chromium 环境可在浏览器中登录并保留本机数据。面板里的 Cookie 文件管理、跨环境状态同步和备份中的登录态目前仅支持 Camoufox。Chromium 环境的名称和权限设置随面板数据库一起备份。
 
 ## 临时打开看效果
 
@@ -22,18 +22,18 @@ Chromium 环境可在浏览器中登录并保留本机数据。面板里的 Cook
 
 ```sh
 python3 chromium/launch_preview.py a --local-fonts standard
-python3 chromium/launch_preview.py b --local-fonts restricted --media-capture blocked
+python3 chromium/launch_preview.py b --local-fonts restricted --media-capture blocked --geolocation blocked
 ```
 
 网页调用 `window.queryLocalFonts()` 时，标准模式沿用 Chromium 的站点授权流程。限制模式在浏览器进程中直接返回空列表，即使该站点已有授权。这个设置只作用于 Local Font Access API，网页仍可正常使用 CSS 字体。
 
-在 B 环境中，网站申请摄像头、麦克风或两者时都会被阻止，即使这个站点以前已有授权。设置为 `--media-capture standard` 可恢复 Chromium 的站点授权行为。媒体权限适用于网站访问摄像头和麦克风，不涉及屏幕共享。
+在 B 环境中，网站申请摄像头、麦克风或两者时都会被阻止，即使这个站点以前已有授权。设置为 `--media-capture standard` 可恢复 Chromium 的站点授权行为。位置设置独立生效，`--geolocation blocked` 会拒绝网页的单次和持续定位请求。媒体权限适用于网站访问摄像头和麦克风，不涉及屏幕共享。
 
-关闭 B 的浏览器后，执行 `python3 chromium/launch_preview.py b` 即可恢复上次设置。要调整设置，关闭该环境后重新启动并指定 `--local-fonts` 或 `--media-capture`。每个环境的设置和浏览数据保存在 `data/chromium-preview/<环境名>/`，可用 `MOLTSKIN_DATA_DIR` 指定数据根目录。
+关闭 B 的浏览器后，执行 `python3 chromium/launch_preview.py b` 即可恢复上次设置。要调整设置，关闭该环境后重新启动并指定 `--local-fonts`、`--media-capture` 或 `--geolocation`。每个环境的设置和浏览数据保存在 `data/chromium-preview/<环境名>/`，可用 `MOLTSKIN_DATA_DIR` 指定数据根目录。
 
 macOS 命名环境使用登录钥匙串保护 Cookie。如果系统询问当前开发版是否可访问「Chromium Safe Storage」，确认是自己启动的版本后，在系统弹窗输入登录钥匙串密码，选择「始终允许」可记住此次授权。重新编译的开发版可能需要重新授权。[Apple 钥匙串说明](https://support.apple.com/guide/mac-help/kychn002/mac)
 
-启动器优先查找下文的 `out/MoltskinMedia` 开发包，也能打开早期开发包。选择阻止采集的环境只能用包含媒体权限补丁的构建启动。命令行字体预览还可以用 `--binary` 指定其他开发包。启动前会向内核确认它支持所需功能。
+启动器优先查找下文的 `out/MoltskinLocation` 开发包，也能打开早期开发包。选择了阻止采集或定位的环境，需要使用包含对应权限补丁的构建。命令行字体预览还可以用 `--binary` 指定其他开发包。启动前会向内核确认它支持所需功能。
 
 ## 检查上游版本
 
@@ -96,10 +96,10 @@ pin="$(python3 "$module/verify_upstream.py")" &&
     git apply --check "$patch"
     git apply "$patch"
   done
-  mkdir -p out/MoltskinMedia
-  cp "$module/args.gn" out/MoltskinMedia/args.gn
-  gn gen out/MoltskinMedia
-  autoninja -C out/MoltskinMedia -j 4 chrome
+  mkdir -p out/MoltskinLocation
+  cp "$module/args.gn" out/MoltskinLocation/args.gn
+  gn gen out/MoltskinLocation
+  autoninja -C out/MoltskinLocation -j 4 chrome
 )
 ```
 
@@ -108,13 +108,13 @@ pin="$(python3 "$module/verify_upstream.py")" &&
 在有桌面会话和已安装字体的机器上，从 Moltskin 仓库根目录执行。测试使用当前 Python 环境中的 Playwright 和指定的浏览器文件。
 
 ```sh
-browser="$checkout/src/out/MoltskinMedia/chrome"
+browser="$checkout/src/out/MoltskinLocation/chrome"
 if [ "$(uname -s)" = Darwin ]; then
-  browser="$checkout/src/out/MoltskinMedia/Chromium.app/Contents/MacOS/Chromium"
+  browser="$checkout/src/out/MoltskinLocation/Chromium.app/Contents/MacOS/Chromium"
 fi
 "$browser" --version --moltskin-capabilities
 python3 chromium/check_local_fonts.py "$browser"
-MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m pytest -q tests/test_chromium_media_capture.py
+MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m pytest -q tests/test_chromium_media_capture.py tests/test_chromium_geolocation.py
 ```
 
 测试在本机启动临时网页和两个独立的浏览器，给相同站点授予字体权限。通过条件为标准环境读到至少一种字体，限制环境读到零种。关闭后交换两边的策略，使用原数据目录重启，再次检查字体数量和各自的站点存储标记。测试只记录数量。
@@ -124,3 +124,5 @@ MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m p
 2026-11-25 在同一台 Mac 上验证了媒体采集策略。两个独立环境都已授予同一测试站点摄像头和麦克风权限，测试使用 Chromium 模拟设备。标准环境报告两项权限均为 `granted`，音频、视频及组合请求均成功。阻止环境报告两项均为 `denied`，三种请求都返回 `NotAllowedError`。交换策略并重启后，两边各自应用新策略，原站点存储也各自保留。
 
 测试也在发起采集前通过 `enumerateDevices()` 检查了音视频输入设备。标准环境能读取获准设备的名称、设备 ID 和分组 ID。阻止环境中，每类只出现一条匿名记录，三个字段均为空。回归测试只记录这些字段是否存在。
+
+定位回归在两个临时 Chromium 环境中为同一本地站点授予权限，并仅使用模拟坐标。标准环境的单次和持续定位均返回测试坐标。阻止环境的权限状态为 `denied`，两个接口都返回 `PERMISSION_DENIED`。交换设置并重启后再次检查。

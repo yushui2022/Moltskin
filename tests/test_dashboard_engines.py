@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 PROFILES = "/api/v1/profiles"
 RESTRICT_FONTS = "--moltskin-disable-local-font-access"
 BLOCK_MEDIA = "--moltskin-block-media-capture"
+BLOCK_LOCATION = "--moltskin-block-geolocation"
 
 
 @pytest.fixture
@@ -31,6 +32,8 @@ if sys.argv[1:] == ["--version", "--moltskin-capabilities"]:
     print("moltskin-disable-local-font-access")
     if not os.environ.get("TEST_LEGACY_CHROMIUM"):
         print("moltskin-block-media-capture")
+        if not os.environ.get("TEST_MEDIA_ONLY_CHROMIUM"):
+            print("moltskin-block-geolocation")
     sys.exit(0)
 directory = Path(next(a.split("=", 1)[1] for a in sys.argv if a.startswith("--user-data-dir=")))
 lock = directory / "SingletonLock"
@@ -72,6 +75,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
     with db.session() as conn:
         conn.execute("ALTER TABLE profiles DROP COLUMN local_fonts")
         conn.execute("ALTER TABLE profiles DROP COLUMN media_capture")
+        conn.execute("ALTER TABLE profiles DROP COLUMN geolocation")
         conn.execute("ALTER TABLE profiles DROP COLUMN engine")
         conn.execute("ALTER TABLE profiles DROP COLUMN startup_page")
         conn.execute("ALTER TABLE profiles DROP COLUMN block_images")
@@ -85,7 +89,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
     with db.session() as conn:
         row = conn.execute("SELECT * FROM profiles WHERE id='old-id'").fetchone()
     assert row["engine"] == "camoufox"
-    assert row["media_capture"] == "standard"
+    assert row["media_capture"] == row["geolocation"] == "standard"
     assert row["user_data_dir"] == str(data_dir / "old-profile")
     assert row["open_count"] == 12
     assert row["browser_version"] is None
@@ -96,7 +100,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
 
 def test_engine_contract_and_portable_settings(client):
     original = create_chromium(client, "test", local_fonts="restricted")
-    assert original["media_capture"] == "standard"
+    assert original["media_capture"] == original["geolocation"] == "standard"
     url = f"{PROFILES}/{original['id']}"
     immutable = client.patch(url, json={"engine": "camoufox"})
     assert immutable.status_code == 409 and immutable.json()["error"]["code"] == "ENGINE_IMMUTABLE"
@@ -104,15 +108,19 @@ def test_engine_contract_and_portable_settings(client):
     assert client.patch(url, json={"media_capture": "typo"}).status_code == 422
     assert client.patch(url, json={"media_capture": None}).status_code == 422
     assert client.post(PROFILES, json={"name": "unsupported", "engine": "camoufox", "media_capture": "blocked"}).status_code == 422
+    assert client.patch(url, json={"geolocation": "typo"}).status_code == 422
+    assert client.patch(url, json={"geolocation": None}).status_code == 422
+    assert client.post(PROFILES, json={"name": "unsupported", "engine": "camoufox", "geolocation": "blocked"}).status_code == 422
     assert client.patch(url, json={"fingerprint": {"locale": "fr-FR"}}).is_client_error
     assert (original["startup_page"], original["block_images"]) == ("default", False)
     assert client.patch(url, json={"startup_page": "https://external.invalid"}).status_code == 422
     assert client.patch(url, json={"startup_page": "dashboard", "block_images": True, "media_capture": "blocked"}).is_success
+    assert client.patch(url, json={"geolocation": "blocked"}).is_success
     assert client.patch(url, json={"remark": "edited"}).is_success
     duplicate = client.post(url + "/duplicate").json()["data"]
     assert (duplicate["startup_page"], duplicate["block_images"]) == ("dashboard", True)
     assert (duplicate["engine"], duplicate["local_fonts"]) == ("chromium", "restricted")
-    assert duplicate["media_capture"] == "blocked"
+    assert duplicate["media_capture"] == duplicate["geolocation"] == "blocked"
     assert duplicate["user_data_dir"] != original["user_data_dir"]
     exported = client.get("/api/v1/export/profiles").json()
     item = next(p for p in exported["profiles"] if p["name"] == "test")
@@ -121,7 +129,7 @@ def test_engine_contract_and_portable_settings(client):
     assert imported.is_success, imported.text
     restored = next(p for p in client.get(PROFILES).json()["data"]["items"] if p["name"] == "restored")
     assert (restored["engine"], restored["local_fonts"]) == ("chromium", "restricted")
-    assert restored["media_capture"] == "blocked"
+    assert restored["media_capture"] == restored["geolocation"] == "blocked"
     assert restored["user_data_dir"] != original["user_data_dir"]
     assert (restored["startup_page"], restored["block_images"]) == ("dashboard", True)
 
@@ -132,12 +140,14 @@ def test_missing_binary_never_leaves_a_running_session(client, data_dir, monkeyp
     assert {"camoufox", "playwright", "browsers"} <= engines.keys()
     assert engines["chromium"]["available"] is True
     assert engines["chromium"]["supports_media_capture_policy"] is True
+    assert engines["chromium"]["supports_geolocation_policy"] is True
     assert engines["chromium"]["version"] == "158.0.0.1"
     profile = create_chromium(client, "missing-build")
     monkeypatch.setenv("MOLTSKIN_CHROMIUM_BINARY", str(data_dir / "missing"))
     missing = client.get("/api/v1/engine").json()["data"]["chromium"]
     assert missing["available"] is False
     assert missing["supports_media_capture_policy"] is False
+    assert missing["supports_geolocation_policy"] is False
     assert missing["version"] is None and missing["message"]
     url = f"{PROFILES}/{profile['id']}"
     failure = client.post(url + "/launch")
@@ -150,28 +160,33 @@ def test_missing_binary_never_leaves_a_running_session(client, data_dir, monkeyp
 
 
 @pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="Chromium preview targets macOS and Linux")
-def test_legacy_binary_refuses_blocked_capture_before_start(client, monkeypatch):
+@pytest.mark.parametrize(("legacy_flag", "policy", "switch"), [
+    ("TEST_LEGACY_CHROMIUM", "media_capture", BLOCK_MEDIA),
+    ("TEST_MEDIA_ONLY_CHROMIUM", "geolocation", BLOCK_LOCATION),
+])
+def test_legacy_binary_refuses_unsupported_policy_before_start(client, monkeypatch, legacy_flag, policy, switch):
     from moltskin.services.core import db
 
-    monkeypatch.setenv("TEST_LEGACY_CHROMIUM", "1")
+    monkeypatch.setenv(legacy_flag, "1")
     engine = client.get("/api/v1/engine").json()["data"]["chromium"]
     assert engine["available"] is True
-    assert engine["supports_media_capture_policy"] is False
-    profile = create_chromium(client, "old-browser", media_capture="blocked")
+    assert engine["supports_media_capture_policy"] == (legacy_flag == "TEST_MEDIA_ONLY_CHROMIUM")
+    assert engine["supports_geolocation_policy"] is False
+    profile = create_chromium(client, "old-browser", **{policy: "blocked"})
     url = f"{PROFILES}/{profile['id']}"
     failure = client.post(url + "/launch")
     assert failure.status_code == 503
     assert failure.json()["error"]["code"] == "CHROMIUM_UNAVAILABLE"
-    assert BLOCK_MEDIA[2:] in failure.json()["error"]["message"]
+    assert switch[2:] in failure.json()["error"]["message"]
     assert not (Path(profile["user_data_dir"]) / "test-args.json").exists()
     with db.session() as conn:
         assert conn.execute("SELECT COUNT(*) FROM sessions WHERE profile_id=?", (profile["id"],)).fetchone()[0] == 0
-    assert client.patch(url, json={"media_capture": "standard"}).is_success
+    assert client.patch(url, json={policy: "standard"}).is_success
     try:
         response = client.post(url + "/launch")
         assert response.is_success, response.text
         args = json.loads((Path(profile["user_data_dir"]) / "test-args.json").read_text())
-        assert BLOCK_MEDIA not in args
+        assert switch not in args
     finally:
         client.post(url + "/stop")
 
@@ -184,7 +199,7 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
     monkeypatch.setattr(config, "PORT", 18765)
 
     a = create_chromium(client, "a", local_fonts="restricted", media_capture="blocked")
-    b = create_chromium(client, "b")
+    b = create_chromium(client, "b", geolocation="blocked")
     assert a["user_data_dir"] != b["user_data_dir"]
     urls = [f"{PROFILES}/{p['id']}" for p in (a, b)]
     first_sessions = []
@@ -198,11 +213,13 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
         assert client.post(urls[0] + "/launch").status_code == 409
         assert client.patch(urls[0], json={"local_fonts": "standard"}).status_code == 409
         assert client.patch(urls[0], json={"media_capture": "standard"}).status_code == 409
+        assert client.patch(urls[1], json={"geolocation": "standard"}).status_code == 409
         for profile, restricted in ((a, True), (b, False)):
             args = json.loads((Path(profile["user_data_dir"]) / "test-args.json").read_text())
             assert f"--user-data-dir={profile['user_data_dir']}" in args
             assert (RESTRICT_FONTS in args) == restricted
             assert (BLOCK_MEDIA in args) == restricted
+            assert (BLOCK_LOCATION in args) == (profile == b)
             assert "--use-mock-keychain" not in args
             assert "--moltskin-panel-port=18765" in args
             assert args[-1] == "about:blank"
@@ -221,7 +238,7 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
             unavailable.setenv("MOLTSKIN_CHROMIUM_BINARY", str(Path(a["user_data_dir"]) / "missing-browser"))
             assert client.post(urls[0] + "/launch").status_code == 503
             assert client.get(urls[0]).json()["data"]["browser_version"] == "158.0.0.1"
-        assert client.patch(urls[0], json={"local_fonts": "standard", "media_capture": "standard",
+        assert client.patch(urls[0], json={"local_fonts": "standard", "media_capture": "standard", "geolocation": "blocked",
                                           "startup_page": "dashboard", "block_images": True}).is_success
         monkeypatch.setenv("TEST_CHROMIUM_VERSION", "158.0.0.2")
         assert client.post(urls[0] + "/launch").is_success
@@ -234,6 +251,7 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
         assert "--blink-settings=imagesEnabled=false" in args
         assert RESTRICT_FONTS not in args
         assert BLOCK_MEDIA not in args
+        assert BLOCK_LOCATION in args
         assert marker.read_text() == "profile A"
     finally:
         for url in urls:

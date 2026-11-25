@@ -9,7 +9,8 @@ import sys
 from pathlib import Path
 
 from chromium.native import (
-    CAPABILITY, MEDIA_CAPTURE_CAPABILITY, chromium_owns_directory, default_binary, probe_capabilities,
+    CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY,
+    chromium_owns_directory, default_binary, probe_capabilities,
 )
 
 from . import config
@@ -17,16 +18,20 @@ from . import config
 
 def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    block_images: bool = False, open_dashboard: bool = False,
-                   media_capture: str = "standard") -> tuple[list[str], str]:
+                   media_capture: str = "standard", geolocation: str = "standard") -> tuple[list[str], str]:
     if sys.platform not in ("darwin", "linux"):
         raise ValueError("Chromium 预览版仅支持 macOS 和 Linux")
     if local_fonts not in ("standard", "restricted"):
         raise ValueError("未知的字体访问设置")
     if media_capture not in ("standard", "blocked"):
         raise ValueError("未知的摄像头与麦克风访问设置")
+    if geolocation not in ("standard", "blocked"):
+        raise ValueError("未知的地理位置访问设置")
     binary, version, capabilities = probe_capabilities(default_binary())
     if media_capture == "blocked" and MEDIA_CAPTURE_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {MEDIA_CAPTURE_CAPABILITY} 补丁，请更新内核以阻止摄像头与麦克风访问")
+    if geolocation == "blocked" and GEOLOCATION_CAPABILITY not in capabilities:
+        raise ValueError(f"当前内核缺少 {GEOLOCATION_CAPABILITY} 补丁，请更新内核以阻止地理位置访问")
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
     args = [str(binary), f"--user-data-dir={profile_dir.resolve()}", "--no-first-run", "--no-default-browser-check"]
@@ -38,6 +43,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--" + CAPABILITY)
     if media_capture == "blocked":
         args.append("--" + MEDIA_CAPTURE_CAPABILITY)
+    if geolocation == "blocked":
+        args.append("--" + GEOLOCATION_CAPABILITY)
     if block_images:
         args.append("--blink-settings=imagesEnabled=false")
     if headless:

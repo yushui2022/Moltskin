@@ -11,6 +11,7 @@ from pathlib import Path
 
 CAPABILITY = "moltskin-disable-local-font-access"
 MEDIA_CAPTURE_CAPABILITY = "moltskin-block-media-capture"
+GEOLOCATION_CAPABILITY = "moltskin-block-geolocation"
 
 
 def default_binary() -> Path:
@@ -19,7 +20,7 @@ def default_binary() -> Path:
         return Path(configured).expanduser()
     out = Path.home() / "chromium-baseline" / "src" / "out"
     executable = "Chromium.app" if sys.platform == "darwin" else "chrome"
-    for directory in ("MoltskinMedia", "MoltskinToolbar", "MoltskinPanel"):
+    for directory in ("MoltskinLocation", "MoltskinMedia", "MoltskinToolbar", "MoltskinPanel"):
         binary = out / directory / executable
         if binary.exists():
             return binary

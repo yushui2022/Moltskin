@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   engine           TEXT NOT NULL DEFAULT 'camoufox' CHECK (engine IN ('camoufox','chromium')),
   local_fonts      TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted')),
   media_capture    TEXT NOT NULL DEFAULT 'standard' CHECK (media_capture IN ('standard','blocked')),
+  geolocation      TEXT NOT NULL DEFAULT 'standard' CHECK (geolocation IN ('standard','blocked')),
   startup_page     TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank')),
   block_images     INTEGER NOT NULL DEFAULT 0 CHECK (block_images IN (0,1)),
   browser_version  TEXT,
@@ -240,6 +241,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "engine": "TEXT NOT NULL DEFAULT 'camoufox' CHECK (engine IN ('camoufox','chromium'))",
         "local_fonts": "TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted'))",
         "media_capture": "TEXT NOT NULL DEFAULT 'standard' CHECK (media_capture IN ('standard','blocked'))",
+        "geolocation": "TEXT NOT NULL DEFAULT 'standard' CHECK (geolocation IN ('standard','blocked'))",
         "startup_page": "TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank'))",
         "block_images": "INTEGER NOT NULL DEFAULT 0 CHECK (block_images IN (0,1))",
     }

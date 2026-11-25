@@ -51,6 +51,24 @@ def test_export_version_preserves_required_capture_restriction(api):
     assert {p["media_capture"] for p in listed if p["name"].startswith("blocked")} == {"blocked"}
 
 
+def test_required_geolocation_restriction_uses_version_three(api):
+    rows = [
+        {"name": "media", "engine": "chromium", "media_capture": "blocked"},
+        {"name": "location", "engine": "chromium", "geolocation": "blocked"},
+    ]
+    ids = [api.post("/api/v1/profiles", json=row).raise_for_status().json()["data"]["id"] for row in rows]
+    export = "/api/v1/export/profiles"
+    assert api.post(export, json={"ids": ids[:1]}).raise_for_status().json()["version"] == 2
+    assert api.post(export, json={"ids": ids[1:]}).raise_for_status().json()["version"] == 3
+    mixed = api.get(export).raise_for_status().json()
+    assert mixed["version"] == 3
+    assert api.post("/api/v1/import/profiles", json=mixed).raise_for_status().json()["data"]["created"] == 2
+    listed = api.get("/api/v1/profiles").raise_for_status().json()["data"]["items"]
+    assert {p["name"]: p["geolocation"] for p in listed} == {
+        "location": "blocked", "location (2)": "blocked", "media": "standard", "media (2)": "standard",
+    }
+
+
 def test_unsupported_or_invalid_file_version_rejects_whole_import(api):
     rows = [{"name": "untouched", "group": "team", "proxy": {"host": "proxy.invalid", "port": 80}}]
     unsupported = main.PROFILE_FORMAT_VERSION + 1

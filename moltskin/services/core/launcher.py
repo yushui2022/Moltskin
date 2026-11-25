@@ -228,7 +228,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 profile_dir, profile["local_fonts"], headless,
                 open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
                 block_images=bool(profile["block_images"]),
-                media_capture=profile["media_capture"],
+                media_capture=profile["media_capture"], geolocation=profile["geolocation"],
             )
         except BlockingIOError as exc:
             raise LaunchError("PROFILE_LOCKED", str(exc)) from exc
@@ -238,6 +238,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
     else:
         if profile["media_capture"] != "standard":
             raise LaunchError("ENGINE_OPTIONS", "阻止摄像头与麦克风访问仅支持 Chromium 环境", 422)
+        if profile["geolocation"] != "standard":
+            raise LaunchError("ENGINE_OPTIONS", "阻止地理位置访问仅支持 Chromium 环境", 422)
         command = _camoufox_command(profile, proxy, session_id, headless, status_path)
 
     # Serialize reservation and PID publication across API, batch, and scheduled launches.
@@ -248,7 +250,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
         if _active_session(conn, profile_id):
             raise LaunchError("PROFILE_LOCKED", "该环境正在启动或运行")
-        launch_fields = ("engine", "local_fonts", "media_capture", "headless", "proxy_id", "startup_page", "block_images")
+        launch_fields = ("engine", "local_fonts", "media_capture", "geolocation", "headless",
+                         "proxy_id", "startup_page", "block_images")
         if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
 

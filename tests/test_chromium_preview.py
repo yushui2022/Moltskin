@@ -20,6 +20,7 @@ except ImportError:
 CLI = Path(__file__).resolve().parents[1] / "chromium" / "launch_preview.py"
 SWITCH = "--moltskin-disable-local-font-access"
 MEDIA_SWITCH = "--moltskin-block-media-capture"
+LOCATION_SWITCH = "--moltskin-block-geolocation"
 
 
 @unittest.skipUnless(fcntl is not None and sys.platform in {"darwin", "linux"}, "macOS/Linux preview")
@@ -36,7 +37,7 @@ import json, os, sys
 from pathlib import Path
 if sys.argv[1:] == ["--version", "--moltskin-capabilities"]:
     print("Chromium Preview")
-    print(os.environ.get("TEST_CAPABILITY", "moltskin-disable-local-font-access\\nmoltskin-block-media-capture"))
+    print(os.environ.get("TEST_CAPABILITY", "moltskin-disable-local-font-access\\nmoltskin-block-media-capture\\nmoltskin-block-geolocation"))
 else:
     (Path(os.environ["MOLTSKIN_DATA_DIR"]) / "last-launch").write_text(json.dumps(sys.argv[1:]))
 ''', encoding="utf-8"
@@ -110,6 +111,28 @@ else:
         self.assertFalse(last.exists())
         self.assertIn(MEDIA_SWITCH, self.browser_args("one"))
         self.assertNotIn(MEDIA_SWITCH, self.browser_args("one", "--media-capture", "standard"))
+
+    def test_geolocation_with_existing_settings_and_legacy_binary(self):
+        self.browser_args("updated", "--media-capture", "blocked")
+        policy_file = self.data / "chromium-preview" / "updated" / "permissions.json"
+        settings = json.loads(policy_file.read_text())
+        settings.pop("geolocation")
+        policy_file.write_text(json.dumps(settings))
+        args = self.browser_args("updated")
+        self.assertNotIn(LOCATION_SWITCH, args)
+        self.assertIn(MEDIA_SWITCH, args)
+        args = self.browser_args("updated", "--geolocation", "blocked")
+        self.assertIn(LOCATION_SWITCH, args)
+        self.assertIn(MEDIA_SWITCH, args)
+        self.assertEqual(self.browser_args("updated"), args)
+        last = self.data / "last-launch"
+        last.unlink()
+        previous_capabilities = "\n".join(value.removeprefix("--") for value in (SWITCH, MEDIA_SWITCH))
+        result = self.run_cli("updated", TEST_CAPABILITY=previous_capabilities)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(LOCATION_SWITCH.removeprefix("--"), result.stderr)
+        self.assertFalse(last.exists())
+        self.assertNotIn(LOCATION_SWITCH, self.browser_args("updated", "--geolocation", "standard"))
 
     def test_active_launches_cannot_change_saved_mode(self):
         self.browser_args("one")

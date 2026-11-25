@@ -21,6 +21,7 @@ from playwright.sync_api import Error as PWError
 from camoufox.sync_api import Camoufox
 
 from . import observation
+from .cookies import apply_pending_session_cookies
 
 STOP = False
 
@@ -121,6 +122,7 @@ def main() -> int:
     exit_code = 0
     try:
         with Camoufox(**kwargs) as context:
+            apply_pending_session_cookies(profile_dir, context)
             version = context.browser.version if context.browser else None
             write_status(status_path, state="running", pid=os.getpid(),
                          browser_version=version if isinstance(version, str) else None)

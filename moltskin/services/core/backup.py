@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, db
+from .cookies import SESSION_FILENAME
 
 MANIFEST = "manifest.json"
 DB_NAME = "moltskin.db"
@@ -70,9 +71,10 @@ def _write_archive(workdir: Path, include_profiles: bool) -> Path:
                 if profile["engine"] != "camoufox" or profile.get("purge_started"):
                     continue
                 base = config.profile_directory(profile["id"])
-                cookies = base / "cookies.sqlite"
-                if cookies.exists():
-                    zf.write(cookies, f"profiles/{profile['id']}/cookies.sqlite")
+                for name in ("cookies.sqlite", SESSION_FILENAME):
+                    cookies = base / name
+                    if cookies.is_file():
+                        zf.write(cookies, f"profiles/{profile['id']}/{name}")
                 storage = base / "storage"
                 if storage.exists():
                     for path in storage.rglob("*"):
@@ -204,6 +206,9 @@ def restore(archive: bytes) -> dict[str, Any]:
                     continue
                 dest = config.PROFILES_DIR / profile_dir.name
                 dest.mkdir(parents=True, exist_ok=True)
+                if (profile_dir / "cookies.sqlite").is_file() and not (profile_dir / SESSION_FILENAME).exists():
+                    # A backup made before session imports has no pending cookies.
+                    (dest / SESSION_FILENAME).unlink(missing_ok=True)
                 for item in profile_dir.rglob("*"):
                     if item.is_file():
                         out = dest / item.relative_to(profile_dir)

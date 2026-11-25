@@ -67,6 +67,8 @@ Omitting `engine` selects Camoufox, including for profiles saved before dual-eng
 
 Chromium profiles also accept `media_capture`. The default `standard` follows site permissions. Set `blocked` to deny camera and microphone capture, including requests from previously authorized sites. This preference is retained by profile duplication and configuration export/import. `GET /engine` reports `chromium.supports_media_capture_policy`. Launching a blocked profile on a build without this capability returns HTTP 503.
 
+Chromium also accepts `geolocation: "standard"` (default) or `"blocked"`. Blocked profiles deny site geolocation queries and watches even after a prior site grant. `GET /engine` reports `chromium.supports_geolocation_policy`; launching a blocked profile requires a compatible build. Close the profile before editing this setting.
+
 Profiles accept `startup_page` and `block_images` on creation and update. Changes take effect at the next launch. `startup_page` accepts the following values.
 
 | Value | First tab |
@@ -186,9 +188,7 @@ Each proxy includes `used_by`, the number of environments bound to it.
 
 ## Cookies
 
-Cookies are read from and written to each profile's Firefox `cookies.sqlite`,
-so importing does not require launching the browser. The profile must be
-stopped to write.
+Import into a stopped Camoufox profile. Supply one Hubstudio environment export per destination, as a JSON array or a Hubstudio response with a JSON-encoded `data` array. Netscape and Playwright files are also supported. Moltskin validates the entire file before replacing anything. Invalid or empty input returns HTTP 422 without changing stored cookies. Files declaring partitioned or first-party-only cookies are also rejected. Use the DELETE endpoint to clear a profile intentionally. Persistent cookies go into the profile’s Firefox database. Imported session cookies are held for delivery to that profile on its next launch.
 
 | Method | Path | Description |
 |---|---|---|
@@ -197,6 +197,8 @@ stopped to write.
 | GET | `/profiles/{id}/cookies/export?format=json\|netscape` | Download |
 | POST | `/profiles/{id}/cookies/copy-from/{source_id}` | Merge from another profile |
 | DELETE | `/profiles/{id}/cookies` | Clear |
+
+Cookie listings and JSON exports retain Firefox’s `originAttributes` and `isPartitionedAttributeSet` when those fields restrict a cookie’s scope. Netscape export returns HTTP 422 (`UNSUPPORTED_COOKIE_SCOPE`) if any row requires this metadata. Importing, copying, or syncing such a collection returns HTTP 422 (`INVALID_COOKIES`) and preserves the destination.
 
 ```bash
 # Netscape cookies.txt
@@ -314,10 +316,10 @@ curl -X POST .../import/profiles -H "Authorization: Bearer $TOKEN" \
 
 GET exports every environment. POST exports only the requested profile IDs in the same file format. A rename preserves the selection. If an ID no longer exists, the server returns HTTP 409 with `PROFILE_SELECTION_CHANGED` and `missing_ids` so the caller can refresh the selection.
 
-Pass the entire export to the importer to preserve its format version. A selection containing a profile with blocked media capture uses version `2`, so a version-aware v1 importer rejects the file. Other selections use version `1`. This release reads both versions.
+Pass the entire export to the importer to preserve its format version. If a selected profile blocks geolocation, the export uses version `3`. Otherwise it uses version `2` if media capture is blocked, or `1` for standard policies. A version-aware older importer rejects an unsupported file before writing profiles. This release reads all three versions.
 Legacy unversioned files remain compatible. An unsupported version returns HTTP 422 before any profiles are created.
 
-The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font and media capture policies, and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.
+The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font, media and location policies, and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.
 
 ## Settings and logs
 
