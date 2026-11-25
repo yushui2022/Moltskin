@@ -18,7 +18,8 @@ from . import config
 
 def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    block_images: bool = False, open_dashboard: bool = False,
-                   media_capture: str = "standard", geolocation: str = "standard") -> tuple[list[str], str]:
+                   media_capture: str = "standard", geolocation: str = "standard",
+                   browser_language: str = "", browser_window_size: str = "") -> tuple[list[str], str]:
     if sys.platform not in ("darwin", "linux"):
         raise ValueError("Chromium 预览版仅支持 macOS 和 Linux")
     if local_fonts not in ("standard", "restricted"):
@@ -27,6 +28,10 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("未知的摄像头与麦克风访问设置")
     if geolocation not in ("standard", "blocked"):
         raise ValueError("未知的地理位置访问设置")
+    if browser_language and browser_language not in config.CHROMIUM_BROWSER_LANGUAGES:
+        raise ValueError("未知的网站首选语言")
+    if browser_window_size and browser_window_size not in config.CHROMIUM_BROWSER_WINDOW_SIZES:
+        raise ValueError("未知的启动窗口大小")
     binary, version, capabilities = probe_capabilities(default_binary())
     if media_capture == "blocked" and MEDIA_CAPTURE_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {MEDIA_CAPTURE_CAPABILITY} 补丁，请更新内核以阻止摄像头与麦克风访问")
@@ -47,10 +52,23 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--" + GEOLOCATION_CAPABILITY)
     if block_images:
         args.append("--blink-settings=imagesEnabled=false")
+    if browser_language:
+        args.append(f"--accept-lang={browser_language}")
+    if browser_window_size:
+        args.append("--window-size=" + browser_window_size.replace("x", ","))
     if headless:
         args.append("--headless")
     args.append(config.local_dashboard_url() if open_dashboard else "about:blank")
     return args, version
+
+
+def launch_environment(browser_timezone: str) -> dict[str, str] | None:
+    if not browser_timezone:
+        return None
+    if browser_timezone not in config.CHROMIUM_BROWSER_TIMEZONES:
+        raise ValueError("未知的浏览器时区")
+    # Each window owns a Chromium process tree. The manager and other windows retain their TZ.
+    return {**os.environ, "TZ": browser_timezone}
 
 
 def owns_lock(profile_dir: Path, pid: int) -> bool:

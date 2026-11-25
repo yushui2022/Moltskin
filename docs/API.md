@@ -69,6 +69,8 @@ Chromium profiles also accept `media_capture`. The default `standard` follows si
 
 Chromium also accepts `geolocation: "standard"` (default) or `"blocked"`. Blocked profiles deny site geolocation queries and watches even after a prior site grant. `GET /engine` reports `chromium.supports_geolocation_policy`; launching a blocked profile requires a compatible build. Close the profile before editing this setting.
 
+Each Chromium profile can set `browser_language` (preferred language for websites and the HTTP `Accept-Language` header), `browser_timezone` (IANA time zone), and `browser_window_size` (initial outer width and height). For example, use `"ja-JP"`, `"Asia/Tokyo"`, and `"1280x800"`. The lists at `GET /engine` are `chromium.browser_languages`, `chromium.browser_timezones`, and `chromium.browser_window_sizes`. Omitting a field on PATCH preserves its value. Sending an empty string restores the browser default. Close a running profile before changing these settings.
+
 Profiles accept `startup_page` and `block_images` on creation and update. Changes take effect at the next launch. `startup_page` accepts the following values.
 
 | Value | First tab |
@@ -333,7 +335,7 @@ curl -X POST .../import/profiles -H "Authorization: Bearer $TOKEN" \
 
 GET exports every environment. POST exports only the requested profile IDs in the same file format. A rename preserves the selection. If an ID no longer exists, the server returns HTTP 409 with `PROFILE_SELECTION_CHANGED` and `missing_ids` so the caller can refresh the selection.
 
-Pass the entire export to the importer to preserve its format version. If a selected profile blocks geolocation, the export uses version `3`. Otherwise it uses version `2` if media capture is blocked, or `1` for standard policies. A version-aware older importer rejects an unsupported file before writing profiles. This release reads all three versions.
+Pass the entire export to the importer to preserve its format version. A selected profile with a custom website language, time zone, or initial window size requires version `4`. With default window settings, the export uses version `3` if geolocation is blocked, version `2` if media capture is blocked, and version `1` otherwise. This release reads all four versions.
 Legacy unversioned files remain compatible. An unsupported version returns HTTP 422 before any profiles are created.
 
 The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font, media and location policies, and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.

@@ -49,10 +49,16 @@ Engine = Literal["camoufox", "chromium"]
 FontPolicy = Literal["standard", "restricted"]
 AccessPolicy = Literal["standard", "blocked"]
 StartupPage = Literal["default", "dashboard", "blank"]
-PROFILE_FORMAT_VERSION = 3
+PROFILE_FORMAT_VERSION = 4
 
 
-class ProfileCreate(BaseModel):
+class ChromiumWindowSettings(BaseModel):
+    browser_language: str = ""
+    browser_timezone: str = ""
+    browser_window_size: str = ""
+
+
+class ProfileCreate(ChromiumWindowSettings):
     engine: Engine = "camoufox"
     local_fonts: FontPolicy = "standard"
     media_capture: AccessPolicy = "standard"
@@ -69,7 +75,7 @@ class ProfileCreate(BaseModel):
     fingerprint: dict[str, Any] = Field(default_factory=dict)
 
 
-class ProfileUpdate(BaseModel):
+class ProfileUpdate(ChromiumWindowSettings):
     engine: Engine | None = None
     local_fonts: FontPolicy | None = None
     media_capture: AccessPolicy = "standard"
@@ -291,6 +297,9 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
         "local_fonts": row["local_fonts"],
         "media_capture": row["media_capture"],
         "geolocation": row["geolocation"],
+        "browser_language": row["browser_language"],
+        "browser_timezone": row["browser_timezone"],
+        "browser_window_size": row["browser_window_size"],
         "startup_page": row["startup_page"],
         "block_images": bool(row["block_images"]),
         "group": {"id": row["group_id"], "name": row["group_name"]} if row["group_id"] else None,
@@ -368,7 +377,7 @@ def camoufox_profile(profile_id: str) -> sqlite3.Row:
 
 
 def _check_engine_options(engine: str, local_fonts: str, media_capture: str, geolocation: str,
-                          proxy: Any, fingerprint: Any) -> None:
+                          proxy: Any, fingerprint: Any, window: ChromiumWindowSettings) -> None:
     if engine not in ("camoufox", "chromium") or local_fonts not in ("standard", "restricted"):
         message = "不支持的浏览器内核或字体访问设置"
     elif engine == "camoufox" and local_fonts != "standard":
@@ -377,6 +386,14 @@ def _check_engine_options(engine: str, local_fonts: str, media_capture: str, geo
         message = "阻止摄像头与麦克风访问仅支持 Chromium 环境"
     elif engine == "camoufox" and geolocation != "standard":
         message = "阻止地理位置访问仅支持 Chromium 环境"
+    elif engine == "camoufox" and (window.browser_language or window.browser_timezone or window.browser_window_size):
+        message = "这些语言、时区和启动窗口大小选项仅支持 Chromium 环境"
+    elif window.browser_language and window.browser_language not in config.CHROMIUM_BROWSER_LANGUAGES:
+        message = "不支持的 Chromium 语言"
+    elif window.browser_timezone and window.browser_timezone not in config.CHROMIUM_BROWSER_TIMEZONES:
+        message = "不支持的 Chromium 时区"
+    elif window.browser_window_size and window.browser_window_size not in config.CHROMIUM_BROWSER_WINDOW_SIZES:
+        message = "不支持的 Chromium 启动窗口大小"
     elif engine == "chromium" and (proxy or fingerprint):
         message = "当前 Chromium 预览版不支持绑定代理或使用 Camoufox 指纹预设"
     else:
@@ -576,6 +593,9 @@ def _profile_export(ids: list[str] | None = None):
             "local_fonts": row["local_fonts"],
             "media_capture": row["media_capture"],
             "geolocation": row["geolocation"],
+            "browser_language": row["browser_language"],
+            "browser_timezone": row["browser_timezone"],
+            "browser_window_size": row["browser_window_size"],
             "startup_page": row["startup_page"],
             "block_images": bool(row["block_images"]),
             "group": row["group_name"],
@@ -589,9 +609,11 @@ def _profile_export(ids: list[str] | None = None):
                 "port": row["port"], "username": row["username"],
             } if row["proxy_name"] is not None else None,
         })
-    # Older importers ignore unknown fields; require a reader that enforces each restriction.
+    # Older importers ignore unknown fields; require a reader that preserves the selected settings.
     version = 1
-    if any(item["geolocation"] == "blocked" for item in items):
+    if any(item["browser_language"] or item["browser_timezone"] or item["browser_window_size"] for item in items):
+        version = 4
+    elif any(item["geolocation"] == "blocked" for item in items):
         version = 3
     elif any(item["media_capture"] == "blocked" for item in items):
         version = 2
@@ -610,7 +632,7 @@ def _read_import_profile(raw: Any) -> ImportedProfile:
     if not item.name:
         raise ValueError("名称为空")
     _check_engine_options(item.engine, item.local_fonts, item.media_capture, item.geolocation,
-                          item.proxy, item.fingerprint)
+                          item.proxy, item.fingerprint, item)
     if item.engine == "chromium":
         if "os" in item.model_fields_set and item.os != "native":
             raise ValueError("Chromium 使用本机操作系统")
@@ -672,12 +694,12 @@ def _store_import_profile(item: ImportedProfile) -> str:
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
                 "user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, media_capture, "
-                "geolocation, startup_page, block_images) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?)",
+                "geolocation, startup_page, block_images, browser_language, browser_timezone, browser_window_size) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (profile_id, name, group_id, proxy_id, json.dumps(item.tags, ensure_ascii=False), item.remark,
                  item.os, json.dumps(item.fingerprint, ensure_ascii=False), str(user_data_dir),
                  int(item.headless), ts, ts, item.engine, item.local_fonts, item.media_capture, item.geolocation,
-                 item.startup_page, int(item.block_images)),
+                 item.startup_page, int(item.block_images), item.browser_language, item.browser_timezone, item.browser_window_size),
             )
             user_data_dir.mkdir(mode=0o700)
             cleanup.callback(user_data_dir.rmdir)
@@ -802,6 +824,9 @@ def engine():
             "browsers": browsers,
             "dashboard_startup_available": config.OPEN_MANAGER,
             "chromium": {"available": problem is None, "version": chromium_version, "message": problem,
+                         "browser_languages": config.CHROMIUM_BROWSER_LANGUAGES,
+                         "browser_timezones": config.CHROMIUM_BROWSER_TIMEZONES,
+                         "browser_window_sizes": config.CHROMIUM_BROWSER_WINDOW_SIZES,
                          "supports_media_capture_policy": supports_media_capture_policy,
                          "supports_geolocation_policy": supports_geolocation_policy},
         }
@@ -958,7 +983,7 @@ def preview_profile_preset(payload: PresetPreviewRequest):
 @app.post("/api/v1/profiles", status_code=201)
 def create_profile(payload: NewProfile):
     _check_engine_options(payload.engine, payload.local_fonts, payload.media_capture, payload.geolocation,
-                          payload.proxy_id, payload.fingerprint)
+                          payload.proxy_id, payload.fingerprint, payload)
     if payload.engine == "chromium" and "os" in payload.model_fields_set and payload.os != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     if payload.preset_draft_id and (payload.engine != "camoufox" or payload.fingerprint):
@@ -995,14 +1020,16 @@ def create_profile(payload: NewProfile):
                 conn.execute(
                     "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
                     "fingerprint, user_data_dir, headless, status, created_at, updated_at, "
-                    "engine, local_fonts, media_capture, geolocation, startup_page, block_images) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "engine, local_fonts, media_capture, geolocation, startup_page, block_images, "
+                    "browser_language, browser_timezone, browser_window_size) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (profile_id, payload.name.strip(), payload.group_id or None, payload.proxy_id or None,
                      json.dumps(payload.tags, ensure_ascii=False), payload.remark,
                      "native" if payload.engine == "chromium" else payload.os,
                      json.dumps(fingerprint, ensure_ascii=False), str(user_data_dir), int(payload.headless),
                      ts, ts, payload.engine, payload.local_fonts, payload.media_capture, payload.geolocation,
-                     payload.startup_page, int(payload.block_images)),
+                     payload.startup_page, int(payload.block_images), payload.browser_language, payload.browser_timezone,
+                     payload.browser_window_size),
                 )
             except sqlite3.IntegrityError as exc:
                 raise HTTPException(409, detail={"code": "PROFILE_NAME_EXISTS", "message": "环境名称已存在"}) from exc
@@ -1027,11 +1054,12 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
         raise HTTPException(409, detail={"code": "ENGINE_IMMUTABLE", "message": "环境创建后不能更换内核"})
     _check_engine_options(row["engine"], provided.get("local_fonts", row["local_fonts"]),
                           provided.get("media_capture", row["media_capture"]), provided.get("geolocation", row["geolocation"]),
-                          provided.get("proxy_id"), provided.get("fingerprint"))
+                          provided.get("proxy_id"), provided.get("fingerprint"), payload)
     if row["engine"] == "chromium" and "os" in provided and provided["os"] != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     fields: dict[str, Any] = {}
-    for key in ("local_fonts", "media_capture", "geolocation"):
+    runtime_fields = ("local_fonts", "media_capture", "geolocation", "browser_language", "browser_timezone", "browser_window_size")
+    for key in runtime_fields:
         if key in provided and provided[key] != row[key]:
             fields[key] = provided[key]
     for key in ("name", "group_id", "proxy_id", "remark", "os", "headless", "startup_page", "block_images"):
@@ -1063,9 +1091,8 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     try:
         with db.session() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            policy_changed = fields.keys() & {"local_fonts", "media_capture", "geolocation"}
-            if policy_changed and launcher._active_session(conn, profile_id):
-                raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改权限设置"})
+            if fields.keys() & runtime_fields and launcher._active_session(conn, profile_id):
+                raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改内核设置"})
             conn.execute(
                 f"UPDATE profiles SET {assignments} WHERE id=?",
                 (*fields.values(), profile_id),
@@ -1147,12 +1174,12 @@ def duplicate_profile(profile_id: str):
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
                 "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, media_capture, "
-                "geolocation, startup_page, block_images) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?)",
+                "geolocation, startup_page, block_images, browser_language, browser_timezone, browser_window_size) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (new_profile_id, name, row["group_id"], row["proxy_id"], row["tags"], row["remark"], row["os"],
                  json.dumps(duplicated_fp, ensure_ascii=False), str(user_data_dir), row["headless"], ts, ts,
                  row["engine"], row["local_fonts"], row["media_capture"], row["geolocation"],
-                 row["startup_page"], row["block_images"]),
+                 row["startup_page"], row["block_images"], row["browser_language"], row["browser_timezone"], row["browser_window_size"]),
             )
             user_data_dir.mkdir(mode=0o700)
             cleanup.callback(user_data_dir.rmdir)

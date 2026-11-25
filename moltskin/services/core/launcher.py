@@ -228,15 +228,18 @@ def launch(profile_id: str, actor: str = "local") -> dict:
 
     headless = config.FORCE_HEADLESS or bool(profile["headless"]) or bool(db.get_setting("headless", False))
     browser_version = None
+    process_env = None
     if is_chromium:
         if proxy:
             raise LaunchError("ENGINE_OPTIONS", "当前 Chromium 预览版不支持绑定代理", 422)
         try:
+            process_env = chromium.launch_environment(profile["browser_timezone"])
             command, browser_version = chromium.prepare_launch(
                 profile_dir, profile["local_fonts"], headless,
                 open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
                 block_images=bool(profile["block_images"]),
                 media_capture=profile["media_capture"], geolocation=profile["geolocation"],
+                browser_language=profile["browser_language"], browser_window_size=profile["browser_window_size"],
             )
         except BlockingIOError as exc:
             raise LaunchError("PROFILE_LOCKED", str(exc)) from exc
@@ -259,7 +262,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         if _active_session(conn, profile_id):
             raise LaunchError("PROFILE_LOCKED", "该环境正在启动或运行")
         launch_fields = ("engine", "local_fonts", "media_capture", "geolocation", "headless",
-                         "proxy_id", "startup_page", "block_images")
+                         "proxy_id", "startup_page", "block_images", "browser_language",
+                         "browser_timezone", "browser_window_size")
         if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
         if is_chromium and _chromium_directory(current) != profile_dir:
@@ -300,7 +304,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             with log_path.open("w", encoding="utf-8") as log_handle:
                 proc = subprocess.Popen(command, cwd=config.ROOT, stdout=log_handle,
-                                        stderr=subprocess.STDOUT, start_new_session=True)
+                                        stderr=subprocess.STDOUT, start_new_session=True, env=process_env)
         except OSError as exc:
             raise LaunchError("LAUNCH_FAILED", f"无法启动浏览器进程：{exc}", 500) from exc
         conn.execute("UPDATE sessions SET pid=? WHERE id=?", (proc.pid, session_id))

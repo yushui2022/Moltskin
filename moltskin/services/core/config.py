@@ -21,6 +21,13 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("MOLTSKIN_PORT", "8765"))
 MANAGER_URL = os.environ.get("MOLTSKIN_MANAGER_URL", f"http://127.0.0.1:{PORT}")
 
+CHROMIUM_BROWSER_LANGUAGES = ("zh-CN", "en-US", "en-GB", "ja-JP", "de-DE", "fr-FR")
+CHROMIUM_BROWSER_WINDOW_SIZES = ("1024x768", "1280x800", "1440x900", "1920x1080")
+CHROMIUM_BROWSER_TIMEZONES = (
+    "Asia/Shanghai", "Asia/Tokyo", "Europe/London", "Europe/Berlin", "Europe/Paris",
+    "America/New_York", "America/Los_Angeles", "UTC",
+)
+
 # Docker / server 部署：强制无头、不自动打开管理页
 FORCE_HEADLESS = os.environ.get("MOLTSKIN_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")
 OPEN_MANAGER = os.environ.get("MOLTSKIN_OPEN_MANAGER", "1").strip().lower() not in ("0", "false", "no", "off")

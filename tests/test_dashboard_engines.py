@@ -173,6 +173,9 @@ def test_migrate_existing_camoufox_profile(data_dir):
         conn.execute("ALTER TABLE profiles DROP COLUMN local_fonts")
         conn.execute("ALTER TABLE profiles DROP COLUMN media_capture")
         conn.execute("ALTER TABLE profiles DROP COLUMN geolocation")
+        conn.execute("ALTER TABLE profiles DROP COLUMN browser_language")
+        conn.execute("ALTER TABLE profiles DROP COLUMN browser_timezone")
+        conn.execute("ALTER TABLE profiles DROP COLUMN browser_window_size")
         conn.execute("ALTER TABLE profiles DROP COLUMN engine")
         conn.execute("ALTER TABLE profiles DROP COLUMN startup_page")
         conn.execute("ALTER TABLE profiles DROP COLUMN block_images")
@@ -187,6 +190,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
         row = conn.execute("SELECT * FROM profiles WHERE id='old-id'").fetchone()
     assert row["engine"] == "camoufox"
     assert row["media_capture"] == row["geolocation"] == "standard"
+    assert row["browser_language"] == row["browser_timezone"] == row["browser_window_size"] == ""
     assert row["user_data_dir"] == str(data_dir / "old-profile")
     assert row["open_count"] == 12
     assert row["browser_version"] is None
@@ -229,6 +233,48 @@ def test_engine_contract_and_portable_settings(client):
     assert restored["media_capture"] == restored["geolocation"] == "blocked"
     assert restored["user_data_dir"] != original["user_data_dir"]
     assert (restored["startup_page"], restored["block_images"]) == ("dashboard", True)
+
+
+def test_chromium_window_settings_survive_partial_edits_duplication_and_import(client):
+    settings = {"browser_language": "ja-JP", "browser_timezone": "Asia/Tokyo", "browser_window_size": "1280x800"}
+    options = client.get("/api/v1/engine").raise_for_status().json()["data"]["chromium"]
+    for key, value in settings.items():
+        assert value in options[key + "s"]
+
+    original = create_chromium(client, "regional", **settings)
+    assert settings.items() <= original.items()
+    url = f"{PROFILES}/{original['id']}"
+    changed = {**settings, "browser_language": "de-DE"}
+    edited = client.patch(url, json={"browser_language": "de-DE"}).raise_for_status().json()["data"]
+    assert changed.items() <= edited.items()
+    copy = client.post(url + "/duplicate").raise_for_status().json()["data"]
+    assert changed.items() <= copy.items()
+
+    exported = client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).raise_for_status().json()
+    assert exported["version"] == 4
+    assert changed.items() <= exported["profiles"][0].items()
+    assert client.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]["created"] == 1
+    items = client.get(PROFILES).raise_for_status().json()["data"]["items"]
+    assert len(items) == 3 and all(changed.items() <= item.items() for item in items)
+
+    defaults = dict.fromkeys(settings, "")
+    reset = client.patch(url, json=defaults).raise_for_status().json()["data"]
+    assert defaults.items() <= reset.items()
+    assert client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).json()["version"] == 1
+
+
+def test_window_settings_reject_unsupported_inputs_and_other_engine(client):
+    url = f"{PROFILES}/{create_chromium(client, 'original')['id']}"
+    for fields in ({"browser_language": "--no-sandbox"}, {"browser_language": None},
+                   {"browser_timezone": "../../etc/passwd"}, {"browser_window_size": "0x0"}):
+        assert client.patch(url, json=fields).status_code == 422
+        assert client.post(PROFILES, json={"name": "invalid", "engine": "chromium", **fields}).status_code == 422
+    rows = [{"name": key, key: value} for key, value in (
+        ("browser_language", "en-GB"), ("browser_timezone", "UTC"), ("browser_window_size", "1024x768"))]
+    for row in rows:
+        assert client.post(PROFILES, json=row).status_code == 422
+    result = client.post("/api/v1/import/profiles", json={"profiles": rows}).raise_for_status().json()["data"]
+    assert result["created"] == 0 and len(result["skipped"]) == len(rows)
 
 
 @pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="Chromium preview targets macOS and Linux")
@@ -311,6 +357,8 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
         assert client.patch(urls[0], json={"local_fonts": "standard"}).status_code == 409
         assert client.patch(urls[0], json={"media_capture": "standard"}).status_code == 409
         assert client.patch(urls[1], json={"geolocation": "standard"}).status_code == 409
+        for field, value in (("browser_language", "en-US"), ("browser_timezone", "UTC"), ("browser_window_size", "1440x900")):
+            assert client.patch(urls[0], json={field: value}).status_code == 409
         for profile, restricted in ((a, True), (b, False)):
             args = json.loads((Path(profile["user_data_dir"]) / "test-args.json").read_text())
             assert f"--user-data-dir={profile['user_data_dir']}" in args
