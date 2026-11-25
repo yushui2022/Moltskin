@@ -13,6 +13,8 @@ from typing import NamedTuple
 CAPABILITY = "moltskin-disable-local-font-access"
 MEDIA_CAPTURE_CAPABILITY = "moltskin-block-media-capture"
 GEOLOCATION_CAPABILITY = "moltskin-block-geolocation"
+DESKTOP_CAPABILITIES = frozenset({CAPABILITY, MEDIA_CAPTURE_CAPABILITY, GEOLOCATION_CAPABILITY,
+                                  "moltskin-panel", "moltskin-toolbar"})
 
 
 def default_binary() -> Path:

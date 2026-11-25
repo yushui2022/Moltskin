@@ -2,6 +2,7 @@
 
 import json
 import os
+import subprocess
 from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Queue
@@ -15,6 +16,17 @@ from moltskin.services.core.security import get_token
 
 
 PAGE = b"""<!doctype html><meta charset=utf-8><script>
+const step = location.hash.slice(1);
+const interactive = location.search === '?interactive';
+function report(data) {
+  return fetch('/result', {method: 'POST', body: JSON.stringify({step, ...data})});
+}
+if (interactive) {
+  document.title = 'Moltskin GUI test ' + step;
+  let clicked = false;
+  addEventListener('pointerdown', event => { clicked = event.isTrusted; });
+  addEventListener('keydown', event => { if (clicked && event.isTrusted) report({key: event.key}); });
+}
 function result(request) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -28,7 +40,9 @@ async function check(action, marker) {
   async function snapshot() {
     const row = await result(db.transaction('values').objectStore('values').get('marker'));
     const response = await caches.match('/marker', {cacheName: 'site'});
-    return [localStorage.getItem('marker'), row ?? null, response ? await response.text() : null];
+    const values = [localStorage.getItem('marker'), row ?? null, response ? await response.text() : null];
+    if (interactive) values.push(document.cookie.match(/(?:^|; )marker=([^;]*)/)?.[1] ?? null);
+    return values;
   }
   async function change(value) {
     const tx = db.transaction('values', 'readwrite');
@@ -40,6 +54,7 @@ async function check(action, marker) {
     if (value === null) store.clear();
     else store.put(value, 'marker');
     await done;
+    if (interactive) document.cookie = 'marker=' + (value ?? '') + '; Max-Age=' + (value === null ? 0 : 3600) + '; Path=/';
     if (value === null) {
       localStorage.removeItem('marker');
       await caches.delete('site');
@@ -64,20 +79,19 @@ async function check(action, marker) {
     db.close();
   }
 }
-const step = location.hash.slice(1);
 check(...step.split('/'))
-  .then(samples => ({step, samples}), error => ({step, error: String(error)}))
-  .then(report => fetch('/result', {method: 'POST', body: JSON.stringify(report)}));
+  .then(samples => report({samples}), error => report({error: String(error)}));
 </script>"""
 
 
 @pytest.mark.skipif(os.getenv("MOLTSKIN_TEST_NATIVE_BROWSERS") != "1", reason="needs the installed Chromium build")
 def test_same_origin_storage_isolated_across_native_profile_restarts(data_dir, monkeypatch):
     reports = Queue()
+    interactive = os.environ.get("MOLTSKIN_TEST_X11_INPUT") == "1"
 
     class Site(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path != "/":
+            if self.path not in ("/", "/?interactive"):
                 self.send_error(404)
                 return
             self.send_response(200)
@@ -110,7 +124,7 @@ def test_same_origin_storage_isolated_across_native_profile_restarts(data_dir, m
         paths = {}
         for name in ("A", "B"):
             response = api.post(profiles, json={
-                "name": name, "engine": "chromium", "headless": True, "startup_page": "dashboard",
+                "name": name, "engine": "chromium", "headless": not interactive, "startup_page": "dashboard",
             }).raise_for_status()
             paths[name] = f"{profiles}/{response.json()['data']['id']}"
 
@@ -120,16 +134,32 @@ def test_same_origin_storage_isolated_across_native_profile_restarts(data_dir, m
 
         def launch(running, name, step, expected):
             # Only the fragment changes. Origin, page, database, cache and keys are identical.
-            url = f"http://127.0.0.1:{site.server_port}/#{step}"
+            query = "?interactive" if interactive else ""
+            url = f"http://127.0.0.1:{site.server_port}/{query}#{step}"
             monkeypatch.setattr(config, "local_dashboard_url", lambda: url)
             path = paths[name]
-            api.post(path + "/launch").raise_for_status()
+            response = api.post(path + "/launch")
+            assert response.is_success, f"Chromium launch failed: {response.text}. Session logs: {config.RUN_DIR}"
             running.callback(stop, path)
-            assert reports.get(timeout=25) == {"step": step, "samples": [[value] * 3 for value in expected]}
+            width = 4 if interactive else 3
+            assert reports.get(timeout=25) == {"step": step, "samples": [[value] * width for value in expected]}
+
+        def send_input(step, key):
+            window, = subprocess.check_output([
+                "xdotool", "search", "--sync", "--onlyvisible", "--name", "^Moltskin GUI test " + step,
+            ], timeout=10, text=True).splitlines()
+            subprocess.run([
+                "xdotool", "windowraise", window, "windowfocus", "--sync", window,
+                "mousemove", "--window", window, "165", "250", "click", "1", "key", key,
+            ], check=True, timeout=10)
+            assert reports.get(timeout=10) == {"step": step, "key": key}
+            return window
 
         with ExitStack() as running:
             launch(running, "A", "write/A", [None, "A"])
             launch(running, "B", "write/B", [None, "B"])
+            if interactive:
+                assert send_input("write/A", "a") != send_input("write/B", "b")
         with ExitStack() as running:
             launch(running, "B", "read/B", ["B"])
             launch(running, "A", "edit-clear/edited", ["A", "edited", None])

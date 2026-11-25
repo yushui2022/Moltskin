@@ -57,6 +57,29 @@ python3 chromium/verify_upstream.py
 
 Linux 首批目标为 Ubuntu x86-64（至少 100 GB 空闲磁盘）；macOS 首批目标为 Apple Silicon，需要 Xcode、macOS SDK 和空间充足的 APFS 卷。按对应平台的指南安装 Git、Python 3 和 `depot_tools`，确保终端能找到 `gclient`、`gn` 和 `autoninja`。[Linux 构建指南](https://chromium.googlesource.com/chromium/src/+/main/docs/linux/build_instructions.md) · [macOS 构建指南](https://chromium.googlesource.com/chromium/src/+/main/docs/mac_build_instructions.md)
 
+### Linux x86-64 产品内核
+
+在 Moltskin 仓库根目录执行。检出和编译用普通用户，首次安装系统依赖时才需要 `sudo`。构建脚本使用 `upstream.json` 的提交，同步依赖，按顺序应用仓库内的补丁，生成 release 配置并编译。编译结束会运行产物，检查完整版本号和五项 Moltskin 能力。
+
+```sh
+checkout="$HOME/chromium-baseline"
+python3 chromium/build_linux.py "$checkout" --install-deps --jobs 4
+```
+
+输出为 `$checkout/src/out/MoltskinLocation/chrome`。网络传输中断时可重跑原命令。若依赖同步和 hooks 已完成，可用 `python3 chromium/build_linux.py "$checkout" --prepared --jobs 4` 接续编译。遇到本地修改冲突时会报错，已经完整应用的补丁可直接复用。
+
+### Linux 有头双窗口验收
+
+在同一台 Ubuntu 上安装 `xvfb`、`xauth`、`xdotool` 和 `python3-venv`，在项目 Python 虚拟环境中安装 `requirements-dev.txt`。用普通用户运行：
+
+```sh
+python chromium/check_linux.py "$checkout/src/out/MoltskinLocation/chrome"
+```
+
+验收会先检查 x86-64 ELF、版本和补丁能力，再通过面板 API 在私有 X11 显示中同时打开两个环境。测试向两个窗口分别发送鼠标和键盘输入，在同一个本地站点写入不同的 Cookie、localStorage、IndexedDB 和缓存，并在重启及清除一个环境后核对各自的数据。整个过程使用临时环境目录。要让服务器上的管理服务使用通过验收的内核，设置 `MOLTSKIN_CHROMIUM_BINARY` 指向这个 `chrome`，保留同目录的资源和运行库。
+
+### 手动构建上游对照版本
+
 从 Moltskin 根目录开始，在同一终端执行以下步骤。首次使用全新的源码目录，路径中不要包含空格；如果构建盘挂载在其他位置，替换 `checkout`。
 
 ```sh
