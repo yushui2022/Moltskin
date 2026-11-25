@@ -34,6 +34,7 @@ from chromium import native as chromium_native
 
 from . import backup as backup_store
 from . import config, db, extensions, jobs, launcher, observation, proxy_checker, scheduler, selftest, state_sync
+from . import recycle
 from . import cookies as cookie_store
 from .security import get_token
 
@@ -593,17 +594,6 @@ def _read_import_profile(raw: Any) -> ImportedProfile:
     return item
 
 
-def _available_profile_name(conn: sqlite3.Connection, base: str, suffix: str = "") -> str:
-    """Allocate a display name while the caller holds the database write lock."""
-    index = 1
-    while True:
-        ending = suffix if index == 1 else f"{suffix} ({index})"
-        name = base[:120 - len(ending)] + ending
-        if not conn.execute("SELECT 1 FROM profiles WHERE name=?", (name,)).fetchone():
-            return name
-        index += 1
-
-
 def _store_import_profile(item: ImportedProfile) -> str:
     ts = db.now()
     profile_id = new_id("pf")
@@ -612,7 +602,7 @@ def _store_import_profile(item: ImportedProfile) -> str:
         with db.session() as conn:
             # Name allocation, shared references and the profile commit together for each row.
             conn.execute("BEGIN IMMEDIATE")
-            name = _available_profile_name(conn, item.name)
+            name = db.available_profile_name(conn, item.name)
 
             group_id = None
             group_name = (item.group or "").strip()
@@ -703,9 +693,7 @@ def stats():
         crashed = conn.execute(
             "SELECT COUNT(*) AS n FROM profiles WHERE status='crashed'"
         ).fetchone()["n"]
-        today_opened = conn.execute(
-            "SELECT COUNT(*) AS n FROM sessions WHERE started_at >= ?", (today_start,)
-        ).fetchone()["n"]
+        today_opened = db.count_launches_since(conn, today_start)
         opened = conn.execute(
             "SELECT COUNT(*) AS n FROM profiles WHERE last_opened_at IS NOT NULL"
         ).fetchone()["n"]
@@ -1061,6 +1049,28 @@ def reset_fingerprint(profile_id: str):
     return {"data": serialize_profile(camoufox_profile(profile_id))}
 
 
+@app.get("/api/v1/trash/profiles")
+def list_trashed_profiles():
+    return {"data": recycle.list_profiles()}
+
+
+@app.post("/api/v1/profiles/{profile_id}/trash")
+def trash_profile(profile_id: str):
+    return {"data": recycle.archive(profile_id)}
+
+
+@app.post("/api/v1/trash/profiles/{profile_id}/restore")
+def restore_trashed_profile(profile_id: str):
+    recycle.restore(profile_id)
+    return {"data": serialize_profile(get_profile_row(profile_id))}
+
+
+@app.delete("/api/v1/trash/profiles/{profile_id}")
+def purge_trashed_profile(profile_id: str):
+    recycle.purge(profile_id)
+    return {"data": {"id": profile_id, "deleted": True}}
+
+
 @app.delete("/api/v1/profiles/{profile_id}")
 def delete_profile(profile_id: str, delete_data: bool = False):
     with db.session() as conn:
@@ -1088,7 +1098,7 @@ def duplicate_profile(profile_id: str):
             row = conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
             if row is None:
                 raise HTTPException(404, detail={"code": "PROFILE_NOT_FOUND", "message": "环境不存在"})
-            name = _available_profile_name(conn, row["name"], " 副本")
+            name = db.available_profile_name(conn, row["name"], " 副本")
             source_fp = json.loads(row["fingerprint"] or "{}")
             source_fp.pop("preset", None)  # 复制必须得到新身份，不能共用指纹
             duplicated_fp = _fingerprint_with_preset(source_fp, row["os"]) if row["engine"] == "camoufox" else {}
@@ -1112,7 +1122,7 @@ def batch_profiles(payload: BatchRequest):
     if len(payload.ids) > 500:
         raise HTTPException(422, detail={"code": "BATCH_TOO_LARGE", "message": "一次最多操作 500 个环境"})
     action = payload.action
-    if action not in ("launch", "stop", "delete", "move", "tag"):
+    if action not in ("launch", "stop", "delete", "trash", "move", "tag"):
         raise HTTPException(422, detail={"code": "INVALID_ACTION", "message": "不支持的操作"})
 
     results: list[dict[str, Any]] = []
@@ -1167,6 +1177,15 @@ def batch_profiles(payload: BatchRequest):
                     "UPDATE profiles SET tags=?, updated_at=? WHERE id=?",
                     (json.dumps(payload.tags or [], ensure_ascii=False), db.now(), profile_id),
                 )
+                results.append({"id": profile_id, "ok": True})
+
+    elif action == "trash":
+        for profile_id in payload.ids:
+            try:
+                recycle.archive(profile_id)
+            except HTTPException as exc:
+                results.append({"id": profile_id, "ok": False, "error": exc.detail})
+            else:
                 results.append({"id": profile_id, "ok": True})
 
     elif action == "delete":
@@ -1333,20 +1352,21 @@ def verify_profile(profile_id: str):
 
 @app.post("/api/v1/profiles/{profile_id}/self-test")
 def self_test(profile_id: str):
-    row = camoufox_profile(profile_id)
-    if row["status"] == "running":
-        raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再运行自检"})
-    proxy = None
-    if row["proxy_id"]:
-        with db.session() as conn:
-            proxy_row = conn.execute("SELECT * FROM proxies WHERE id=?", (row["proxy_id"],)).fetchone()
-        proxy = dict(proxy_row) if proxy_row else None
-    try:
-        result = selftest.run(dict(row), proxy)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(500, detail={"code": "SELF_TEST_FAILED", "message": str(exc)})
-    db.log("profile.selftest", profile_id, {"image": result["image"]})
-    return {"data": {**result, "image_url": f"/selftest/{result['image']}"}}
+    with recycle.reserve_profile(profile_id):
+        row = camoufox_profile(profile_id)
+        if row["status"] == "running":
+            raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再运行自检"})
+        proxy = None
+        if row["proxy_id"]:
+            with db.session() as conn:
+                proxy_row = conn.execute("SELECT * FROM proxies WHERE id=?", (row["proxy_id"],)).fetchone()
+            proxy = dict(proxy_row) if proxy_row else None
+        try:
+            result = selftest.run(dict(row), proxy)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(500, detail={"code": "SELF_TEST_FAILED", "message": str(exc)})
+        db.log("profile.selftest", profile_id, {"image": result["image"]})
+        return {"data": {**result, "image_url": f"/selftest/{result['image']}"}}
 
 
 @app.get("/selftest/{name}")
@@ -2029,7 +2049,10 @@ def download_backup(include_profiles: bool = False):
                     "message": f"还有 {running} 个环境在运行，请先关闭再导出登录态",
                 },
             )
-    path = backup_store.create(include_profiles=include_profiles)
+    try:
+        path = backup_store.create(include_profiles=include_profiles)
+    except ValueError as exc:
+        raise HTTPException(409, detail={"code": "INVALID_PROFILE_DIRECTORY", "message": str(exc)}) from exc
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     db.log("backup.create", None, {"include_profiles": include_profiles})
     return FileResponse(

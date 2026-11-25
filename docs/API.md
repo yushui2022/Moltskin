@@ -24,7 +24,11 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/api/v1/engine
 | POST | `/profiles` | Create |
 | GET | `/profiles/{id}` | Detail with `fingerprint_preview` |
 | PATCH | `/profiles/{id}` | Update metadata or settings for the selected engine |
-| DELETE | `/profiles/{id}?delete_data=true` | Delete |
+| POST | `/profiles/{id}/trash` | Move a stopped profile to the recycle bin |
+| GET | `/trash/profiles` | List recycled profiles, newest first |
+| POST | `/trash/profiles/{id}/restore` | Restore a recycled profile |
+| DELETE | `/trash/profiles/{id}` | Permanently delete a recycled profile and its data |
+| DELETE | `/profiles/{id}?delete_data=true` | Permanently delete an active-list entry (without the flag, keep the directory) |
 | POST | `/profiles/{id}/duplicate` | Duplicate with a new fingerprint |
 | POST | `/profiles/{id}/reset-fingerprint` | New fingerprint, keep cookies |
 | POST | `/profiles/{id}/launch` | Launch |
@@ -120,12 +124,31 @@ curl -X POST .../profiles/pf_.../self-test -H "Authorization: Bearer $TOKEN"
 Returns `image_url` (`/selftest/<file>.png`), extracted CreepJS text and timestamp.
 The profile must be stopped.
 
+### Recycle bin
+
+Moving a profile to the bin keeps its data directory, settings and session history.
+The profile disappears from the active list, exports and scheduled targets until restored.
+There is no automatic expiry. The list endpoint returns `id`, `name`, `engine`,
+`trashed_at` and `purge_started` for each entry.
+
+Restoring returns the standard profile detail with the same ID. If another environment
+has taken the name, the restored one gets a numbered suffix such as ` (2)`. Group,
+proxy and extension assignments are restored when their referenced records still
+exist. Restoring respects the active profile limit. A database-only backup restored
+on another machine can recover the settings and session records even when the
+original browser files are absent.
+
+Permanent deletion removes the environment directory. An interrupted deletion stays
+in the bin with `purge_started: true`; retry the same DELETE to finish. Restore
+is disabled once permanent deletion starts.
+
 ### Batch
 
 ```json
 {"action": "launch", "ids": ["pf_1", "pf_2"]}
 {"action": "move", "ids": ["pf_1"], "group_id": "grp_1"}
 {"action": "tag", "ids": ["pf_1"], "tags": ["ph"]}
+{"action": "trash", "ids": ["pf_1", "pf_2"]}
 {"action": "delete", "ids": ["pf_1"], "delete_data": true}
 ```
 
@@ -226,7 +249,7 @@ curl -X POST .../profiles/pf_b/sync-from/pf_a?parts=cookies,storage \
 | POST | `/backup/restore` | Multipart `file=@backup.zip` |
 
 A database-only backup uses SQLite's online snapshot, so profiles may keep
-running. `include_profiles=true` requires everything stopped. It includes Camoufox login state. The manifest lists Chromium profiles under `profile_data_excluded`. Their settings are included in the database snapshot. Restore keeps the
+running. `include_profiles=true` requires everything stopped. It includes Camoufox login state for active and recycled profiles. The manifest lists recycled entries in `trashed_profiles`. Chromium profiles and interrupted permanent deletions appear in `profile_data_excluded` when profile data is requested. Their settings are included in the database snapshot. Restore keeps the
 previous database as `moltskin.db.bak`, including its committed WAL changes. Restored environments use the current installation's profile directory. Sessions that were active when the backup was taken are archived as stopped, and historical session records remain available.
 
 ## Schedules

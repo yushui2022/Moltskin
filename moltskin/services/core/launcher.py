@@ -262,10 +262,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
 
         daily_limit = int(db.get_setting("daily_open_limit", 20000))
         if daily_limit > 0:
-            opened_today = conn.execute(
-                "SELECT COUNT(*) AS n FROM sessions WHERE started_at >= ?",
-                (db.today_start_utc(),),
-            ).fetchone()["n"]
+            opened_today = db.count_launches_since(conn, db.today_start_utc())
             if opened_today >= daily_limit:
                 raise LaunchError(
                     "DAILY_LIMIT",
@@ -283,6 +280,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             (session_id, db.now(), db.now(), profile_id),
         )
         try:
+            if is_chromium:
+                profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             with log_path.open("w", encoding="utf-8") as log_handle:
                 proc = subprocess.Popen(command, cwd=config.ROOT, stdout=log_handle,
                                         stderr=subprocess.STDOUT, start_new_session=True)

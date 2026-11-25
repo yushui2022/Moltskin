@@ -69,6 +69,17 @@ CREATE INDEX IF NOT EXISTS idx_profiles_status ON profiles(status);
 CREATE INDEX IF NOT EXISTS idx_profiles_group  ON profiles(group_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_proxy  ON profiles(proxy_id);
 
+CREATE TABLE IF NOT EXISTS trashed_profiles (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  engine          TEXT NOT NULL,
+  trashed_at      TEXT NOT NULL,
+  purge_started   INTEGER NOT NULL DEFAULT 0 CHECK (purge_started IN (0,1)),
+  profile_json    TEXT NOT NULL,
+  sessions_json   TEXT NOT NULL,
+  extensions_json TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS profile_preset_drafts (
   id          TEXT NOT NULL,
   os          TEXT NOT NULL,
@@ -156,6 +167,24 @@ def today_start_utc() -> str:
     """
     local_midnight = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
     return local_midnight.astimezone(timezone.utc).isoformat()
+
+
+def count_launches_since(conn: sqlite3.Connection, since: str) -> int:
+    """Trashing an environment must not reset today's launch usage."""
+    return conn.execute(
+        "SELECT (SELECT COUNT(*) FROM sessions WHERE started_at >= ?) + "
+        "(SELECT COUNT(*) FROM trashed_profiles t, json_each(t.sessions_json) h "
+        "WHERE t.trashed_at >= ? AND json_extract(h.value, '$.started_at') >= ?)",
+        (since, since, since),
+    ).fetchone()[0]
+
+
+def valid_archived_sessions(sessions: Any, profile_id: str) -> bool:
+    return isinstance(sessions, list) and all(
+        isinstance(session, dict) and session.get("profile_id") == profile_id
+        and session.get("state") in ("stopped", "crashed", "failed", "killed")
+        for session in sessions
+    )
 
 
 def local_date(iso: str | None):
@@ -260,3 +289,14 @@ def log(action: str, target_id: str | None = None, detail: Any = None, actor: st
 
 def rows_to_dicts(rows: Iterable[sqlite3.Row]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
+
+
+def available_profile_name(conn: sqlite3.Connection, base: str, suffix: str = "") -> str:
+    """Allocate a display name while the caller holds the database write lock."""
+    index = 1
+    while True:
+        ending = suffix if index == 1 else f"{suffix} ({index})"
+        name = base[:120 - len(ending)] + ending
+        if not conn.execute("SELECT 1 FROM profiles WHERE name=?", (name,)).fetchone():
+            return name
+        index += 1

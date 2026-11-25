@@ -137,6 +137,20 @@ class MoltskinClient:
     def delete_profile(self, profile_id: str, delete_data: bool = True) -> dict[str, Any]:
         return self._request("DELETE", f"/profiles/{profile_id}", params={"delete_data": delete_data})
 
+    def trash_profile(self, profile_id: str) -> dict[str, Any]:
+        """Move a stopped profile to the recycle bin, keeping its local data."""
+        return self._request("POST", f"/profiles/{profile_id}/trash")
+
+    def list_trashed_profiles(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/trash/profiles")
+
+    def restore_profile(self, profile_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/trash/profiles/{profile_id}/restore")
+
+    def purge_trashed_profile(self, profile_id: str) -> dict[str, Any]:
+        """Permanently delete a recycled profile and its local browser data."""
+        return self._request("DELETE", f"/trash/profiles/{profile_id}")
+
     def duplicate_profile(self, profile_id: str) -> dict[str, Any]:
         return self._request("POST", f"/profiles/{profile_id}/duplicate")
 

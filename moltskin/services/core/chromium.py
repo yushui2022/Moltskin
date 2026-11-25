@@ -20,7 +20,6 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
     if local_fonts not in ("standard", "restricted"):
         raise ValueError("未知的字体访问设置")
     binary, version = probe(default_binary())
-    profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
     args = [str(binary), f"--user-data-dir={profile_dir.resolve()}", "--no-first-run", "--no-default-browser-check"]

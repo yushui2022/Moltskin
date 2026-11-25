@@ -555,6 +555,21 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   box-shadow: var(--shadow-lg); overflow: hidden;
 }
 .modal.wide { width: 760px; }
+.trash-dialog { padding: 0; max-width: calc(100vw - 24px); color: var(--text); }
+.trash-dialog:not([open]) { display: none; }
+.trash-dialog::backdrop { background: rgb(24 28 26 / 35%); }
+.trash-tools { display: flex; gap: 8px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+.trash-tools .window-search { flex: 1; min-width: 0; }
+.trash-items { margin: 0; padding: 0; list-style: none; }
+.trash-item { display: flex; align-items: center; gap: 8px; padding: 12px 0; }
+.trash-item + .trash-item { border-top: 1px solid var(--border-soft); }
+.trash-item:first-child { padding-top: 0; }
+.trash-item:last-child { padding-bottom: 0; }
+.trash-meta { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.trash-meta strong { display: block; font-weight: 600; margin-bottom: 3px; }
+.trash-error { color: var(--err); }
+.trash-notice:not(:empty) { margin: 8px 0; }
+.trash-confirm { width: 410px; }
 .modal .head {
   padding: 14px 18px; border-bottom: 1px solid var(--border); font-weight: 500; font-size: 14px;
   display: flex; align-items: center; gap: 8px; flex: none;
@@ -787,6 +802,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   .mobile-page { display: inline-block; width: auto; height: 30px; margin-left: auto; font-size: 12px; }
   .head-actions { gap: 6px; }
   #page-windows { overflow-y: auto; }
+  #page-windows .head-actions { max-width: 100%; }
   #windowsCard { flex: 1 0 auto; min-height: 350px; margin-bottom: 12px; }
   #windowsCard .list-scroll { flex: 1 0 auto; max-height: 62vh; }
   #windowsCard .toolbar { padding: 0 8px; gap: 4px; min-height: 44px; }
@@ -975,6 +991,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           </div>
           <button class="btn" data-action="import"><svg class="i"><use href="#i-import"/></svg>导入</button>
           <button class="btn" data-action="export"><svg class="i"><use href="#i-export"/></svg>导出</button>
+          <button class="btn" id="trashBtn" aria-haspopup="dialog"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>回收站</button>
         </div>
       </header>
 
@@ -1033,7 +1050,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           <button class="btn small" data-batch="move">移动分组</button>
           <button class="btn small" data-batch="tag">编辑标签</button>
           <button class="btn small" data-batch="export">导出</button>
-          <button class="btn small danger" data-batch="delete"><svg class="i"><use href="#i-trash"/></svg>删除</button>
+          <button class="btn small" data-batch="trash"><svg class="i"><use href="#i-trash"/></svg>移入回收站</button>
           <button class="btn small ghost" data-batch="clear">取消选择</button>
         </div>
 
@@ -1588,6 +1605,29 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   </div>
 </div>
 
+<!-- 环境回收站 -->
+<dialog class="modal trash-dialog" id="trashDialog" aria-labelledby="trashTitle">
+  <div class="head"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg><span id="trashTitle">环境回收站</span>
+    <button class="x" id="trashClose" aria-label="关闭回收站"><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="trash-tools">
+    <label class="window-search"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+      <input class="input" id="trashSearch" type="search" placeholder="搜索环境名称" aria-label="搜索回收站环境" autofocus></label>
+    <button class="btn" id="trashRefresh"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>刷新</button>
+  </div>
+  <div class="body single">
+    <div class="trash-notice muted" id="trashNotice" role="status"></div>
+    <ul class="trash-items" id="trashItems" aria-label="回收站环境"></ul>
+  </div>
+</dialog>
+<dialog class="modal trash-dialog trash-confirm" id="trashConfirm" aria-labelledby="trashConfirmTitle" aria-describedby="trashConfirmText">
+  <div class="head" id="trashConfirmTitle">永久删除环境</div>
+  <div class="body single" id="trashConfirmText"></div>
+  <form method="dialog" class="foot">
+    <button class="btn" value="cancel" autofocus>取消</button>
+    <button class="btn danger" value="purge">永久删除</button>
+  </form>
+</dialog>
+
 <!-- 环境配置导入结果 -->
 <div class="mask" id="importReportMask">
   <div class="modal" aria-labelledby="importReportTitle">
@@ -1778,6 +1818,9 @@ const ACTION_LABEL = {
   "profile.create": "创建环境",
   "profile.update": "修改环境",
   "profile.delete": "删除环境",
+  "profile.trash": "移入回收站",
+  "profile.restore": "从回收站恢复",
+  "profile.purge": "永久删除环境",
   "profile.duplicate": "复制环境",
   "profile.reset_fingerprint": "重置指纹",
   "profile.launch": "打开环境",
@@ -1914,11 +1957,15 @@ function openModal(id, initialFocus = null) {
     first?.focus();
   }, 40);
 }
-function closeModal(id) {
+function closeModal(id, confirmed = false) {
   if (id === "profileMask") profileForm = null;
   $(id).classList.remove("show");
   if (lastFocused && document.contains(lastFocused)) lastFocused.focus();
   lastFocused = null;
+  if (id === "confirmMask") {
+    confirmResolve?.(confirmed);
+    confirmResolve = null;
+  }
 }
 document.querySelectorAll(".mask").forEach((mask) => {
   const dialog = mask.querySelector(".modal");
@@ -1981,9 +2028,7 @@ function askConfirm({ title, text, okText = "确定", danger = false }) {
   openModal("confirmMask");
   return new Promise((resolve) => { confirmResolve = resolve; });
 }
-$("confirmOk").onclick = () => { closeModal("confirmMask"); confirmResolve?.(true); confirmResolve = null; };
-$("confirmMask").querySelectorAll("[data-close]").forEach((el) =>
-  el.addEventListener("click", () => { confirmResolve?.(false); confirmResolve = null; }));
+$("confirmOk").onclick = () => closeModal("confirmMask", true);
 
 /* ---------------- 路由 ---------------- */
 function go(page) {
@@ -2540,7 +2585,7 @@ function openRowMenu(anchor, id) {
     <button data-cmd="duplicate" data-id="${id}">${icon("copy")}复制环境</button>
     ${p.engine !== "chromium" ? `<button data-cmd="reset" data-id="${id}">${icon("refresh")}重置指纹</button>` : ""}
     <div class="sep"></div>
-    <button data-cmd="delete" data-id="${id}" class="danger">${icon("trash")}删除环境</button>`;
+    <button data-cmd="trash" data-id="${id}">${icon("trash")}移入回收站</button>`;
   openPop(anchor, html, { align: "right" });
 }
 pop.addEventListener("click", async (e) => {
@@ -2553,7 +2598,7 @@ pop.addEventListener("click", async (e) => {
   if (cmd === "detail") return openDetail(id);
   if (cmd === "edit") return openProfileModal(id);
   if (cmd === "duplicate") return duplicateProfile(id);
-  if (cmd === "delete") return deleteProfile(id);
+  if (cmd === "trash") return trashProfile(id);
   if (cmd === "reset") {
     const ok = await askConfirm({
       title: "重置指纹",
@@ -2588,12 +2633,11 @@ async function runBatch(action) {
     return;
   }
 
-  if (action === "delete") {
+  if (action === "trash") {
     const ok = await askConfirm({
-      title: "删除环境",
-      text: `确定删除选中的 <b>${ids.length}</b> 个环境？<br>Cookie 与登录状态会一并删除，无法恢复。`,
-      okText: "删除",
-      danger: true,
+      title: "移入回收站",
+      text: `将选中的 <b>${ids.length}</b> 个环境移入回收站？你可以恢复环境及其浏览数据。`,
+      okText: "移入回收站",
     });
     if (!ok) return;
   }
@@ -2624,8 +2668,16 @@ async function runBatch(action) {
 
   try {
     const data = await api("/profiles/batch", { method: "POST", body: JSON.stringify(body) });
-    toast(`完成 ${data.ok} 个${data.failed ? `，失败 ${data.failed} 个` : ""}`, data.failed > 0);
-    if (!data.failed) state.selected.clear();
+    if (action === "trash") {
+      const failure = data.results.find((r) => !r.ok);
+      for (const result of data.results) if (result.ok) state.selected.delete(result.id);
+      let msg = `已移入回收站 ${data.ok} 个`;
+      if (failure) msg += `，失败 ${data.failed} 个。${failure.error?.message || "请重试"}`;
+      toast(msg, Boolean(failure));
+    } else {
+      toast(`完成 ${data.ok} 个${data.failed ? `，失败 ${data.failed} 个` : ""}`, data.failed > 0);
+      if (!data.failed) state.selected.clear();
+    }
     await refresh();
   } catch (err) { toast(err.message, true); }
 }
@@ -2662,22 +2714,124 @@ async function duplicateProfile(id) {
     await refresh();
   } catch (err) { toast(err.message, true); }
 }
-async function deleteProfile(id) {
+async function trashProfile(id) {
   const p = state.profiles.find((x) => x.id === id);
   const ok = await askConfirm({
-    title: "删除环境",
-    text: `确定删除「<b>${esc(p?.name || "")}</b>」？<br>Cookie 与登录状态会一并删除。`,
-    okText: "删除",
-    danger: true,
+    title: "移入回收站",
+    text: `将「<b>${esc(p?.name || "")}</b>」移入回收站？你可以恢复环境及其浏览数据。`,
+    okText: "移入回收站",
   });
   if (!ok) return;
   try {
-    await api(`/profiles/${id}?delete_data=true`, { method: "DELETE" });
-    toast("已删除");
+    await api(`/profiles/${encodeURIComponent(id)}/trash`, { method: "POST" });
+    toast("已移入回收站");
     state.selected.delete(id);
     await refresh();
   } catch (err) { toast(err.message, true); }
 }
+
+/* ---------------- 环境回收站 ---------------- */
+const trashDialog = $("trashDialog");
+const trashConfirm = $("trashConfirm");
+let trashProfiles = [];
+let trashLoadId = 0;
+let trashLoading = false;
+let trashLoadError = "";
+let trashNotice = "";
+let trashPending = null;
+const trashErrors = new Map();
+
+function renderTrash() {
+  const query = $("trashSearch").value.trim().toLocaleLowerCase();
+  const rows = trashProfiles.filter((p) => p.name.toLocaleLowerCase().includes(query));
+  const notice = $("trashNotice");
+  let message = trashNotice;
+  if (trashLoading) message = "正在读取回收站…";
+  else if (trashLoadError) message = trashLoadError;
+  else if (!rows.length) message = [message, query ? "没有匹配的环境。" : "回收站为空。"].filter(Boolean).join(" ");
+  notice.textContent = message;
+  notice.classList.toggle("trash-error", Boolean(trashLoadError));
+  $("trashRefresh").disabled = trashLoading || Boolean(trashPending);
+  $("trashItems").innerHTML = trashLoadError ? "" : rows.map((p) => {
+    const pending = trashPending?.id === p.id ? trashPending.action : null;
+    const disabled = trashPending || trashLoading ? "disabled" : "";
+    const error = trashErrors.get(p.id);
+    return `<li class="trash-item" data-id="${esc(p.id)}">
+      <div class="trash-meta"><strong>${esc(p.name)}</strong>
+        <div class="hint">${esc(engineName(p))} · 移入于 ${esc(fmtTime(p.trashed_at))}</div>
+        ${p.purge_started ? '<div class="hint">删除中断，请重试永久删除。</div>' : ""}
+        ${error ? `<div class="trash-error" role="alert">${esc(error)}</div>` : ""}
+      </div>
+      <button class="btn small" data-trash-action="restore" ${disabled || (p.purge_started ? "disabled" : "")}>${pending === "restore" ? "恢复中…" : "恢复"}</button>
+      <button class="btn small danger" data-trash-action="purge" ${disabled}>${pending === "purge" ? "删除中…" : "永久删除"}</button>
+    </li>`;
+  }).join("");
+}
+
+async function loadTrash() {
+  const loadId = ++trashLoadId;
+  trashLoading = true;
+  trashLoadError = "";
+  renderTrash();
+  try {
+    const rows = await api("/trash/profiles");
+    if (loadId === trashLoadId) trashProfiles = rows;
+  } catch (err) {
+    if (loadId === trashLoadId) trashLoadError = `读取失败。${err.message}`;
+  } finally {
+    if (loadId === trashLoadId) {
+      trashLoading = false;
+      renderTrash();
+    }
+  }
+}
+
+$("trashBtn").onclick = () => {
+  $("trashSearch").value = "";
+  trashProfiles = [];
+  trashNotice = "";
+  trashErrors.clear();
+  trashDialog.showModal();
+  loadTrash();
+};
+$("trashClose").onclick = () => trashDialog.close();
+$("trashSearch").oninput = renderTrash;
+$("trashRefresh").onclick = () => { trashNotice = ""; loadTrash(); };
+$("trashItems").addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-trash-action]");
+  if (!button || trashPending || trashLoading) return;
+  const profile = trashProfiles.find((p) => p.id === button.closest(".trash-item").dataset.id);
+  if (!profile) return;
+  const action = button.dataset.trashAction;
+  if (action === "purge") {
+    $("trashConfirmText").textContent = `永久删除「${profile.name}」及其本地浏览数据？此操作无法撤销。`;
+    trashConfirm.returnValue = "cancel";
+    trashConfirm.showModal();
+    await new Promise((resolve) => trashConfirm.addEventListener("close", resolve, { once: true }));
+    if (trashConfirm.returnValue !== "purge") return;
+  }
+  trashPending = { id: profile.id, action };
+  trashErrors.delete(profile.id);
+  trashNotice = "";
+  renderTrash();
+  const path = "/trash/profiles/" + encodeURIComponent(profile.id);
+  try {
+    if (action === "restore") {
+      const restored = await api(path + "/restore", { method: "POST" });
+      trashNotice = `已恢复「${restored.name}」。`;
+    } else {
+      await api(path, { method: "DELETE" });
+      trashNotice = `已永久删除「${profile.name}」。`;
+    }
+  } catch (err) {
+    trashErrors.set(profile.id, err.message);
+    trashNotice = `「${profile.name}」操作失败。`;
+  } finally {
+    trashPending = null;
+    await Promise.all([loadTrash(), refresh({ silent: true })]);
+    if (trashDialog.open && !trashDialog.contains(document.activeElement)) $("trashSearch").focus();
+  }
+});
 
 /* ---------------- 创建 / 编辑 ---------------- */
 const editor = $("profileMask");
@@ -4358,6 +4512,7 @@ $("refreshBtn").onclick = async (e) => {
 
 /* ---------------- 键盘 ---------------- */
 document.addEventListener("keydown", (e) => {
+  if (trashDialog.open) return;
   const meta = e.metaKey || e.ctrlKey;
   if (meta && e.key.toLowerCase() === "k") {
     e.preventDefault();
@@ -4375,7 +4530,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 function canAutoRefresh() {
-  if (document.querySelector(".mask.show")) return false;
+  if (trashDialog.open || document.querySelector(".mask.show")) return false;
   if (pop.classList.contains("show")) return false;
   const active = document.activeElement;
   if (active && (active.tagName === "INPUT" || active.tagName === "SELECT" || active.tagName === "TEXTAREA")) return false;

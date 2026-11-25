@@ -14,10 +14,10 @@ import tempfile
 import zipfile
 from contextlib import closing
 from datetime import datetime, timezone
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any
 
-from . import config
+from . import config, db
 
 MANIFEST = "manifest.json"
 DB_NAME = "moltskin.db"
@@ -32,6 +32,14 @@ def _copy_database(source: Path, destination: Path) -> None:
 def create(include_profiles: bool = False) -> Path:
     """生成备份文件，返回临时路径（同目录会在响应结束后删除）。"""
     workdir = Path(tempfile.mkdtemp(prefix="moltskin-backup-"))
+    try:
+        return _write_archive(workdir, include_profiles)
+    except BaseException:
+        shutil.rmtree(workdir, ignore_errors=True)
+        raise
+
+
+def _write_archive(workdir: Path, include_profiles: bool) -> Path:
     tmp = workdir / "moltskin-backup.zip"
     db_copy = tmp.parent / DB_NAME
     _copy_database(config.DB_PATH.resolve(), db_copy)
@@ -43,6 +51,12 @@ def create(include_profiles: bool = False) -> Path:
             dict(row)
             for row in conn.execute("SELECT id, name, engine FROM profiles ORDER BY created_at")
         ]
+        trashed = [
+            dict(row) for row in conn.execute(
+                "SELECT id, name, engine, purge_started FROM trashed_profiles ORDER BY trashed_at"
+            )
+        ]
+    all_profiles = profiles + trashed
 
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(db_copy, DB_NAME)
@@ -52,10 +66,10 @@ def create(include_profiles: bool = False) -> Path:
                 if path.is_file():
                     zf.write(path, str(Path("extensions") / path.relative_to(ext_dir)))
         if include_profiles:
-            for profile in profiles:
-                if profile["engine"] != "camoufox":
+            for profile in all_profiles:
+                if profile["engine"] != "camoufox" or profile.get("purge_started"):
                     continue
-                base = config.PROFILES_DIR / profile["id"]
+                base = config.profile_directory(profile["id"])
                 cookies = base / "cookies.sqlite"
                 if cookies.exists():
                     zf.write(cookies, f"profiles/{profile['id']}/cookies.sqlite")
@@ -74,7 +88,11 @@ def create(include_profiles: bool = False) -> Path:
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "include_profiles": include_profiles,
                     "profiles": profiles,
-                    "profile_data_excluded": [p["id"] for p in profiles if include_profiles and p["engine"] != "camoufox"],
+                    "trashed_profiles": trashed,
+                    "profile_data_excluded": [
+                        p["id"] for p in all_profiles
+                        if include_profiles and (p["engine"] != "camoufox" or p.get("purge_started"))
+                    ],
                     "extensions": sum(1 for _ in (config.DATA_DIR / "extensions").rglob("*"))
                     if (config.DATA_DIR / "extensions").exists()
                     else 0,
@@ -95,18 +113,35 @@ def _prepare_incoming(incoming: Path) -> set[str]:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(profiles)")}
         engine = "engine" if "engine" in columns else "'camoufox'"
         profiles = conn.execute(f"SELECT id, {engine} FROM profiles").fetchall()
-        root = config.PROFILES_DIR.resolve()
         for profile_id, engine_name in profiles:
-            if (not isinstance(profile_id, str) or not profile_id or profile_id in (".", "..")
-                    or "/" in profile_id or "\\" in profile_id or "\x00" in profile_id
-                    or PureWindowsPath(profile_id).drive):
-                raise ValueError("备份包含无效的环境 ID")
-            dest = root / profile_id
-            if dest.is_symlink() or (dest.exists() and not dest.is_dir()):
-                raise ValueError("恢复位置已有同名文件或环境目录链接")
+            dest = config.profile_directory(profile_id)
             conn.execute("UPDATE profiles SET user_data_dir=? WHERE id=?", (str(dest), profile_id))
             if engine_name == "camoufox":
                 camoufox_ids.add(profile_id)
+
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='trashed_profiles'").fetchone():
+            active_ids = {profile_id for profile_id, _ in profiles}
+            for ident, name, engine_name, payload, history, extensions, purge_started in conn.execute(
+                "SELECT id, name, engine, profile_json, sessions_json, extensions_json, purge_started FROM trashed_profiles"
+            ):
+                dest = config.profile_directory(ident)
+                if not all(isinstance(value, str) for value in (payload, history, extensions)):
+                    raise ValueError("备份中回收站环境的配置无效")
+                profile = json.loads(payload)
+                sessions = json.loads(history)
+                ext_ids = json.loads(extensions)
+                if (ident in active_ids or not isinstance(profile, dict) or profile.get("id") != ident
+                        or profile.get("name") != name or profile.get("engine") != engine_name
+                        or engine_name not in ("chromium", "camoufox")):
+                    raise ValueError("备份中回收站环境的信息不一致")
+                if (not db.valid_archived_sessions(sessions, ident)
+                        or not isinstance(ext_ids, list) or any(not isinstance(e, str) for e in ext_ids)):
+                    raise ValueError("备份中的回收站会话或扩展记录无效")
+                profile["user_data_dir"] = str(dest)
+                conn.execute("UPDATE trashed_profiles SET profile_json=? WHERE id=?",
+                             (json.dumps(profile, ensure_ascii=False), ident))
+                if engine_name == "camoufox" and not purge_started:
+                    camoufox_ids.add(ident)
 
         conn.execute("UPDATE profiles SET status='ready' WHERE status='running'")
         conn.execute("UPDATE profiles SET last_session_id=NULL")

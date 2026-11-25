@@ -1,6 +1,7 @@
 """Restore configuration backups into a different data root."""
 
 import io
+import json
 import sqlite3
 import zipfile
 from contextlib import closing
@@ -93,4 +94,56 @@ def test_profile_symlink_cannot_redirect_restored_environment(data_dir, tmp_path
     with pytest.raises(ValueError, match="环境目录链接"):
         backup.restore(archive)
     assert list(outside.iterdir()) == []
+    assert not config.DB_PATH.with_suffix(".db.bak").exists()
+
+
+def test_backup_restores_recycled_profile_into_new_data_root(data_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+    from moltskin.services.core import main
+    from moltskin.services.core.security import get_token
+
+    with TestClient(main.app, headers={"Authorization": f"Bearer {get_token()}"}) as source:
+        created = source.post("/api/v1/profiles", json={"name": "回收站迁移", "engine": "camoufox"})
+        profile = created.raise_for_status().json()["data"]
+        ident = profile["id"]
+        storage = Path(profile["user_data_dir"]) / "storage"
+        storage.mkdir()
+        (storage / "marker").write_bytes(b"archived local storage")
+        source.post(f"/api/v1/profiles/{ident}/trash").raise_for_status()
+        archive = source.get("/api/v1/backup?include_profiles=true").raise_for_status().content
+
+    target = data_dir / "new-install"
+    monkeypatch.setattr(config, "DATA_DIR", target)
+    for name in ("DB_PATH", "PROFILES_DIR", "RUN_DIR", "LOG_DIR", "SELFTEST_DIR", "TOKEN_PATH"):
+        monkeypatch.setattr(config, name, target / getattr(config, name).name)
+    with TestClient(main.app, headers={"Authorization": f"Bearer {get_token()}"}) as dest:
+        response = dest.post("/api/v1/backup/restore", files={"file": ("backup.zip", archive)})
+        manifest = response.raise_for_status().json()["data"]["manifest"]
+        assert manifest["profiles"] == []
+        assert [p["id"] for p in manifest["trashed_profiles"]] == [ident]
+        assert dest.get(f"/api/v1/profiles/{ident}").status_code == 404
+        restored = dest.post(f"/api/v1/trash/profiles/{ident}/restore").raise_for_status().json()["data"]
+        assert Path(restored["user_data_dir"]) == config.PROFILES_DIR / ident
+        assert (config.PROFILES_DIR / ident / "storage" / "marker").read_bytes() == b"archived local storage"
+
+
+def test_invalid_recycled_session_cannot_replace_live_database(data_dir, tmp_path):
+    db.init_db()
+    source_db = tmp_path / "source.db"
+    with closing(sqlite3.connect(source_db)) as conn, conn:
+        conn.executescript(db.SCHEMA)
+        profile = {"id": "recycled", "name": "Saved", "engine": "camoufox", "status": "ready"}
+        conn.execute(
+            "INSERT INTO trashed_profiles (id,name,engine,trashed_at,profile_json,sessions_json,extensions_json) "
+            "VALUES (?,?,?,?,?,?,?)",
+            ("recycled", "Saved", "camoufox", db.now(), json.dumps(profile),
+             json.dumps([{"profile_id": "recycled", "state": "running"}]), "[]"),
+        )
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.write(source_db, backup.DB_NAME)
+    with pytest.raises(ValueError, match="回收站会话"):
+        backup.restore(archive.getvalue())
+    with db.session() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM trashed_profiles").fetchone()[0] == 0
     assert not config.DB_PATH.with_suffix(".db.bak").exists()

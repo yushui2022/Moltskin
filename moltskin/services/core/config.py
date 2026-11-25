@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 # moltskin/services/core/config.py -> 项目根目录
 ROOT = Path(__file__).resolve().parents[3]
@@ -44,6 +44,18 @@ DEFAULTS = {
 
 def local_dashboard_url() -> str:
     return f"http://127.0.0.1:{PORT}/#/home"
+
+
+def profile_directory(profile_id: str) -> Path:
+    """Return a direct child of the data root that can safely hold a profile."""
+    if (not isinstance(profile_id, str) or not profile_id or profile_id in (".", "..")
+            or "/" in profile_id or "\\" in profile_id or "\x00" in profile_id
+            or PureWindowsPath(profile_id).drive):
+        raise ValueError("环境 ID 无效")
+    path = PROFILES_DIR.resolve() / profile_id
+    if path.is_symlink() or (path.exists() and not path.is_dir()):
+        raise ValueError("存储位置已有同名文件或环境目录链接")
+    return path
 
 
 def ensure_dirs() -> None:

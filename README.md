@@ -42,7 +42,7 @@ Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` sho
 
 | Area | Status |
 |---|---|
-| Create / edit / duplicate / delete profiles | ✅ |
+| Create, edit and duplicate profiles. Restore individual profiles from the recycle bin or permanently delete their local data. | ✅ |
 | Launch / stop, persistent cookies and logins | ✅ |
 | One process per profile, duplicate-launch protection | ✅ |
 | Fingerprint preset persisted per profile | ✅ |

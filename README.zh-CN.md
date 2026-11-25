@@ -58,7 +58,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 ## 当前能力
 
-- 创建 / 删除 / 复制环境
+- 创建和复制环境。面板中移入回收站的环境会保留本地浏览器数据，可单独恢复或永久删除。
 - 一键启动 Camoufox（持久化 profile，登录态保留）
 - 环境创建时保存指纹预设，后续启动复用同一份预设
 - Camoufox 环境详情并排显示预设值与最近一次启动的浏览器实测值，可核对 CPU 核数、屏幕、UA 和 WebGL 等字段。缺少读数时显示「未验证」。

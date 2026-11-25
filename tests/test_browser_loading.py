@@ -12,25 +12,32 @@ from fastapi.testclient import TestClient
 
 @pytest.mark.skipif(os.getenv("MOLTSKIN_TEST_NATIVE_BROWSERS") != "1", reason="needs installed browser engines")
 @pytest.mark.parametrize("engine", ["chromium", "camoufox"])
-def test_image_loading_after_profile_restart(data_dir, monkeypatch, engine):
+def test_image_loading_and_storage_after_profile_restore(data_dir, monkeypatch, engine):
     from moltskin.services.core import config, main
     from moltskin.services.core.security import get_token
 
     # A local page at the dashboard address reports whether the image decoded.
     # Count HTTP requests as well, so hiding an already downloaded image fails.
-    widths = Queue()
+    readings = Queue()
     image_requests = []
 
     class Page(BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path == "/":
                 mime, body = "text/html", b"""<!doctype html><img id="sample" src="/sample.svg">
-                <script>window.onload = () => fetch('/width/' + document.getElementById('sample').naturalWidth)</script>"""
+                <script>
+                window.onload = () => {
+                    const marker = localStorage.getItem('restore-test') || 'empty';
+                    localStorage.setItem('restore-test', 'saved');
+                    fetch('/reading/' + document.getElementById('sample').naturalWidth + '/' + marker);
+                };
+                </script>"""
             elif self.path == "/sample.svg":
                 image_requests.append(self.path)
                 mime, body = "image/svg+xml", b'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>'
-            elif self.path.startswith("/width/"):
-                widths.put(int(self.path.rsplit("/", 1)[-1]))
+            elif self.path.startswith("/reading/"):
+                _, _, width, marker = self.path.split("/")
+                readings.put((int(width), marker))
                 mime, body = "text/plain", b"ok"
             else:
                 self.send_error(404)
@@ -69,7 +76,7 @@ def test_image_loading_after_profile_restart(data_dir, monkeypatch, engine):
                         version = client.get(url).json()["data"]["browser_version"]
                         assert version and version[0].isdigit()
                         assert client.get(f"/api/v1/sessions/{session_id}").json()["data"]["browser_version"] == version
-                        assert widths.get(timeout=25) == (0 if blocked else 12)
+                        assert readings.get(timeout=25) == ((0, "empty") if blocked else (12, "saved"))
                         assert bool(image_requests) == (not blocked)
                     finally:
                         client.post(url + "/stop")
@@ -77,6 +84,13 @@ def test_image_loading_after_profile_restart(data_dir, monkeypatch, engine):
                         while client.get(url + "/status").json()["data"]["session_id"] is not None:
                             assert time.monotonic() < deadline, "browser did not stop"
                             time.sleep(0.1)
+                    if blocked:
+                        client.post(url + "/trash").raise_for_status()
+                        assert client.get(url).status_code == 404
+                        profile_id = profile.json()["data"]["id"]
+                        restored = client.post(f"/api/v1/trash/profiles/{profile_id}/restore")
+                        restored.raise_for_status()
+                        assert restored.json()["data"]["id"] == profile_id
         finally:
             server.shutdown()
             thread.join()
