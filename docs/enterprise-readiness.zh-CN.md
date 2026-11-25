@@ -6,6 +6,10 @@
 
 ## 桌面产品先改什么
 
+**评审后的进展**　开发分支已接入 Chromium 按窗口绑定固定代理。macOS arm64 的本地 HTTP 实测覆盖两个窗口各走各的代理、重启保留绑定，以及代理断开后该窗口请求失败而另一个窗口继续可用。HTTPS 和 SOCKS5 已验证配置校验与启动参数，认证代理和 WebRTC 仍需单独处理。下表保留评审基线当时的行为。[使用说明](../chromium/README.md#窗口代理) · [原生网络回归](../tests/test_chromium_proxy_routing.py)
+
+代理库中已有的密码仍作为文本写入 SQLite。进入多人试用前应补上凭据存储保护，并用一份带测试凭据的备份验证访问和恢复范围。Chromium 本次仅接受未填写凭据的代理。[代理写入](../moltskin/services/core/main.py) · [数据库备份](../moltskin/services/core/backup.py)
+
 | 用户操作 | 当前行为 | 下一步与验收方法 |
 |---|---|---|
 | 给某个窗口选代理 | 代理库支持 TXT、CSV 批量导入、校验和检测。Camoufox 可以绑定代理。Chromium 使用系统网络，API 和启动器均会拒绝绑定。 | 优先让使用者在列表和批量操作预览中看见每个窗口的网络模式。为 Chromium 接入按环境绑定后，用两个环境访问自有测试端点，各自核对出口。指定代理不可用时应提示失败，禁止静默改走系统网络。[代理导入测试](../tests/test_proxy_bulk_import.py) · [启动约束](../moltskin/services/core/launcher.py) |
