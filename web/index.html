@@ -182,6 +182,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 #page-windows .page-head { position: relative; isolation: isolate; background: #f6f8f6; }
 #page-windows .page-head::before { content: ""; position: absolute; z-index: -1; inset: 0; pointer-events: none;
   background: url("/chameleon-scales.webp") center 52% / cover no-repeat;
+  opacity: .19; filter: saturate(.45);
   mask-image: linear-gradient(90deg, transparent, #000 43%, #000 79%, transparent),linear-gradient(#000 75%, transparent);
   mask-composite: intersect; }
 .head-actions { display: flex; align-items: center; gap: 8px; flex: none; flex-wrap: wrap; justify-content: flex-end; }
@@ -847,20 +848,12 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .shell:has(#page-proxies.active) .nav-item.active { background: #e7f1ec; color: #15533f; }
 .shell:has(#page-proxies.active) .nav-item.active .count { background: #d7e9df; color: #15533f; }
 #page-proxies .proxy-workspace { padding: clamp(16px,2.3vw,32px) var(--page-gutter) 24px; }
-.proxy-hero.page-head { position: relative; isolation: isolate; overflow: hidden; min-height: 172px; margin-bottom: 16px;
-  padding: 23px clamp(20px,2.5vw,36px); flex-direction: column; align-items: flex-start; justify-content: center;
-  gap: 17px; border-radius: var(--r-lg); color: #fff; background: #163d31; }
-.proxy-hero-image,.proxy-hero::before { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.proxy-hero-image { object-fit: cover; object-position: 50% 50%; z-index: -2; }
-.proxy-hero::before { content: ""; z-index: -1; background: linear-gradient(90deg, rgb(10 34 28 / 92%),rgb(12 39 31 / 74%) 31%,rgb(12 40 31 / 8%) 65%,transparent); }
-.proxy-hero .page-title h1 { font-size: clamp(26px,2.5vw,36px); }
-.proxy-hero .page-title p { color: #e5f1e8; }
-.proxy-hero .btn { background: #183f32; color: #f4faf5; border-color: #8ba698; box-shadow: none; }
-.proxy-hero .btn:hover { background: #24513f; border-color: #cbddd1; }
-.proxy-hero .btn.primary { background: #edf6eb; color: #173b2e; border-color: #edf6eb; }
-.proxy-hero .btn.primary .i { color: inherit; }
-.proxy-hero .btn.primary:hover { background: #d6eadb; }
-.proxy-hero :focus-visible { outline-color: #fff; }
+.proxy-hero.page-head { position: relative; isolation: isolate; overflow: hidden; margin-bottom: 16px;
+  padding: 18px clamp(18px,2.2vw,30px); flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 12px; border: 1px solid var(--proxy-line); border-radius: var(--r-lg); background: #f2f6f3; }
+.proxy-hero-image { position: absolute; z-index: -1; inset: 0 0 0 auto; width: 55%; height: 100%; pointer-events: none;
+  object-fit: cover; object-position: 78% 48%; opacity: .22; filter: saturate(.38);
+  mask-image: linear-gradient(90deg, transparent, #000 65%); }
 .proxy-summary { display: grid; grid-template-columns: 1.12fr repeat(3, 1fr); margin: 0 0 20px; overflow: hidden;
   border: 1px solid var(--proxy-line); border-radius: var(--r-lg); background: var(--panel); box-shadow: var(--shadow-sm); }
 .proxy-summary > div { position: relative; padding: 18px clamp(14px, 2vw, 29px); }
@@ -1097,9 +1090,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 }
 @media (max-width: 650px) {
   #page-proxies .proxy-workspace { padding-top: 12px; }
-  .proxy-hero.page-head { min-height: 154px; padding: 17px; flex-wrap: nowrap; gap: 15px; margin-bottom: 10px; }
-  .proxy-hero-image { object-position: 75% 50%; }
-  .proxy-hero::before { background: linear-gradient(90deg, rgb(10 34 28 / 95%), rgb(12 39 31 / 75%) 40%, rgb(12 39 31 / 9%) 83%); }
+  .proxy-hero.page-head { padding: 15px; flex-wrap: nowrap; gap: 12px; margin-bottom: 10px; }
+  .proxy-hero-image { width: 52%; opacity: .16; }
   .proxy-hero .page-title p { max-width: 175px; font-size: 12px; }
   .proxy-hero .btn { height: 36px; }
   .proxy-summary { margin-bottom: 12px; grid-template-columns: repeat(4,minmax(0,1fr)); }
