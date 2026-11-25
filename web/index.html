@@ -731,7 +731,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .editor-nav button[hidden], .editor-section[hidden], .fingerprint-actions[hidden] { display: none; }
 .fingerprint-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .fingerprint-actions .hint { margin: 0; }
-.fingerprint-device { display: flex; align-items: center; gap: 7px; padding: 9px 11px; background: var(--panel-2); border-radius: var(--r-sm); font-size: 12px; }
+.runtime-inspection { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 12px; padding: 10px 12px; background: var(--panel-2); border-radius: var(--r-sm); font-size: 12px; }
+.runtime-link { color: var(--accent-strong); text-underline-offset: 3px; }
+.editor-switch[hidden] { display: none; }
 .editor-nav button:hover { background: var(--raised); }
 .editor-nav button[aria-current] { color: var(--accent-strong); font-weight: 600; background: var(--accent-soft); }
 .profile-editor .editor-sections { display: block; background: var(--bg); padding: 16px; min-height: 0; }
@@ -784,7 +786,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
     border: 0; border-bottom: 1px solid var(--border-soft); }
   .editor-nav button { gap: 4px; padding: 7px 4px; font-size: 12px; }
   .editor-nav button .i { width: 14px; height: 14px; }
-  .editor-nav:has([aria-controls="profileFingerprint"]:not([hidden])) button { flex-direction: column; align-items: center; min-width: 0; }
+  .editor-nav:has([aria-controls="profileFingerprint"]:not([hidden])) { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0; }
+  .editor-nav:has([aria-controls="profileFingerprint"]:not([hidden])) button { flex-direction: column; align-items: center; min-width: 0; min-height: 44px; padding-inline: 1px; }
   .profile-editor .editor-sections { padding: 10px; }
   .editor-section summary { padding: 13px 11px; }
   .editor-fields { padding: 13px 11px; grid-template-columns: minmax(0, 1fr); gap: 11px; }
@@ -1695,6 +1698,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <p class="muted" style="margin:0 0 16px">选择内核和启动页面。两个内核都可以禁止加载网页图片。Camoufox 可以设置操作系统和代理。Moltskin Chromium 可在「指纹设置」选择网页语言、时区、启动窗口大小，以及字体、音视频采集和定位权限。</p>
             <h3 style="margin:0 0 8px;font-size:14px">3. 打开窗口</h3>
             <p class="muted" style="margin:0 0 16px">点击「打开」启动所选内核。登录状态保存在该环境自己的数据目录里。</p>
+            <h3 style="margin:0 0 8px;font-size:14px">查看窗口参数</h3>
+            <p class="muted" style="margin:0 0 16px">在要检查的窗口内打开本页，即可读取该窗口的 User-Agent、硬件并发数和设备内存。<a class="runtime-link" href="/runtime.html" target="_blank" rel="noopener">查看当前浏览器实测值</a></p>
             <h3 style="margin:0 0 8px;font-size:14px">常见问题</h3>
             <p class="muted" style="margin:0">· 环境显示「异常」：上次进程被强制结束，重新打开即可恢复。<br>
               · 打开失败并提示并发上限：到「设置 → 最大同时运行」调高上限。<br>
@@ -1722,6 +1727,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <button type="button" aria-controls="profileBasics" aria-current="location"><svg class="i"><use href="#i-folder"/></svg>基本信息</button>
         <button type="button" aria-controls="profileBrowser"><svg class="i"><use href="#i-window"/></svg>浏览器</button>
         <button type="button" data-engine="chromium" aria-controls="profileFingerprint" hidden><svg class="i"><use href="#i-finger"/></svg>指纹设置</button>
+        <button type="button" data-engine="chromium" aria-controls="profileHardware" hidden><svg class="i"><use href="#i-bolt"/></svg>硬件资源</button>
         <button type="button" aria-controls="profileNetwork"><svg class="i"><use href="#i-globe"/></svg>代理设置</button>
         <button type="button" aria-controls="profileStartup"><svg class="i"><use href="#i-gear"/></svg>启动设置</button>
       </nav>
@@ -1744,7 +1750,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <select class="select" id="fEngine"><option value="camoufox">Camoufox（Firefox）</option><option value="chromium">Moltskin Chromium</option></select>
               <div class="hint" id="fEngineHint" hidden></div>
             </div>
-            <div class="field"><label for="fEngineVersion">本机内核版本</label><output class="editor-readout" id="fEngineVersion"></output></div>
+            <div class="field" data-engine="camoufox"><label for="fEngineVersion">本机内核版本</label><output class="editor-readout" id="fEngineVersion"></output></div>
+            <div class="field" data-engine="chromium" hidden><label for="fChromiumVersion">启动内核版本</label><select class="select" id="fChromiumVersion" aria-describedby="fChromiumVersionHint"><option value="">跟随本机默认</option></select><span class="hint" id="fChromiumVersionHint"></span></div>
+            <div class="field" data-engine="chromium" hidden><label for="fHostOs">运行系统</label><output class="editor-readout" id="fHostOs"></output></div>
+            <div class="field" data-engine="chromium" hidden><label for="fHostArch">处理器架构</label><output class="editor-readout" id="fHostArch"></output></div>
             <div class="field" data-engine="camoufox"><label for="fOs">操作系统</label>
               <select class="select" id="fOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
             </div>
@@ -1769,7 +1778,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <select class="select" id="fGeolocation" aria-describedby="fLocationHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
               <span class="hint" id="fLocationHint"></span>
             </div>
-            <p class="editor-note fingerprint-device"><svg class="i" aria-hidden="true"><use href="#i-window"/></svg>系统、CPU、GPU 和屏幕分辨率沿用本机。</p>
+          </div>
+        </details>
+        <details class="editor-section" id="profileHardware" data-engine="chromium" name="profile-sections" hidden>
+          <summary><strong>硬件与高级</strong><span class="editor-summary" id="fHardwareSummary"></span><svg class="i"><use href="#i-chev"/></svg></summary>
+          <div class="editor-fields">
+            <div class="field"><label for="fRendererLimit">渲染进程上限</label><select class="select" id="fRendererLimit" aria-describedby="fRendererHint"><option value="0">由 Chromium 分配</option></select><span class="hint" id="fRendererHint">限制用于渲染网页的进程数。站点隔离可能需要额外进程。</span></div>
+            <div class="field"><label for="fHeapLimit">JS 老生代堆上限</label><select class="select" id="fHeapLimit" aria-describedby="fHeapHint"><option value="0">由 Chromium 分配</option></select><span class="hint" id="fHeapHint">限制长期存活的 JavaScript 对象占用的堆空间。网页报告的设备内存由浏览器决定。</span></div>
+            <p class="editor-note runtime-inspection"><a class="runtime-link" href="/runtime.html" target="_blank" rel="noopener">查看当前浏览器实测值</a><span>在目标窗口中打开，可读取该窗口的 UA、硬件并发数和设备内存。</span></p>
           </div>
         </details>
         <details class="editor-section" id="profileNetwork" name="profile-sections">
@@ -1793,6 +1809,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <span class="hint" id="fDashboardHint" hidden>本机已禁用自动打开工作台。</span>
             </div>
             <label class="editor-switch"><span>禁止加载网页图片</span><input type="checkbox" id="fBlockImages" role="switch"></label>
+            <label class="editor-switch" data-engine="chromium" hidden><span>静音播放</span><input type="checkbox" id="fMuteAudio" role="switch"></label>
             <div class="field full hint" id="fNextLaunch" hidden>修改会在下次启动这个窗口时生效。</div>
           </div>
         </details>
@@ -1821,8 +1838,12 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <div class="hint" id="bEngineHint" hidden></div>
       </div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserLanguage">网站首选语言</label><select class="select" id="bBrowserLanguage"><option value="">浏览器默认</option></select></div>
+      <div class="field" data-engine="chromium" hidden><label for="bChromiumVersion">启动内核版本</label><select class="select" id="bChromiumVersion" aria-describedby="bChromiumVersionHint"><option value="">跟随本机默认</option></select><span class="hint" id="bChromiumVersionHint"></span></div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserTimezone">时区</label><select class="select" id="bBrowserTimezone"><option value="">跟随系统</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserWindowSize">启动窗口大小</label><select class="select" id="bBrowserWindowSize"><option value="">浏览器默认</option></select></div>
+      <div class="field" data-engine="chromium" hidden><label for="bRendererLimit">渲染进程上限</label><select class="select" id="bRendererLimit"><option value="0">由 Chromium 分配</option></select></div>
+      <div class="field" data-engine="chromium" hidden><label for="bHeapLimit">JS 老生代堆上限</label><select class="select" id="bHeapLimit"><option value="0">由 Chromium 分配</option></select></div>
+      <label class="editor-switch" data-engine="chromium" hidden><span>静音播放</span><input type="checkbox" id="bMuteAudio" role="switch"></label>
       <div class="field" data-engine="chromium" hidden><label for="bLocalFonts">本机字体访问</label>
         <select class="select" id="bLocalFonts"><option value="standard">标准（由站点请求授权）</option><option value="restricted">受限（禁止枚举）</option></select>
       </div>
@@ -2511,11 +2532,18 @@ function go(page) {
     title.focus({ preventScroll: true });
   }
 }
+const chromiumDraftRoutes = new Map([
+  ["windows/new/chromium", "profileFingerprint"],
+  ["windows/new/chromium/browser", "profileBrowser"],
+  ["windows/new/chromium/hardware", "profileHardware"],
+]);
 function openDashboardRoute() {
   const route = location.hash.slice(2);
-  if (route === "windows/new/chromium") {
+  if (chromiumDraftRoutes.has(route)) {
     go("windows");
-    if (!document.querySelector("dialog[open]")) openChromiumSettingsDraft();
+    const section = chromiumDraftRoutes.get(route);
+    if (!document.querySelector("dialog[open]")) openChromiumSettingsDraft(section);
+    else if ($("profileMask").open && !state.editingId && $("fEngine").value === "chromium") showEditorSection(section);
     return;
   }
   go(route || "windows");
@@ -2634,6 +2662,10 @@ const chromiumProfileFields = [
   {control: "BrowserTimezone", key: "browser_timezone", options: "browser_timezones", fallback: "跟随系统"},
   {control: "BrowserWindowSize", key: "browser_window_size", options: "browser_window_sizes", fallback: "浏览器默认"},
 ];
+const chromiumResourceFields = [
+  {control: "RendererLimit", key: "chromium_renderer_limit", options: "chromium_renderer_limits", unit: "个进程"},
+  {control: "HeapLimit", key: "chromium_js_heap_mb", options: "chromium_js_heap_limits", unit: "MiB"},
+];
 const regionNames = {
   "zh-CN": "简体中文", "en-US": "英语（美国）", "en-GB": "英语（英国）", "ja-JP": "日语",
   "de-DE": "德语", "fr-FR": "法语", "Asia/Shanghai": "上海", "Asia/Tokyo": "东京",
@@ -2671,8 +2703,9 @@ function rowHtml(p, index) {
   const preview = p.fingerprint_preview;
   let cfg = "Camoufox · 未生成预设";
   if (p.engine === "chromium") {
-    cfg = ["Chromium", chromiumConfigSummary(p), "字体" + fontsLabel(p), p.media_capture === "blocked" && "音视频采集已阻止",
-      p.geolocation === "blocked" && "位置已阻止"].filter(Boolean).join(" · ");
+    cfg = [p.chromium_version ? "Chromium " + p.chromium_version : "Chromium", chromiumConfigSummary(p),
+      "字体" + fontsLabel(p), p.media_capture === "blocked" && "音视频采集已阻止", p.geolocation === "blocked" && "位置已阻止",
+      p.chromium_mute_audio && "静音", p.chromium_renderer_limit && p.chromium_renderer_limit + " 个渲染进程"].filter(Boolean).join(" · ");
   } else if (preview) {
     const os = { macos: "macOS", linux: "Linux", windows: "Win" }[preview.os];
     const cores = preview.hardware_concurrency;
@@ -3436,10 +3469,10 @@ function renderEditorSettings() {
   const engine = state.engine;
   const active = engine?.browsers?.find((build) => build.active);
   const chromiumInfo = engine?.chromium;
-  $("fEngineVersion").textContent = !engine ? "正在读取…" : chromium
-    ? (chromiumInfo?.available ? chromiumInfo.version || "可用" : "本机未就绪")
-    : active?.version || (engine.browsers?.length ? "未指定活动内核" : "本机未安装");
-  $("fBrowserSummary").textContent = chromium ? "Moltskin Chromium"
+  $("fEngineVersion").textContent = !engine ? "正在读取…" : active?.version || (engine.browsers?.length ? "未指定活动内核" : "本机未安装");
+  $("fHostOs").textContent = chromiumInfo?.host_os || (engine ? "未提供" : "正在读取…");
+  $("fHostArch").textContent = chromiumInfo?.host_arch || (engine ? "未提供" : "正在读取…");
+  $("fBrowserSummary").textContent = chromium ? ["Chromium", $("fChromiumVersion").value || chromiumInfo?.version, chromiumInfo?.host_os].filter(Boolean).join(" · ")
     : "Camoufox · " + ($("fOs").selectedOptions[0]?.text || "系统未指定");
   $("fFingerprintSummary").textContent = chromiumConfigSummary({
     browser_language: $("fBrowserLanguage").value, browser_timezone: $("fBrowserTimezone").value,
@@ -3451,7 +3484,10 @@ function renderEditorSettings() {
   startup.querySelector('[value="dashboard"]').disabled = dashboardBlocked;
   $("fDashboardHint").hidden = !dashboardBlocked;
   $("fStartupSummary").textContent = [$("fHeadless").selectedOptions[0].text,
-    startup.selectedOptions[0]?.text, $("fBlockImages").checked ? "禁止图片" : ""].filter(Boolean).join(" · ");
+    startup.selectedOptions[0]?.text, $("fBlockImages").checked && "禁止图片", chromium && $("fMuteAudio").checked && "静音"].filter(Boolean).join(" · ");
+  $("fHardwareSummary").textContent = chromiumResourceFields
+    .map(f => $("f" + f.control)).filter(control => Number(control.value)).map(control => control.selectedOptions[0].text)
+    .join(" · ") || "由 Chromium 分配";
 }
 function updateEditorName() {
   $("fBasicSummary").textContent = $("fName").value.trim() || "待填写名称";
@@ -3484,6 +3520,36 @@ function renderEditorPreset(preview) {
   }
 }
 
+function updateOptions(control, choices, value) {
+  if (control.options.length !== choices.length || choices.some(([key, label], i) =>
+    control.options[i]?.value !== key || control.options[i]?.text !== label)) {
+    control.replaceChildren(...choices.map(([key, label]) => new Option(label, key)));
+  }
+  if (control.value !== value) control.value = value;
+}
+
+function setChromiumBuildChoices(prefix, info, storedVersion, locked) {
+  const catalog = info?.installed_versions;
+  const version = $(prefix + "ChromiumVersion");
+  const pin = storedVersion ?? version.value;
+  const builds = catalog || [];
+  const versionOptions = [["", info?.version ? "跟随本机默认 · " + info.version : "跟随本机默认"],
+    ...builds.map(build => [build.version, build.version])];
+  const selected = builds.find(build => build.version === pin);
+  if (pin && !selected) versionOptions.push([pin, pin + "（本机未安装）"]);
+  updateOptions(version, versionOptions, pin);
+  if (pin && !selected) version.selectedOptions[0].disabled = true;
+  version.disabled = locked || !catalog || (!builds.length && !pin);
+  const versionHint = $(prefix + "ChromiumVersionHint");
+  if (!state.engine) versionHint.textContent = "正在读取已安装内核…";
+  else if (pin && !selected) versionHint.textContent = "此窗口固定的版本不可用。启动前请重新安装或选择其他版本。";
+  else if (!catalog) versionHint.textContent = "当前服务未提供已安装版本列表。";
+  else if (!builds.length) versionHint.textContent = "本机尚无可用内核。";
+  else if (!info.version && !pin) versionHint.textContent = "本机缺少默认内核，请选择一个已安装版本。";
+  else versionHint.textContent = `本机可用 ${builds.length} 个版本。选择具体版本可固定此窗口的内核。`;
+  return pin ? selected : info;
+}
+
 function setEngineFields(prefix, saved = null) {
   const select = $(prefix + "Engine");
   const chromium = select.value === "chromium";
@@ -3493,10 +3559,24 @@ function setEngineFields(prefix, saved = null) {
   const hint = $(prefix + "EngineHint");
   const unavailable = state.engine?.chromium?.available === false;
   const locked = $(prefix + "LocalFonts").disabled;
+  const info = state.engine?.chromium;
+  const capabilities = setChromiumBuildChoices(prefix, info, saved ? saved.chromium_version || "" : null, locked);
+  for (const field of chromiumResourceFields) {
+    const control = $(prefix + field.control);
+    const limits = info?.[field.options] || [];
+    const limit = saved ? String(saved[field.key] || 0) : control.value;
+    const choices = [["0", "由 Chromium 分配"], ...limits.map(n => [String(n), n + " " + field.unit])];
+    if (!choices.some(([key]) => key === limit)) choices.push([limit, limit + " " + field.unit + "（已保存）"]);
+    updateOptions(control, choices, limit);
+    control.disabled = locked || !limits.length;
+  }
+  const mute = $(prefix + "MuteAudio");
+  if (saved) mute.checked = Boolean(saved.chromium_mute_audio);
+  mute.disabled = locked || !info?.chromium_renderer_limits;
   for (const field of chromiumProfileFields) {
     const choices = state.engine?.chromium?.[field.options] || [];
     const control = $(prefix + field.control);
-    const value = saved?.[field.key] ?? control.value;
+    const value = saved ? saved[field.key] || "" : control.value;
     const values = ["", ...choices];
     if (value && !values.includes(value)) values.push(value);
     if (values.length !== control.options.length || values.some((v, i) => control.options[i]?.value !== v)) {
@@ -3513,14 +3593,14 @@ function setEngineFields(prefix, saved = null) {
     note.hidden = !note.textContent;
   }
   for (const [field, hintId, supported, label, message] of [
-    ["MediaCapture", "MediaHint", state.engine?.chromium?.supports_media_capture_policy, "媒体", "已经授权的网站也无法采集。"],
-    ["Geolocation", "LocationHint", state.engine?.chromium?.supports_geolocation_policy, "定位", "已经授权的网站也无法读取位置。"],
+    ["MediaCapture", "MediaHint", capabilities?.supports_media_capture_policy, "媒体", "已经授权的网站也无法采集。"],
+    ["Geolocation", "LocationHint", capabilities?.supports_geolocation_policy, "定位", "已经授权的网站也无法读取位置。"],
   ]) {
     const control = $(prefix + field);
     control.disabled = locked || supported === undefined;
     control.querySelector('[value="blocked"]').disabled = !supported;
     $(prefix + hintId).textContent = !state.engine ? "正在读取内核信息…" :
-      supported === undefined ? `更新本地控制服务后可设置${label}权限。` :
+      supported === undefined ? `选择支持${label}权限的已安装内核后可设置。` :
       !supported ? `需要安装支持${label}权限的 Moltskin Chromium，才能以阻止模式启动。` :
       "选择阻止后，" + message;
   }
@@ -3535,6 +3615,14 @@ function engineSettings(prefix, creating) {
   const engine = $(prefix + "Engine").value;
   const values = creating ? { engine } : {};
   if (engine === "chromium") {
+    const version = $(prefix + "ChromiumVersion");
+    if (!version.disabled && !version.selectedOptions[0]?.disabled) values.chromium_version = version.value;
+    for (const field of chromiumResourceFields) {
+      const control = $(prefix + field.control);
+      if (!control.disabled) values[field.key] = Number(control.value);
+    }
+    const mute = $(prefix + "MuteAudio");
+    if (!mute.disabled) values.chromium_mute_audio = mute.checked;
     for (const field of chromiumProfileFields) {
       const control = $(prefix + field.control);
       if (!control.disabled) values[field.key] = control.value;
@@ -3555,6 +3643,9 @@ function engineSettings(prefix, creating) {
 $("fEngine").onchange = () => { setEngineFields("f"); renderPresetAction(); };
 $("fOs").onchange = renderPresetAction;
 $("bEngine").onchange = () => setEngineFields("b");
+for (const prefix of ["f", "b"]) {
+  $(prefix + "ChromiumVersion").onchange = () => setEngineFields(prefix);
+}
 
 function updateEditLock(id, status) {
   if (!$("profileMask").classList.contains("show") || state.editingId !== id || $("fEngine").value !== "chromium") return;
@@ -3588,7 +3679,7 @@ async function openProfileModal(id = null, {engine = "camoufox", section = "prof
   $("fLocalFonts").disabled = p?.status === "running";
   $("fMediaCapture").value = p?.media_capture || "standard";
   $("fGeolocation").value = p?.geolocation || "standard";
-  setEngineFields("f", {browser_language: p?.browser_language || "", browser_timezone: p?.browser_timezone || "", browser_window_size: p?.browser_window_size || ""});
+  setEngineFields("f", p || {});
   $("fOs").value = p?.os || "windows";
   $("fOs").disabled = isEdit;
   $("fProxy").value = p?.proxy?.id || "";
@@ -3679,8 +3770,8 @@ $("newGroupInline").onclick = async () => {
   } catch (err) { toast(err.message, true); }
 };
 
-function openChromiumSettingsDraft() {
-  return openProfileModal(null, {engine: "chromium", section: "profileFingerprint"});
+function openChromiumSettingsDraft(section = "profileFingerprint") {
+  return openProfileModal(null, {engine: "chromium", section});
 }
 $("createMenuBtn").onclick = (e) => {
   openPop(e.currentTarget, `
@@ -3717,7 +3808,7 @@ function openBatchModal() {
   $("bStartupPage").value = "default";
   $("bStartupPage").querySelector('[value="dashboard"]').disabled = state.engine?.dashboard_startup_available === false;
   $("bBlockImages").value = "0";
-  setEngineFields("b", {browser_language: "", browser_timezone: "", browser_window_size: ""});
+  setEngineFields("b", {});
   $("bTags").value = "";
   const check = $("batchPreview");
   check.textContent = "";
@@ -3874,13 +3965,20 @@ function openDetail(id, initialFocus = null) {
     const running = p.status === "running";
     $("editFingerprint").querySelector("span").textContent = running ? "查看指纹设置" : "编辑指纹设置";
     $("detailFingerprintHint").textContent = running ? "关闭此窗口后可修改。" : "";
-    $("fingerprintPreview").innerHTML = `<div class="kv"><div class="k">网站首选语言</div><div class="v">${esc(regionLabel(p.browser_language) || "浏览器默认")}</div></div>
+    const info = state.engine?.chromium;
+    const defaultVersion = info?.version ? "跟随本机默认 · " + info.version : "跟随本机默认";
+    $("fingerprintPreview").innerHTML = `<div class="kv"><div class="k">启动内核版本</div><div class="v">${esc(p.chromium_version || defaultVersion)}</div></div>
+      <div class="kv"><div class="k">运行系统</div><div class="v">${esc([info?.host_os, info?.host_arch].filter(Boolean).join(" · ") || "未提供")}</div></div>
+      <div class="kv"><div class="k">网站首选语言</div><div class="v">${esc(regionLabel(p.browser_language) || "浏览器默认")}</div></div>
       <div class="kv"><div class="k">时区</div><div class="v">${esc(regionLabel(p.browser_timezone) || "跟随系统")}</div></div>
       <div class="kv"><div class="k">启动窗口大小</div><div class="v">${esc(regionLabel(p.browser_window_size) || "浏览器默认")}</div></div>
       <div class="kv"><div class="k">本机字体访问</div><div class="v">${fontsLabel(p)}</div></div>
       <div class="kv"><div class="k">摄像头和麦克风</div><div class="v">${p.media_capture === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
       <div class="kv"><div class="k">地理位置</div><div class="v">${p.geolocation === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
-      <div class="kv"><div class="k">启动方式</div><div class="v">${p.headless ? "无头（后台）" : "有头（显示窗口）"}</div></div>`;
+      <div class="kv"><div class="k">启动方式</div><div class="v">${p.headless ? "无头（后台）" : "有头（显示窗口）"}</div></div>
+      <div class="kv"><div class="k">渲染进程上限</div><div class="v">${p.chromium_renderer_limit ? esc(p.chromium_renderer_limit) + " 个进程" : "由 Chromium 分配"}</div></div>
+      <div class="kv"><div class="k">JS 老生代堆上限</div><div class="v">${p.chromium_js_heap_mb ? esc(p.chromium_js_heap_mb) + " MiB" : "由 Chromium 分配"}</div></div>
+      <div class="kv"><div class="k">静音播放</div><div class="v">${p.chromium_mute_audio ? "开启" : "关闭"}</div></div>`;
     openModal("detailMask");
     return;
   }
@@ -4518,7 +4616,7 @@ function renderEngine(engine) {
   const camoufoxVersion = active?.version || (engine.browsers?.length ? "未启用" : "未安装");
   const card = $("engineCard");
   const chromium = engine.chromium;
-  const version = chromium?.available ? chromium.version || "可用" : "未就绪";
+  const version = chromium?.version || (chromium?.available ? "需选择版本" : "未就绪");
   card.innerHTML = `<div class="engine-row"><strong>Camoufox</strong><small>${esc(camoufoxVersion)}</small></div>
     <div class="engine-row"><strong>Chromium</strong><small>${esc(version)}</small></div>`;
   $("enginePanel").innerHTML = `

@@ -236,8 +236,12 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             process_env = chromium.launch_environment(profile["browser_timezone"])
             command, browser_version = chromium.prepare_launch(
                 profile_dir, profile["local_fonts"], headless,
+                chromium_version=profile["chromium_version"],
                 open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
                 block_images=bool(profile["block_images"]),
+                chromium_js_heap_mb=profile["chromium_js_heap_mb"],
+                chromium_mute_audio=bool(profile["chromium_mute_audio"]),
+                chromium_renderer_limit=profile["chromium_renderer_limit"],
                 media_capture=profile["media_capture"], geolocation=profile["geolocation"],
                 browser_language=profile["browser_language"], browser_window_size=profile["browser_window_size"],
             )
@@ -261,13 +265,20 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
         if _active_session(conn, profile_id):
             raise LaunchError("PROFILE_LOCKED", "该环境正在启动或运行")
-        launch_fields = ("engine", "local_fonts", "media_capture", "geolocation", "headless",
+        launch_fields = ("engine", "chromium_version", "local_fonts", "media_capture", "geolocation", "headless",
+                         "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
                          "proxy_id", "startup_page", "block_images", "browser_language",
                          "browser_timezone", "browser_window_size")
         if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
         if is_chromium and _chromium_directory(current) != profile_dir:
             raise LaunchError("INVALID_PROFILE_DIRECTORY", "环境目录已变更，请检查数据目录。")
+
+        if is_chromium:
+            try:
+                chromium.check_profile_version(profile_dir, browser_version, current["browser_version"])
+            except (ValueError, OSError) as exc:
+                raise LaunchError("CHROMIUM_PROFILE_VERSION", str(exc), 409) from exc
 
         active_count = conn.execute(
             "SELECT COUNT(*) AS n FROM sessions WHERE state IN ('starting','running','stopping')"

@@ -24,7 +24,8 @@ function readings() {
 PAGE = b"<!doctype html><script>" + READINGS + b"""
 const worker = new Worker('/worker.js');
 worker.onmessage = event => fetch('/report', {method: 'POST', body: JSON.stringify({
-  page: readings(), worker: event.data, size: [outerWidth, outerHeight]
+  page: readings(), worker: event.data, size: [outerWidth, outerHeight],
+  heapLimit: performance.memory.jsHeapSizeLimit
 })});
 worker.postMessage(null);
 </script>"""
@@ -86,8 +87,9 @@ def test_per_window_region_survives_restart_and_resets(data_dir, monkeypatch):
         with run(a) as default:
             pass
         api.patch(a, json={"browser_language": "fr-FR", "browser_timezone": "Europe/Paris",
-                           "browser_window_size": "1024x768"}).raise_for_status()
-        b = create("B", browser_language="ja-JP", browser_timezone="Asia/Tokyo", browser_window_size="1280x800")
+                           "browser_window_size": "1024x768", "chromium_js_heap_mb": 256}).raise_for_status()
+        b = create("B", browser_language="ja-JP", browser_timezone="Asia/Tokyo", browser_window_size="1280x800",
+                   chromium_js_heap_mb=512)
         with run(a) as france, run(b) as japan:
             assert france["page"] == {"language": "fr-FR", "languages": ["fr-FR"],
                                       "timezone": "Europe/Paris", "offset": -120}
@@ -95,7 +97,10 @@ def test_per_window_region_survives_restart_and_resets(data_dir, monkeypatch):
                                      "timezone": "Asia/Tokyo", "offset": -540}
             assert france["size"] == [1024, 768]
             assert japan["size"] == [1280, 800]
-        api.patch(a, json={"browser_language": "", "browser_timezone": "", "browser_window_size": ""}).raise_for_status()
+            assert 0 < france["heapLimit"] < japan["heapLimit"]
+        api.patch(a, json={"browser_language": "", "browser_timezone": "", "browser_window_size": "",
+                           "chromium_js_heap_mb": 0}).raise_for_status()
         with run(b) as restarted, run(a) as reset:
             assert restarted == japan
             assert reset["page"] == default["page"]
+            assert reset["heapLimit"] == default["heapLimit"]

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>本窗口参数 · Moltskin</title>
+  <link rel="icon" href="/favicon-32.png">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f8f6; color: #182b24; font: 15px/1.6 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 42px 24px; }
+    .brand { display: flex; align-items: center; gap: 8px; color: #215d49; font: italic 600 22px Georgia, serif; }
+    .brand img { width: 33px; height: 25px; }
+    h1 { font-size: clamp(26px, 5vw, 36px); line-height: 1.25; margin: 32px 0 8px; }
+    p { margin: 0; color: #53665c; }
+    h2 { font-size: 16px; margin: 0 0 10px; }
+    section { background: #fff; border: 1px solid #d6e1db; border-radius: 14px; padding: 18px 22px; margin-top: 18px; }
+    dl { margin: 0; }
+    dl > div { display: grid; grid-template-columns: minmax(145px, 35%) 1fr; gap: 8px; padding: 8px 0; }
+    dl > div + div { border-top: 1px solid #edf1ef; }
+    dt { color: #516159; }
+    dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    dd small { color: #64736a; display: block; }
+    code { font: 13px/1.6 ui-monospace, monospace; }
+    @media (max-width: 480px) {
+      main { padding: 22px 14px; }
+      section { padding: 14px 16px; }
+      dl > div { grid-template-columns: 1fr 1.3fr; }
+      dl > .wide { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand" lang="en"><img src="/logo.svg" alt="">Moltskin</div>
+    <h1>本窗口参数</h1>
+    <p>这里显示当前网页能读到的值。要核对某个环境，请在那个环境里打开此页。</p>
+    <noscript>请启用 JavaScript 以读取本窗口参数。</noscript>
+    <section aria-labelledby="browser-heading">
+      <h2 id="browser-heading">浏览器与系统</h2>
+      <dl>
+        <div><dt>Chromium 版本</dt><dd id="version">—</dd></div>
+        <div><dt>平台</dt><dd id="platform">—</dd></div>
+        <div><dt>网站语言</dt><dd id="language">—</dd></div>
+        <div><dt>时区</dt><dd id="timezone">—</dd></div>
+        <div class="wide"><dt lang="en">User-Agent</dt><dd><code id="ua">—</code></dd></div>
+      </dl>
+    </section>
+    <section aria-labelledby="hardware-heading">
+      <h2 id="hardware-heading">硬件与显示</h2>
+      <dl>
+        <div><dt>硬件并发数</dt><dd><span id="cpu">—</span><small>浏览器报告的逻辑处理器数量</small></dd></div>
+        <div><dt>设备内存</dt><dd><span id="memory">—</span><small>浏览器公开的近似内存档位</small></dd></div>
+        <div><dt>JS 堆大小上限</dt><dd><span id="heap">—</span><small>包含老生代与其他堆空间</small></dd></div>
+        <div><dt>屏幕尺寸</dt><dd id="screen">—</dd></div>
+        <div><dt>窗口外框</dt><dd id="outer">—</dd></div>
+        <div><dt>页面视口</dt><dd id="inner">—</dd></div>
+        <div><dt>设备像素比</dt><dd id="dpr">—</dd></div>
+      </dl>
+    </section>
+  </main>
+  <script>
+    const unavailable = "浏览器未提供";
+    function show(id, value) {
+      document.getElementById(id).textContent = value ?? unavailable;
+    }
+    function showGeometry() {
+      show("screen", screen.width + " × " + screen.height + " CSS px");
+      show("outer", outerWidth + " × " + outerHeight + " CSS px");
+      show("inner", innerWidth + " × " + innerHeight + " CSS px");
+      show("dpr", window.devicePixelRatio);
+    }
+    show("ua", navigator.userAgent);
+    show("platform", navigator.userAgentData?.platform || navigator.platform);
+    show("language", navigator.languages.join("、") || navigator.language);
+    show("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
+    show("cpu", navigator.hardwareConcurrency);
+    show("memory", navigator.deviceMemory ? navigator.deviceMemory + " GiB" : null);
+    const heapLimit = performance.memory?.jsHeapSizeLimit;
+    show("heap", heapLimit ? Math.round(heapLimit / 1048576) + " MiB" : null);
+    showGeometry();
+    window.addEventListener("resize", showGeometry);
+    async function showChromiumVersion() {
+      try {
+        const hints = await navigator.userAgentData?.getHighEntropyValues(["fullVersionList"]);
+        show("version", hints?.fullVersionList?.find(entry => entry.brand === "Chromium")?.version);
+      } catch {
+        show("version", unavailable);
+      }
+    }
+    showChromiumVersion();
+  </script>
+</body>
+</html>

@@ -71,6 +71,10 @@ Chromium also accepts `geolocation: "standard"` (default) or `"blocked"`. Blocke
 
 Each Chromium profile can set `browser_language` (preferred language for websites and the HTTP `Accept-Language` header), `browser_timezone` (IANA time zone), and `browser_window_size` (initial outer width and height). For example, use `"ja-JP"`, `"Asia/Tokyo"`, and `"1280x800"`. The lists at `GET /engine` are `chromium.browser_languages`, `chromium.browser_timezones`, and `chromium.browser_window_sizes`. Omitting a field on PATCH preserves its value. Sending an empty string restores the browser default. Close a running profile before changing these settings.
 
+`chromium_version` pins a profile to an installed build. An empty string follows the host default. `GET /engine` reports the default in `chromium.version` and the installed choices in `chromium.installed_versions`, each with its full version and permission capabilities. The host OS and architecture are available as `chromium.host_os` and `chromium.host_arch`. An unavailable pinned version produces an error at launch. A profile already used by a newer major version requires that major or a later one.
+
+Chromium profiles also accept `chromium_mute_audio` (default `false`), `chromium_renderer_limit` (soft limit on the number of renderer processes), and `chromium_js_heap_mb` (V8 old-generation heap limit in MiB). Zero restores Chromium's default for either limit. Read the supported nonzero values from `chromium.chromium_renderer_limits` and `chromium.chromium_js_heap_limits` at `GET /engine`. The local `/runtime.html` page shows measurements from the window that opens it.
+
 Profiles accept `startup_page` and `block_images` on creation and update. Changes take effect at the next launch. `startup_page` accepts the following values.
 
 | Value | First tab |
@@ -335,7 +339,7 @@ curl -X POST .../import/profiles -H "Authorization: Bearer $TOKEN" \
 
 GET exports every environment. POST exports only the requested profile IDs in the same file format. A rename preserves the selection. If an ID no longer exists, the server returns HTTP 409 with `PROFILE_SELECTION_CHANGED` and `missing_ids` so the caller can refresh the selection.
 
-Pass the entire export to the importer to preserve its format version. A selected profile with a custom website language, time zone, or initial window size requires version `4`. With default window settings, the export uses version `3` if geolocation is blocked, version `2` if media capture is blocked, and version `1` otherwise. This release reads all four versions.
+Pass the entire export to the importer to preserve its format version. A pinned Chromium version, audio muting, renderer limit, or JS heap limit requires format `5`. A custom website language, time zone, or initial window size requires format `4`. Geolocation blocking requires `3` and media capture blocking requires `2`. The exporter selects the highest format needed by the selected profiles, starting at `1`. This release reads all five formats.
 Legacy unversioned files remain compatible. An unsupported version returns HTTP 422 before any profiles are created.
 
 The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font, media and location policies, and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.

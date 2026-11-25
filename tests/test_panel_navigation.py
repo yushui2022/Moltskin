@@ -141,6 +141,9 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.locator("#bBrowserLanguage").select_option("en-GB")
     panel.locator("#bBrowserTimezone").select_option("Europe/London")
     panel.locator("#bBrowserWindowSize").select_option("1440x900")
+    panel.locator("#bRendererLimit").select_option("2")
+    panel.locator("#bHeapLimit").select_option("256")
+    panel.locator("#bMuteAudio").check()
     panel.locator("#bMediaCapture").select_option("blocked")
     panel.locator("#bGeolocation").select_option("blocked")
     panel.locator("#confirmBatch").click()
@@ -149,6 +152,9 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
         expect(panel.locator("#fingerprintPreview")).to_contain_text("en-GB")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("Europe/London")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("1440 × 900")
+        expect(panel.locator("#fingerprintPreview")).to_contain_text("2 个进程")
+        expect(panel.locator("#fingerprintPreview")).to_contain_text("256 MiB")
+        expect(panel.locator("#fingerprintPreview .kv").filter(has_text="静音播放")).to_contain_text("开启")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="摄像头和麦克风")).to_contain_text("始终阻止")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="地理位置")).to_contain_text("始终阻止")
         panel.keyboard.press("Escape")
@@ -201,7 +207,78 @@ def test_chromium_fingerprint_choices_saved_by_window_and_locked_while_running(p
     expect(language).to_be_disabled()
     expect(timezone).to_be_disabled()
     expect(size).to_be_disabled()
+    for control in ("fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio"):
+        expect(panel.locator("#" + control)).to_be_disabled()
     expect(panel.locator("#fRegionHint")).to_contain_text("关闭此窗口后")
+
+
+def test_chromium_build_pin_and_resource_controls(panel):
+    page = panel
+    page.set_viewport_size({"width": 320, "height": 720})
+    page.locator("#windowEmptyCreate").click()
+    page.locator("#fName").fill("Pinned window")
+    page.locator('button[aria-controls="profileBrowser"]').click()
+    pin = page.get_by_label("启动内核版本", exact=True).filter(visible=True)
+    page.locator("#fEngine").select_option("chromium")
+    version = probe(default_binary())[1]
+    expect(pin).to_have_value("")
+    pin.select_option(version)
+    expect(page.locator("#fHostOs")).not_to_have_text("未提供")
+    expect(page.locator("#fHostArch")).not_to_be_empty()
+    page.locator('button[aria-controls="profileHardware"]').click()
+    assert page.locator(".editor-nav").evaluate("nav => nav.scrollWidth <= nav.clientWidth")
+    page.locator("#fRendererLimit").select_option("4")
+    page.locator("#fHeapLimit").select_option("512")
+    expect(page.locator("#fHardwareSummary")).to_have_text("4 个进程 · 512 MiB")
+    link = page.locator("#profileHardware").get_by_role("link", name="查看当前浏览器实测值")
+    expect(link).to_have_attribute("href", "/runtime.html")
+    page.locator('button[aria-controls="profileStartup"]').click()
+    page.locator("#fMuteAudio").check()
+    with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/profiles")) as created:
+        page.locator("#confirmProfile").click()
+    profile = created.value.json()["data"]
+    assert (profile["chromium_version"], profile["chromium_renderer_limit"],
+            profile["chromium_js_heap_mb"], profile["chromium_mute_audio"]) == (version, 4, 512, True)
+    page.get_by_role("button", name="Pinned window", exact=True).click()
+    preview = page.locator("#fingerprintPreview")
+    for rendered in (version, "4 个进程", "512 MiB"):
+        expect(preview).to_contain_text(rendered)
+    page.get_by_role("button", name="编辑指纹设置").click()
+    page.locator('button[aria-controls="profileBrowser"]').click()
+    expect(pin).to_have_value(version)
+    pin.select_option("")
+    page.locator('button[aria-controls="profileHardware"]').click()
+    expect(page.locator("#fHeapLimit")).to_have_value("512")
+    page.locator("#fHeapLimit").select_option("0")
+    with page.expect_response(lambda r: r.request.method == "PATCH") as edited:
+        page.locator("#confirmProfile").click()
+    saved = edited.value.json()["data"]
+    assert (saved["chromium_version"], saved["chromium_js_heap_mb"], saved["chromium_renderer_limit"]) == ("", 0, 4)
+
+
+def test_only_installed_build_enables_its_own_permissions(panel):
+    version = "150.0.2.3"
+    panel.route("**/api/v1/engine", lambda route: route.fulfill(json={"data": {
+        "browsers": [], "chromium": {
+            "version": None, "available": True, "installed_versions": [
+                {"version": version, "supports_media_capture_policy": True, "supports_geolocation_policy": False}],
+            "supports_media_capture_policy": False, "supports_geolocation_policy": False,
+        },
+    }}))
+    panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/browser")
+    expect(panel.locator("#profileBrowser")).to_have_attribute("open", "")
+    hint = panel.locator("#fChromiumVersionHint")
+    expect(hint).to_contain_text("缺少默认内核")
+    panel.locator("#fChromiumVersion").select_option(version)
+    expect(hint).to_contain_text("1 个版本")
+    panel.locator('button[aria-controls="profileFingerprint"]').click()
+    expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_enabled()
+    expect(panel.locator('#fGeolocation option[value="blocked"]')).to_be_disabled()
+    panel.locator('button[aria-controls="profileBrowser"]').click()
+    panel.locator("#fChromiumVersion").select_option("")
+    expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_disabled()
+    panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/hardware")
+    expect(panel.locator("#profileHardware")).to_have_attribute("open", "")
 
 
 def test_hubstudio_file_import_targets_selected_camoufox_window(panel):

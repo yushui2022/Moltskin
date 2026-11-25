@@ -173,9 +173,13 @@ def test_migrate_existing_camoufox_profile(data_dir):
         conn.execute("ALTER TABLE profiles DROP COLUMN local_fonts")
         conn.execute("ALTER TABLE profiles DROP COLUMN media_capture")
         conn.execute("ALTER TABLE profiles DROP COLUMN geolocation")
+        conn.execute("ALTER TABLE profiles DROP COLUMN chromium_js_heap_mb")
+        conn.execute("ALTER TABLE profiles DROP COLUMN chromium_mute_audio")
+        conn.execute("ALTER TABLE profiles DROP COLUMN chromium_renderer_limit")
         conn.execute("ALTER TABLE profiles DROP COLUMN browser_language")
         conn.execute("ALTER TABLE profiles DROP COLUMN browser_timezone")
         conn.execute("ALTER TABLE profiles DROP COLUMN browser_window_size")
+        conn.execute("ALTER TABLE profiles DROP COLUMN chromium_version")
         conn.execute("ALTER TABLE profiles DROP COLUMN engine")
         conn.execute("ALTER TABLE profiles DROP COLUMN startup_page")
         conn.execute("ALTER TABLE profiles DROP COLUMN block_images")
@@ -189,9 +193,11 @@ def test_migrate_existing_camoufox_profile(data_dir):
     with db.session() as conn:
         row = conn.execute("SELECT * FROM profiles WHERE id='old-id'").fetchone()
     assert row["engine"] == "camoufox"
+    assert row["chromium_version"] == ""
     assert row["media_capture"] == row["geolocation"] == "standard"
     assert row["browser_language"] == row["browser_timezone"] == row["browser_window_size"] == ""
     assert row["user_data_dir"] == str(data_dir / "old-profile")
+    assert (row["chromium_mute_audio"], row["chromium_renderer_limit"], row["chromium_js_heap_mb"]) == (0, 0, 0)
     assert row["open_count"] == 12
     assert row["browser_version"] is None
     with db.session() as conn:
@@ -260,6 +266,32 @@ def test_chromium_window_settings_survive_partial_edits_duplication_and_import(c
     defaults = dict.fromkeys(settings, "")
     reset = client.patch(url, json=defaults).raise_for_status().json()["data"]
     assert defaults.items() <= reset.items()
+    assert client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).json()["version"] == 1
+
+
+def test_chromium_startup_controls_roundtrip(client):
+    custom = {"chromium_mute_audio": True, "chromium_renderer_limit": 4, "chromium_js_heap_mb": 256}
+    original = create_chromium(client, "audio & processes", **custom)
+    assert custom.items() <= original.items()
+    url = f"{PROFILES}/{original['id']}"
+    updated = client.patch(url, json={"chromium_renderer_limit": 2}).raise_for_status().json()["data"]
+    changed = {**custom, "chromium_renderer_limit": 2}
+    assert changed.items() <= updated.items()
+    duplicate = client.post(url + "/duplicate").raise_for_status().json()["data"]
+    assert changed.items() <= duplicate.items()
+    exported = client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).raise_for_status().json()
+    assert exported["version"] == 5 and changed.items() <= exported["profiles"][0].items()
+    result = client.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]
+    assert result["created"] == 1
+    profiles = client.get(PROFILES).raise_for_status().json()["data"]["items"]
+    assert len(profiles) == 3 and all(changed.items() <= row.items() for row in profiles)
+    for invalid in ({"chromium_renderer_limit": True}, {"chromium_renderer_limit": 3},
+                    {"chromium_renderer_limit": "4"}, {"chromium_js_heap_mb": -1},
+                    {"chromium_js_heap_mb": None}, {"chromium_mute_audio": "on"}):
+        assert client.patch(url, json=invalid).status_code == 422
+    assert client.post(PROFILES, json={"name": "wrong engine", **custom}).status_code == 422
+    defaults = {"chromium_mute_audio": False, "chromium_renderer_limit": 0, "chromium_js_heap_mb": 0}
+    assert defaults.items() <= client.patch(url, json=defaults).raise_for_status().json()["data"].items()
     assert client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).json()["version"] == 1
 
 
@@ -341,7 +373,8 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
     monkeypatch.setattr(config, "OPEN_MANAGER", True)
     monkeypatch.setattr(config, "PORT", 18765)
 
-    a = create_chromium(client, "a", local_fonts="restricted", media_capture="blocked")
+    a = create_chromium(client, "a", local_fonts="restricted", media_capture="blocked",
+                        chromium_mute_audio=True, chromium_renderer_limit=4, chromium_js_heap_mb=512)
     b = create_chromium(client, "b", geolocation="blocked")
     assert a["user_data_dir"] != b["user_data_dir"]
     urls = [f"{PROFILES}/{p['id']}" for p in (a, b)]
@@ -356,6 +389,9 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
         assert client.post(urls[0] + "/launch").status_code == 409
         assert client.patch(urls[0], json={"local_fonts": "standard"}).status_code == 409
         assert client.patch(urls[0], json={"media_capture": "standard"}).status_code == 409
+        assert client.patch(urls[0], json={"chromium_mute_audio": False}).status_code == 409
+        assert client.patch(urls[0], json={"chromium_renderer_limit": 0}).status_code == 409
+        assert client.patch(urls[0], json={"chromium_js_heap_mb": 0}).status_code == 409
         assert client.patch(urls[1], json={"geolocation": "standard"}).status_code == 409
         for field, value in (("browser_language", "en-US"), ("browser_timezone", "UTC"), ("browser_window_size", "1440x900")):
             assert client.patch(urls[0], json={field: value}).status_code == 409
@@ -364,6 +400,10 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
             assert f"--user-data-dir={profile['user_data_dir']}" in args
             assert (RESTRICT_FONTS in args) == restricted
             assert (BLOCK_MEDIA in args) == restricted
+            assert ("--mute-audio" in args) == (profile == a)
+            assert ("--js-flags=--max-old-space-size=512" in args) == (profile == a)
+            limits = [arg for arg in args if arg.startswith("--renderer-process-limit=")]
+            assert limits == (["--renderer-process-limit=4"] if profile == a else [])
             assert (BLOCK_LOCATION in args) == (profile == b)
             assert "--use-mock-keychain" not in args
             assert "--moltskin-panel-port=18765" in args
@@ -439,3 +479,67 @@ def test_camoufox_startup_tab(client, monkeypatch, data_dir, startup, host_allow
         page.goto.assert_called_once_with(target, wait_until="domcontentloaded", timeout=15000)
     else:
         page.goto.assert_not_called()
+
+
+def test_choose_installed_build_and_protect_profile_data(client, data_dir, monkeypatch):
+    builds = data_dir / "registered"
+    monkeypatch.setenv("MOLTSKIN_CHROMIUM_BUILDS_DIR", str(builds))
+    executable = Path("Chromium.app/Contents/MacOS/Chromium") if sys.platform == "darwin" else Path("chrome")
+    old_binary = builds / "older" / executable
+    old_binary.parent.mkdir(parents=True)
+    source = (data_dir / "test-chromium").read_text().replace(
+        'os.environ.get("TEST_CHROMIUM_VERSION", "158.0.0.1")', '"147.0.0.1"',
+    ).replace('if not os.environ.get("TEST_LEGACY_CHROMIUM"):', 'if False:')
+    old_binary.write_text(source)
+    old_binary.chmod(0o700)
+    duplicate = builds / "second-copy" / executable
+    duplicate.parent.mkdir(parents=True)
+    duplicate.symlink_to(old_binary)
+    versions = client.get("/api/v1/engine").json()["data"]["chromium"]
+    assert versions["version"] == "158.0.0.1"
+    assert [v["version"] for v in versions["installed_versions"]] == ["158.0.0.1", "147.0.0.1"]
+    assert not versions["installed_versions"][1]["supports_media_capture_policy"]
+
+    with monkeypatch.context() as patch:
+        patch.setenv("MOLTSKIN_CHROMIUM_BINARY", str(data_dir / "uninstalled"))
+        alternate = client.get("/api/v1/engine").json()["data"]["chromium"]
+        assert alternate["available"] and alternate["version"] is None
+        assert [v["version"] for v in alternate["installed_versions"]] == ["147.0.0.1"]
+
+    original = create_chromium(client, "pinned", chromium_version="147.0.0.1")
+    url = f"{PROFILES}/{original['id']}"
+    for invalid in ("147.0.0.2", str(old_binary)):
+        assert client.patch(url, json={"chromium_version": invalid}).status_code == 422
+    assert client.patch(url, json={"media_capture": "blocked"}).status_code == 422
+    assert client.post(PROFILES, json={"name": "other-engine", "chromium_version": "147.0.0.1"}).status_code == 422
+    assert client.post(url + "/duplicate").json()["data"]["chromium_version"] == "147.0.0.1"
+    export = client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).json()
+    assert export["version"] == 5 and export["profiles"][0]["chromium_version"] == "147.0.0.1"
+    assert client.post("/api/v1/import/profiles", json=export).json()["data"]["created"] == 1
+
+    def launch(version):
+        try:
+            started = client.post(url + "/launch").raise_for_status().json()["data"]
+            assert started["browser_version"] == version
+            assert client.patch(url, json={"chromium_version": "158.0.0.1" if version == "147.0.0.1" else "147.0.0.1"}).status_code == 409
+        finally:
+            client.post(url + "/stop")
+
+    launch("147.0.0.1")
+    client.patch(url, json={"chromium_version": ""}).raise_for_status()
+    launch("158.0.0.1")
+    client.patch(url, json={"chromium_version": "147.0.0.1"}).raise_for_status()
+    rejected = client.post(url + "/launch")
+    assert rejected.status_code == 409 and rejected.json()["error"]["code"] == "CHROMIUM_PROFILE_VERSION"
+    old_binary.unlink()
+    rejected = client.post(url + "/launch")
+    assert rejected.status_code == 503 and "147.0.0.1" in rejected.json()["error"]["message"]
+    client.patch(url, json={"chromium_version": ""}).raise_for_status()
+
+    marker = Path(original["user_data_dir"]) / "Last Version"
+    marker.write_text("159.0.0.1")
+    assert client.post(url + "/launch").status_code == 409
+    assert marker.read_text() == "159.0.0.1"
+    monkeypatch.setenv("TEST_CHROMIUM_VERSION", "159.0.0.2")
+    client.post(url + "/launch").raise_for_status()
+    client.post(url + "/stop").raise_for_status()

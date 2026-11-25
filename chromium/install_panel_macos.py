@@ -40,7 +40,7 @@ def install(applications: Path, python: str) -> Path:
             (contents / "MacOS").mkdir()
             executable = contents / "MacOS/Moltskin"
             env_lines = []
-            for key in ("MOLTSKIN_DATA_DIR", "MOLTSKIN_CHROMIUM_BINARY", "MOLTSKIN_PORT"):
+            for key in ("MOLTSKIN_DATA_DIR", "MOLTSKIN_CHROMIUM_BINARY", "MOLTSKIN_CHROMIUM_BUILDS_DIR", "MOLTSKIN_PORT"):
                 value = os.environ.get(key)
                 if value:
                     if key != "MOLTSKIN_PORT":

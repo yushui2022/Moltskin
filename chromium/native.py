@@ -8,6 +8,7 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 CAPABILITY = "moltskin-disable-local-font-access"
 MEDIA_CAPTURE_CAPABILITY = "moltskin-block-media-capture"
@@ -41,6 +42,72 @@ def probe_capabilities(path: Path) -> tuple[Path, str, frozenset[str]]:
         raise ValueError(f"this binary does not report the Moltskin Local Font Access capability: {path}")
     version = re.search(r"\b\d+(?:\.\d+){3}\b", lines[0])
     return path, version.group() if version else lines[0].strip(), capabilities
+
+
+VERSION_PATTERN = r"[0-9]{1,9}(?:\.[0-9]{1,9}){3}"
+
+
+class InstalledBuild(NamedTuple):
+    binary: Path
+    version: str
+    capabilities: frozenset[str]
+
+
+def _read_build(path: Path) -> InstalledBuild:
+    build = InstalledBuild(*probe_capabilities(path))
+    if not re.fullmatch(VERSION_PATTERN, build.version):
+        raise ValueError("开发包没有报告有效的 Chromium 版本号")
+    return build
+
+
+def build_catalog() -> tuple[dict[str, InstalledBuild], str | None, str | None]:
+    """Discover the default and explicitly registered, host-managed packages only."""
+    builds: dict[str, InstalledBuild] = {}
+    default = None
+    problem = None
+    if sys.platform not in {"darwin", "linux"}:
+        return builds, default, "Chromium 预览版目前支持 macOS 和 Linux。"
+    try:
+        build = _read_build(default_binary())
+        default = build.version
+        builds[default] = build
+    except FileNotFoundError:
+        problem = "未找到默认 Moltskin Chromium，可通过 MOLTSKIN_CHROMIUM_BINARY 指定开发包。"
+    except ValueError:
+        problem = "默认 Chromium 未报告有效的 Moltskin 补丁或版本号。"
+    except (OSError, subprocess.SubprocessError):
+        problem = "无法执行默认 Moltskin Chromium，请检查开发包路径和执行权限。"
+
+    directory = os.environ.get("MOLTSKIN_CHROMIUM_BUILDS_DIR")
+    if directory:
+        root = Path(directory).expanduser().resolve()
+        package = "Chromium.app/Contents/MacOS/Chromium" if sys.platform == "darwin" else "chrome"
+        for candidate in sorted(root.glob("*/" + package)):
+            try:
+                binary = candidate.resolve(strict=True)
+                if not binary.is_relative_to(root) or not binary.is_file():
+                    continue
+                build = _read_build(binary)
+            except (ValueError, OSError, RuntimeError, subprocess.SubprocessError):
+                continue
+            builds.setdefault(build.version, build)
+    return builds, default, problem
+
+
+def resolve_build(version: str) -> InstalledBuild:
+    if not version:
+        return _read_build(default_binary())
+    builds, _, _ = build_catalog()
+    if version not in builds:
+        raise ValueError(f"本机未安装所选 Chromium {version}，请安装该版本或重新选择内核。")
+    return builds[version]
+
+
+def check_access_policies(capabilities: frozenset[str], media_capture: str, geolocation: str) -> None:
+    if media_capture == "blocked" and MEDIA_CAPTURE_CAPABILITY not in capabilities:
+        raise ValueError(f"当前内核缺少 {MEDIA_CAPTURE_CAPABILITY} 补丁，请更新内核以阻止摄像头与麦克风访问")
+    if geolocation == "blocked" and GEOLOCATION_CAPABILITY not in capabilities:
+        raise ValueError(f"当前内核缺少 {GEOLOCATION_CAPABILITY} 补丁，请更新内核以阻止地理位置访问")
 
 
 def probe(path: Path, *, capability: str = CAPABILITY) -> tuple[Path, str]:
