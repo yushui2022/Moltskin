@@ -21,7 +21,6 @@ from threading import Event, Thread
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from html import escape
 from importlib.metadata import version as pkg_version
-from ipaddress import IPv4Address, IPv6Address
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
 from uuid import UUID
@@ -41,6 +40,7 @@ from . import backup as backup_store
 from . import config, db, extensions, jobs, launcher, observation, proxy_checker, scheduler, selftest, state_sync
 from . import platform_preview, recycle, workbench_location
 from . import cookies as cookie_store
+from .proxy_settings import chromium_proxy_server, normalize_host
 from .security import get_token, workbench_signature
 
 # ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ Engine = Literal["camoufox", "chromium"]
 FontPolicy = Literal["standard", "restricted"]
 AccessPolicy = Literal["standard", "blocked"]
 StartupPage = Literal["default", "dashboard", "blank"]
-PROFILE_FORMAT_VERSION = 7
+PROFILE_FORMAT_VERSION = 8
 
 
 class PlatformPreviewSettings(BaseModel):
@@ -189,6 +189,7 @@ class ImportedProxy(BaseModel):
     host: str = Field(min_length=1)
     port: int = Field(gt=0, lt=65536)
     username: str | None = None
+    password: str | None = Field(default=None, exclude=True, repr=False)
 
 
 class ImportedProfile(ProfileCreate):
@@ -356,6 +357,11 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def serialize_proxy(row: sqlite3.Row) -> dict[str, Any]:
+    try:
+        chromium_proxy_server(row)
+        compatible = True
+    except ValueError:
+        compatible = False
     return {
         "id": row["id"],
         "name": row["name"],
@@ -364,6 +370,7 @@ def serialize_proxy(row: sqlite3.Row) -> dict[str, Any]:
         "port": row["port"],
         "username": row["username"],
         "has_password": bool(row["password"]),
+        "chromium_compatible": compatible,
         "exit_ip": row["exit_ip"],
         "country": row["country"],
         "timezone": row["timezone"],
@@ -398,8 +405,18 @@ def camoufox_profile(profile_id: str) -> sqlite3.Row:
     return row
 
 
+def _check_chromium_proxy(conn: sqlite3.Connection, proxy_id: str) -> None:
+    row = conn.execute("SELECT * FROM proxies WHERE id=?", (proxy_id,)).fetchone()
+    if row is None:
+        raise HTTPException(422, detail={"code": "PROXY_NOT_FOUND", "message": "所选代理不存在"})
+    try:
+        chromium_proxy_server(row)
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": "INVALID_CHROMIUM_PROXY", "message": str(exc)}) from exc
+
+
 def _check_engine_options(engine: str, local_fonts: str, media_capture: str, geolocation: str,
-                          proxy: Any, fingerprint: Any, window: ChromiumWindowSettings) -> None:
+                          fingerprint: Any, window: ChromiumWindowSettings) -> None:
     if engine not in ("camoufox", "chromium") or local_fonts not in ("standard", "restricted"):
         message = "不支持的浏览器内核或字体访问设置"
     elif engine == "camoufox" and window.chromium_version:
@@ -428,8 +445,8 @@ def _check_engine_options(engine: str, local_fonts: str, media_capture: str, geo
         message = "不支持的 Chromium 时区"
     elif window.browser_window_size and window.browser_window_size not in config.CHROMIUM_BROWSER_WINDOW_SIZES:
         message = "不支持的 Chromium 启动窗口大小"
-    elif engine == "chromium" and (proxy or fingerprint):
-        message = "当前 Chromium 预览版不支持绑定代理或使用 Camoufox 指纹预设"
+    elif engine == "chromium" and fingerprint:
+        message = "Chromium 环境不支持 Camoufox 指纹预设"
     elif window.chromium_version:
         try:
             build = chromium_native.resolve_build(window.chromium_version)
@@ -564,7 +581,7 @@ def _active_workbench_session(session_id: str, signature: str) -> sqlite3.Row | 
         conn.execute("BEGIN IMMEDIATE")
         return conn.execute(
             "SELECT p.id, p.name, COALESCE(g.name, '') AS group_name, p.remark, p.engine, "
-            "s.id AS session_id, s.started_at, s.browser_version, COALESCE(px.name, '直连') AS proxy_label "
+            "s.id AS session_id, s.started_at, s.browser_version, COALESCE(px.name, '系统网络') AS proxy_label "
             "FROM sessions s JOIN profiles p ON p.id=s.profile_id "
             "LEFT JOIN groups g ON g.id=p.group_id LEFT JOIN proxies px ON px.id=p.proxy_id "
             "WHERE s.id=? AND s.id=p.last_session_id AND s.state IN ('starting','running') AND p.engine='chromium'",
@@ -746,7 +763,9 @@ def _profile_export(ids: list[str] | None = None):
         })
     # Older importers ignore unknown fields; require a reader that preserves the selected settings.
     version = 1
-    if any(item["preview_platform"] or item["preview_platform_version"] or item["preview_architecture"] for item in items):
+    if any(item["engine"] == "chromium" and item["proxy"] for item in items):
+        version = 8
+    elif any(item["preview_platform"] or item["preview_platform_version"] or item["preview_architecture"] for item in items):
         version = 7
     elif any(item["chromium_user_agent"] for item in items):
         version = 6
@@ -774,8 +793,12 @@ def _read_import_profile(raw: Any) -> ImportedProfile:
     if not item.name:
         raise ValueError("名称为空")
     _check_engine_options(item.engine, item.local_fonts, item.media_capture, item.geolocation,
-                          item.proxy, item.fingerprint, item)
+                          item.fingerprint, item)
     if item.engine == "chromium":
+        if item.proxy:
+            chromium_proxy_server({**item.proxy.model_dump(), "password": item.proxy.password})
+        elif item.proxy_id:
+            raise ValueError("导入 Chromium 代理需要包含代理的协议、主机和端口")
         if "os" in item.model_fields_set and item.os != "native":
             raise ValueError("Chromium 使用本机操作系统")
         item.os = "native"
@@ -833,6 +856,8 @@ def _store_import_profile(item: ImportedProfile) -> str:
                         (proxy_id, proxy.name or proxy.host, proxy.protocol, proxy.host, proxy.port, proxy.username, ts, ts),
                     )
 
+            if item.engine == "chromium" and proxy_id:
+                _check_chromium_proxy(conn, proxy_id)
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
                 "user_data_dir, headless, status, created_at, updated_at, engine, chromium_version, local_fonts, media_capture, "
@@ -1138,7 +1163,7 @@ def preview_profile_preset(payload: PresetPreviewRequest):
 @app.post("/api/v1/profiles", status_code=201)
 def create_profile(payload: NewProfile):
     _check_engine_options(payload.engine, payload.local_fonts, payload.media_capture, payload.geolocation,
-                          payload.proxy_id, payload.fingerprint, payload)
+                          payload.fingerprint, payload)
     if payload.engine == "chromium" and "os" in payload.model_fields_set and payload.os != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     if payload.preset_draft_id and (payload.engine != "camoufox" or payload.fingerprint):
@@ -1152,6 +1177,8 @@ def create_profile(payload: NewProfile):
     with ExitStack() as cleanup:
         with db.session() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            if payload.engine == "chromium" and payload.proxy_id:
+                _check_chromium_proxy(conn, payload.proxy_id)
             if limit > 0 and conn.execute("SELECT COUNT(*) FROM profiles").fetchone()[0] >= limit:
                 raise HTTPException(409, detail={
                     "code": "PROFILE_LIMIT", "message": f"环境数量已达上限（{limit}），可在设置中调整",
@@ -1216,7 +1243,7 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
         window = payload.model_copy(update={"chromium_version": row["chromium_version"]})
     _check_engine_options(row["engine"], provided.get("local_fonts", row["local_fonts"]),
                           provided.get("media_capture", row["media_capture"]), provided.get("geolocation", row["geolocation"]),
-                          provided.get("proxy_id"), provided.get("fingerprint"), window)
+                          provided.get("fingerprint"), window)
     if row["engine"] == "chromium" and "os" in provided and provided["os"] != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     fields: dict[str, Any] = {}
@@ -1255,7 +1282,14 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     try:
         with db.session() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            if fields.keys() & runtime_fields and launcher._active_session(conn, profile_id):
+            needs_stopped_profile = bool(fields.keys() & runtime_fields)
+            if row["engine"] == "chromium" and "proxy_id" in fields:
+                if fields["proxy_id"]:
+                    _check_chromium_proxy(conn, fields["proxy_id"])
+                current = conn.execute("SELECT proxy_id FROM profiles WHERE id=?", (profile_id,)).fetchone()
+                if current and current["proxy_id"] != fields["proxy_id"]:
+                    needs_stopped_profile = True
+            if needs_stopped_profile and launcher._active_session(conn, profile_id):
                 raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改内核设置"})
             where = "id=?"
             expected = [profile_id]
@@ -1716,30 +1750,6 @@ def create_proxy(payload: ProxyCreate):
     return {"data": {"id": proxy_id, "name": payload.name, "status": "unchecked"}}
 
 
-def _bulk_proxy_host(value: Any) -> str:
-    if not isinstance(value, str) or not value.isascii():
-        raise ValueError("主机格式无效")
-    host = value.strip().lower()
-    if ":" in host:
-        address = host[1:-1] if host.startswith("[") and host.endswith("]") else host
-        if "%" in address:
-            raise ValueError("不支持带区域标识的 IPv6 地址")
-        try:
-            return f"[{IPv6Address(address)}]"
-        except ValueError:
-            raise ValueError("IPv6 地址无效") from None
-    host = host.removesuffix(".")
-    labels = host.split(".")
-    if re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]*)", labels[-1]):
-        try:
-            return str(IPv4Address(host))
-        except ValueError:
-            raise ValueError("IPv4 地址无效") from None
-    if len(host) > 253 or not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels):
-        raise ValueError("主机格式无效")
-    return host
-
-
 def _bulk_proxy_fields(item: Any) -> dict:
     if not isinstance(item, dict):
         raise ValueError("代理条目必须为对象")
@@ -1747,7 +1757,7 @@ def _bulk_proxy_fields(item: Any) -> dict:
     if not isinstance(protocol, str) or protocol.lower() not in ("http", "https", "socks5"):
         raise ValueError("协议必须是 HTTP、HTTPS 或 SOCKS5")
     protocol = protocol.lower()
-    host = _bulk_proxy_host(item.get("host"))
+    host = normalize_host(item.get("host"))
     port = item.get("port")
     if isinstance(port, str) and re.fullmatch(r"[0-9]{1,5}", port.strip()):
         port = int(port.strip())
@@ -1780,7 +1790,7 @@ def bulk_create_proxies(payload: Any = Body(default=None)):
         existing = set()
         for row in conn.execute("SELECT protocol, host, port FROM proxies"):
             try:
-                host = _bulk_proxy_host(row["host"])
+                host = normalize_host(row["host"])
             except ValueError:
                 # Earlier versions allowed unvalidated hosts. They cannot match a valid import.
                 continue
@@ -1820,13 +1830,42 @@ def update_proxy(proxy_id: str, payload: ProxyUpdate):
         fields["status"] = "unchecked"
         assignments = ", ".join(f"{k}=?" for k in fields)
         with db.session() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM proxies WHERE id=?", (proxy_id,)).fetchone()
+            if row is None:
+                raise HTTPException(404, detail={"code": "PROXY_NOT_FOUND", "message": "代理不存在"})
+            endpoint_changed = any(k in fields and fields[k] != row[k] for k in
+                                   ("host", "port", "protocol", "username", "password"))
+            if endpoint_changed and _chromium_proxy_in_use(conn, proxy_id):
+                try:
+                    chromium_proxy_server({**dict(row), **fields})
+                except ValueError as exc:
+                    raise HTTPException(422, detail={"code": "INVALID_CHROMIUM_PROXY", "message": str(exc)}) from exc
+                if conn.execute(
+                    "SELECT 1 FROM profiles WHERE engine='chromium' AND proxy_id=? AND status='running'",
+                    (proxy_id,),
+                ).fetchone():
+                    raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭使用此代理的 Chromium 窗口"})
             conn.execute(f"UPDATE proxies SET {assignments} WHERE id=?", (*fields.values(), proxy_id))
     return {"data": {"id": proxy_id}}
+
+
+def _chromium_proxy_in_use(conn: sqlite3.Connection, proxy_id: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM profiles WHERE engine='chromium' AND proxy_id=? UNION ALL "
+        "SELECT 1 FROM trashed_profiles WHERE engine='chromium' AND purge_started=0 "
+        "AND json_extract(profile_json, '$.proxy_id')=? LIMIT 1", (proxy_id, proxy_id),
+    ).fetchone() is not None
 
 
 @app.delete("/api/v1/proxies/{proxy_id}")
 def delete_proxy(proxy_id: str):
     with db.session() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if _chromium_proxy_in_use(conn, proxy_id):
+            raise HTTPException(409, detail={
+                "code": "PROXY_IN_USE", "message": "请先解绑使用此代理的 Chromium 环境。回收站内的环境可先恢复后解绑。",
+            })
         conn.execute("UPDATE profiles SET proxy_id=NULL WHERE proxy_id=?", (proxy_id,))
         conn.execute("DELETE FROM proxies WHERE id=?", (proxy_id,))
     return {"data": {"id": proxy_id, "deleted": True}}

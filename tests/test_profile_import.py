@@ -24,6 +24,22 @@ def import_rows(client, rows):
     return result.json()["data"]
 
 
+def test_chromium_proxy_round_trip_and_rejected_imports(api):
+    endpoint = {"protocol": "socks5", "host": "office.invalid", "port": 1080}
+    row = {"name": "Assigned network", "engine": "chromium", "proxy": endpoint}
+    result = import_rows(api, [row, {**row, "proxy": {**endpoint, "password": "test-only"}},
+                               {**row, "proxy": None, "proxy_id": "px_old"}])
+    assert result["created"] == 1 and [r["row"] for r in result["skipped"]] == [2, 3]
+    assert "test-only" not in str(result)
+    exported = api.get("/api/v1/export/profiles").raise_for_status().json()
+    assert exported["version"] == 8
+    assert endpoint.items() <= exported["profiles"][0]["proxy"].items()
+    assert api.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]["created"] == 1
+    profiles = api.get("/api/v1/profiles").raise_for_status().json()["data"]["items"]
+    duplicate = api.post("/api/v1/profiles/" + profiles[0]["id"] + "/duplicate").raise_for_status().json()["data"]
+    assert {profile["proxy"]["id"] for profile in profiles} == {duplicate["proxy"]["id"]}
+
+
 def test_import_keeps_unversioned_and_current_files_compatible(api):
     rows = [{"name": "portable", "engine": "chromium"}]
     for payload in (rows, {"profiles": rows}, {"version": 1, "profiles": rows},

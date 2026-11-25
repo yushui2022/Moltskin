@@ -21,6 +21,7 @@ from .security import workbench_signature
 
 def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    chromium_version: str = "", chromium_user_agent: str = "",
+                   proxy_server: str | None = None,
                    block_images: bool = False, open_dashboard: bool = False, workbench_session: str | None = None,
                    chromium_js_heap_mb: int = 0, chromium_mute_audio: bool = False, chromium_renderer_limit: int = 0,
                    media_capture: str = "standard", geolocation: str = "standard",
@@ -47,6 +48,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
     args = [str(binary), f"--user-data-dir={profile_dir.absolute()}", "--no-first-run", "--no-default-browser-check"]
+    if proxy_server:
+        args.append(f"--proxy-server={proxy_server}")
     if not 1 <= config.PORT <= 65535:
         raise ValueError("控制台端口须在 1 到 65535 之间")
     if config.PORT != 8765:

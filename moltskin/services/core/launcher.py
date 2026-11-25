@@ -15,6 +15,7 @@ from threading import Thread
 from camoufox.fingerprints import get_random_preset
 
 from . import chromium, config, db, extensions
+from .proxy_settings import chromium_proxy_server
 
 ACTIVE_STATES = ("starting", "running", "stopping")
 
@@ -230,8 +231,10 @@ def launch(profile_id: str, actor: str = "local") -> dict:
     browser_version = None
     process_env = None
     if is_chromium:
-        if proxy:
-            raise LaunchError("ENGINE_OPTIONS", "当前 Chromium 预览版不支持绑定代理", 422)
+        try:
+            proxy_server = chromium_proxy_server(proxy) if proxy else None
+        except ValueError as exc:
+            raise LaunchError("INVALID_CHROMIUM_PROXY", str(exc), 422) from exc
         try:
             process_env = chromium.launch_environment(profile["browser_timezone"])
             open_workbench = (not headless and config.OPEN_MANAGER and profile["startup_page"] == "default"
@@ -240,6 +243,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 profile_dir, profile["local_fonts"], headless,
                 chromium_version=profile["chromium_version"],
                 chromium_user_agent=profile["chromium_user_agent"],
+                proxy_server=proxy_server,
                 open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
                 workbench_session=session_id if open_workbench else None,
                 block_images=bool(profile["block_images"]),
@@ -275,6 +279,11 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                          "browser_timezone", "browser_window_size")
         if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
+        if is_chromium and proxy:
+            endpoint = conn.execute("SELECT * FROM proxies WHERE id=?", (current["proxy_id"],)).fetchone()
+            if not endpoint or any(endpoint[k] != proxy[k] for k in
+                                   ("host", "port", "protocol", "username", "password", "status")):
+                raise LaunchError("PROFILE_CHANGED", "指定代理已更新，请重新启动")
         if is_chromium and _chromium_directory(current) != profile_dir:
             raise LaunchError("INVALID_PROFILE_DIRECTORY", "环境目录已变更，请检查数据目录。")
 
