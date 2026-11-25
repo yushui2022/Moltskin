@@ -22,6 +22,12 @@
 
 Chromium 环境可在浏览器中登录并保留本机数据。面板里的 Cookie 文件管理、跨环境状态同步和备份中的登录态目前仅支持 Camoufox。Chromium 环境的名称和权限设置随面板数据库一起备份。
 
+### 窗口代理
+
+在「代理 IP」保存代理，然后在新建或编辑 Chromium 窗口时选择该代理。留空会沿用系统网络。支持未设置用户名和密码的 HTTP、HTTPS 和 SOCKS5 代理。窗口运行期间需先关闭窗口再变更绑定或代理地址。复制环境、导出和重新导入配置都会保留代理设置。
+
+指定代理通过 Chromium 的原生网络栈路由普通网页请求。代理失联时，相应的网页请求会报错。本机回环地址按 Chromium 的内置规则访问，所以本地工作台仍可用。WebRTC 的媒体传输和 UDP 需要独立验证。[Chromium 代理行为](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md)
+
 ## 临时打开看效果
 
 在仓库根目录执行 `python3 chromium/launch_preview.py`。每次都会打开全新的临时环境，正常退出浏览器后清理数据。macOS 临时预览使用 Chromium 的测试钥匙串处理 Cookie 加密，不读取登录钥匙串里的「Chromium Safe Storage」。需要保留登录状态时，使用下面的命名环境。[Chromium 开发构建说明](https://chromium.googlesource.com/chromium/src/+/main/docs/mac_build_instructions.md#avoiding-system-permissions-dialogs-after-each-build)

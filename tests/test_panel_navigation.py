@@ -146,6 +146,52 @@ def test_open_progress_background_and_failure(panel):
     expect(panel.locator("#toast")).to_have_text("「Window B」已启动")
 
 
+def test_proxy_selection_create_edit_and_batch(panel):
+    def add_proxy(name, **extra):
+        return panel.evaluate("""proxy => api('/proxies', {method: 'POST', body: JSON.stringify(proxy)})""",
+                              {"name": name, "host": "office.example.test", "port": 8100, **extra})["id"]
+
+    fixed = add_proxy("Office")
+    authenticated = add_proxy("Accounts", username="member")
+    panel.evaluate("refreshProxies()")
+    panel.locator("#windowEmptyCreate").click()
+    panel.locator("#fName").fill("Office window")
+    panel.locator('button[aria-controls="profileNetwork"]').click()
+    proxy = panel.locator("#fProxy")
+    proxy.select_option(authenticated)
+    panel.locator('button[aria-controls="profileBrowser"]').click()
+    panel.locator("#fEngine").select_option("chromium")
+    panel.locator("#confirmProfile").click()
+    expect(proxy).to_be_focused()
+    expect(proxy).to_have_value(authenticated)
+    expect(proxy.locator("option:checked")).to_be_disabled()
+    expect(panel.locator("#toast")).to_contain_text("重新选择网络")
+    proxy.select_option(fixed)
+    expect(panel.locator("#fNetworkSummary")).to_contain_text("Office")
+    panel.locator("#confirmProfile").click()
+    row = panel.locator("#rows tr").filter(has_text="Office window")
+    expect(row.locator(".addr")).to_have_text("Office")
+    row.get_by_label("更多操作").click()
+    panel.locator('[data-cmd="edit"]').click()
+    panel.locator('button[aria-controls="profileNetwork"]').click()
+    expect(proxy).to_have_value(fixed)
+    proxy.select_option("")
+    panel.locator("#confirmProfile").click()
+    expect(row.locator(".addr")).to_have_text("系统网络")
+
+    panel.locator("#createMenuBtn").click()
+    panel.locator('[data-create="batch"]').click()
+    panel.locator("#bPrefix").fill("Team")
+    panel.locator("#bCount").fill("2")
+    panel.locator("#bEngine").select_option("chromium")
+    bulk = panel.locator("#bProxy")
+    expect(bulk.locator(f'option[value="{authenticated}"]')).to_be_disabled()
+    bulk.select_option(fixed)
+    panel.locator("#confirmBatch").click()
+    for name in ("Team-1", "Team-2"):
+        expect(panel.locator("#rows tr").filter(has_text=name).locator(".addr")).to_have_text("Office")
+
+
 def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.locator("#windowEmptyCreate").click()
     panel.locator("#fName").fill("Media A")

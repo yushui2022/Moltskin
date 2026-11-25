@@ -12,6 +12,8 @@ Open Moltskin on macOS to see the window list in a dedicated desktop manager. Cl
 
 Select Camoufox or Chromium when creating a profile. Chromium profiles have separate settings for local font access, camera and microphone capture, and site geolocation. Each profile keeps its engine and data directory across restarts. The Chromium build has been verified on Apple Silicon. Linux x86-64 browser verification is pending. [Build and run the Chromium preview](chromium/README.md) · [Fingerprint surface coverage (中文)](chromium/fingerprint-coverage.md)
 
+Chromium profiles can use the system network or a fixed HTTP, HTTPS or SOCKS5 proxy without stored credentials. The binding persists across restarts. Close the profile before changing its network settings. [Profile and proxy API](docs/API.md)
+
 | Milestone | What we will verify |
 |---|---|
 | Build the engine | Build a pinned Chromium revision on Linux x86-64 and macOS arm64. Launch each build from a clean profile and record its version and checksum. |
