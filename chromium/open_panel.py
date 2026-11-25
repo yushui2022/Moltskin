@@ -1,4 +1,4 @@
-"""Start or reuse the local service and open chrome://moltskin in its own browser."""
+"""Start or reuse the local service and open the desktop environment manager."""
 from __future__ import annotations
 
 import argparse
@@ -21,18 +21,28 @@ else:
     import native
 
 ROOT = Path(__file__).resolve().parents[1]
-PANEL = "chrome://moltskin/"
 ACTIVATE_MANAGER = """
 ObjC.import('AppKit')
 ObjC.import('CoreGraphics')
+function isManagerWindow(window, pid) {
+    // Chromium also owns layer-zero menu strips and small accessory surfaces.
+    const bounds = window.kCGWindowBounds
+    return window.kCGWindowOwnerPID === pid && window.kCGWindowLayer === 0 &&
+        bounds && bounds.Width >= 200 && bounds.Height >= 120
+}
 function run(args) {
     const pid = Number(args[0])
-    const windows = $.CGWindowListCopyWindowInfo($.kCGWindowListExcludeDesktopElements, 0)
-    const rows = ObjC.deepUnwrap(ObjC.castRefToObject(windows))
-    if (!rows.some(w => w.kCGWindowOwnerPID === pid && w.kCGWindowLayer === 0))
-        return 'no'
-    const app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(pid)
-    return app && app.activateWithOptions(3) ? 'yes' : 'no'
+    const until = Date.now() + Number(args[1] || 0)
+    do {
+        const windows = $.CGWindowListCopyWindowInfo($.kCGWindowListExcludeDesktopElements, 0)
+        const rows = ObjC.deepUnwrap(ObjC.castRefToObject(windows))
+        if (rows.some(w => isManagerWindow(w, pid))) {
+            const app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(pid)
+            return app && app.activateWithOptions(3) ? 'yes' : 'no'
+        }
+        if (Date.now() >= until) return 'no'
+        $.NSThread.sleepForTimeInterval(0.1)
+    } while (true)
 }
 """
 
@@ -98,32 +108,51 @@ def ensure_service(port: int, data: Path, log) -> None:
     raise RuntimeError(f"The local Moltskin service did not start. See {log.name}.")
 
 
+def manager_pid(profile: Path, port: int, saved_port: Path) -> str | None:
+    if not native.chromium_owns_directory(profile):
+        return None
+    if not saved_port.is_file() or saved_port.read_text().strip() != str(port):
+        raise RuntimeError("Close the existing Moltskin manager window before changing its port.")
+    host, _, pid = os.readlink(profile / "SingletonLock").rpartition("-")
+    if host != socket.gethostname() or not pid.isascii() or not pid.isdigit():
+        raise RuntimeError("The manager profile is in use by another browser.")
+    return pid
+
+
 def open_manager(port: int, data: Path) -> None:
     binary, _ = native.probe(native.default_binary(), capability="moltskin-panel")
     data.mkdir(mode=0o700, parents=True, exist_ok=True)
-    profile = data / "manager-browser"
-    profile.mkdir(mode=0o700, exist_ok=True)
     with (data / "panel.lock").open("a") as lock, (data / "panel.log").open("a") as log:
         fcntl.flock(lock, fcntl.LOCK_EX)
         ensure_service(port, data, log)
         saved_port = data / "manager-port"
-        if native.chromium_owns_directory(profile):
-            if not saved_port.is_file() or saved_port.read_text().strip() != str(port):
-                raise RuntimeError("Close the existing Moltskin manager window before changing its port.")
-            host, _, pid = os.readlink(profile / "SingletonLock").rpartition("-")
-            if host != socket.gethostname() or not pid.isascii() or not pid.isdigit():
-                raise RuntimeError("The manager profile is in use by another browser.")
-            if sys.platform == "darwin":
-                # Activate this manager PID, even if other Chromium builds are running.
-                result = subprocess.run(
-                    ["/usr/bin/osascript", "-l", "JavaScript", "-e", ACTIVATE_MANAGER, pid],
-                    capture_output=True, text=True, timeout=5, check=False,
-                )
-                if result.returncode == 0 and result.stdout.strip() == "yes":
-                    return
+        app_switch = f"--app=http://127.0.0.1:{port}/#/windows"
+        profile = data / "manager-desktop"
+        previous = data / "manager-browser"
+        if not profile.exists() and previous.is_dir():
+            # Reuse the prior manager's display preferences on a cold upgrade.
+            # A still-open tabbed manager keeps its process and all its tabs.
+            pid = manager_pid(previous, port, saved_port)
+            if pid is None:
+                profile = previous
+            else:
+                command = subprocess.run(["ps", "-ww", "-p", pid, "-o", "command="],
+                                         capture_output=True, text=True, timeout=5, check=False)
+                if command.returncode == 0 and app_switch in command.stdout.split():
+                    profile = previous
+        profile.mkdir(mode=0o700, exist_ok=True)
+        pid = manager_pid(profile, port, saved_port)
+        if pid and sys.platform == "darwin":
+            # A double click can arrive after the Chromium lock but before its first window.
+            result = subprocess.run(
+                ["/usr/bin/osascript", "-l", "JavaScript", "-e", ACTIVATE_MANAGER, pid, "3000"],
+                capture_output=True, text=True, timeout=5, check=False,
+            )
+            if result.returncode == 0 and result.stdout.strip() == "yes":
+                return
         saved_port.write_text(str(port), encoding="utf-8")
         args = [str(binary), f"--user-data-dir={profile}", f"--moltskin-panel-port={port}",
-                "--no-first-run", "--no-default-browser-check", PANEL]
+                "--no-first-run", "--no-default-browser-check", app_switch]
         child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                  start_new_session=True)
         # Release the launch lock once Chromium owns its user-data directory.

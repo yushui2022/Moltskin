@@ -2,11 +2,11 @@
 
 本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录，可以设置本机字体、摄像头与麦克风采集、地理位置三类权限。各项指纹面的支持状态、实测范围与平台差异见[指纹能力对照](fingerprint-coverage.md)。
 
-## 打开浏览器内的控制面板
+## 打开桌面管理窗口
 
-应用下方补丁并构建 Chromium，按项目快速开始安装 Python 依赖。在仓库根目录用同一 Python 环境运行 `python chromium/open_panel.py`。启动器会启动或复用本机控制服务，在 Moltskin Chromium 里打开管理标签页。macOS 也可以运行一次 `python chromium/install_panel_macos.py`，以后双击用户「应用程序」目录中的 `Moltskin.app` 即可打开。
+应用下方补丁并构建 Chromium，按项目快速开始安装 Python 依赖。在仓库根目录用同一 Python 环境运行 `python chromium/open_panel.py`。启动器会启动或复用本机控制服务，并在独立的桌面窗口中显示「浏览器窗口」列表。macOS 也可以运行一次 `python chromium/install_panel_macos.py`，以后双击用户「应用程序」目录中的 `Moltskin.app` 即可打开。
 
-在管理页点击「创建窗口」，填写名称，在「浏览器与系统」选择 Moltskin Chromium，然后在列表中点「打开」。默认设置下，有头窗口的第一个标签页是该环境自己的工作台，显示窗口名称、分组、备注、本次启动时间、实际内核和网页读取的 UA。
+在管理页点击「创建窗口」，填写名称，在「浏览器与系统」选择 Moltskin Chromium，然后在列表中点「打开」。管理窗口会显示启动状态，遇到错误时显示原因。有头环境会另开带地址栏和标签栏的浏览器窗口。默认设置下，首个标签页是该环境自己的工作台，显示名称、分组、备注、本次启动时间、实际内核和网页读取的 UA。
 
 窗口直接向 IPinfo 查询自己的出口 IP 和所在地区。如果读取失败，窗口会通过 ipify 获取出口 IP，并尝试用本机已安装的地理库查询该地址。页面分别显示 IP 所在地时间和浏览器时区。地理信息来自出口 IP 的估算，服务缺少的数据会在页面上标明。[IPinfo 接口说明](https://ipinfo.io/developers/ipinfo-api) · [ipify 接口说明](https://www.ipify.org/)
 

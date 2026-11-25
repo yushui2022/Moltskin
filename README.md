@@ -8,7 +8,9 @@ Moltskin is a self-hosted browser for managing isolated profiles. Each profile h
 
 ## Chromium roadmap
 
-Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` shortcut opens the local dashboard. Select Camoufox or Chromium when creating a profile. Chromium profiles have separate settings for local font access, camera and microphone capture, and site geolocation. Each profile keeps its engine and data directory across restarts. The Chromium build has been verified on Apple Silicon. Linux x86-64 browser verification is pending. [Build and run the Chromium preview](chromium/README.md) · [Fingerprint surface coverage (中文)](chromium/fingerprint-coverage.md)
+Open Moltskin on macOS to see the window list in a dedicated desktop manager. Click **Open** on a profile to see its launch status and use its browser in a separate window with tabs and an address bar. With the default settings, each Chromium window opens its own workbench in the first tab.
+
+Select Camoufox or Chromium when creating a profile. Chromium profiles have separate settings for local font access, camera and microphone capture, and site geolocation. Each profile keeps its engine and data directory across restarts. The Chromium build has been verified on Apple Silicon. Linux x86-64 browser verification is pending. [Build and run the Chromium preview](chromium/README.md) · [Fingerprint surface coverage (中文)](chromium/fingerprint-coverage.md)
 
 | Milestone | What we will verify |
 |---|---|
@@ -69,9 +71,9 @@ Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` sho
 | Environment sync: cookies + localStorage + IndexedDB | ✅ |
 | Backup / restore (database, extensions, optional login state) | ✅ |
 | MCP server, Python SDK | ✅ |
-| Desktop app | 🚧 |
+| macOS desktop manager (local Chromium build) | ✅ |
 
-### Manager page inside the browser
+### Profile startup page
 
 Choose the local dashboard, a blank page, or the engine default when creating or
 editing a profile. With the default startup settings, headed Chromium opens that

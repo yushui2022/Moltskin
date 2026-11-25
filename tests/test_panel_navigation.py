@@ -99,6 +99,53 @@ def test_nested_dialog_keyboard_and_mobile_navigation(panel):
     expect(page.locator("#viewTable")).to_have_attribute("aria-pressed", "true")
 
 
+def test_open_progress_background_and_failure(panel):
+    for name in ("Window A", "Window B"):
+        panel.evaluate("name => api('/profiles', {method: 'POST', body: JSON.stringify({name, engine: 'chromium'})})", name)
+    panel.evaluate("refresh()")
+    rows = panel.locator("#rows tr")
+    first = rows.filter(has_text="Window A")
+    second = rows.filter(has_text="Window B")
+    pending = []
+    panel.route("**/profiles/*/launch", lambda route: pending.append(route))
+    dialog = panel.get_by_role("dialog", name="正在启动浏览器")
+
+    with panel.expect_request("**/launch"):
+        first.get_by_role("button", name="打开", exact=True).press("Enter")
+    expect(dialog).to_contain_text("Window A")
+    expect(dialog.get_by_role("progressbar")).to_be_visible()
+    assert dialog.get_by_role("progressbar").get_attribute("aria-valuenow") is None
+    expect(dialog.get_by_role("button", name="后台继续")).to_be_focused()
+    panel.keyboard.press("Escape")
+    expect(dialog).to_have_count(0)
+    expect(first.get_by_role("button", name="Window A")).to_be_focused()
+    expect(first.get_by_role("button", name="正在处理")).to_be_disabled()
+    first.get_by_label("更多操作").click()
+    expect(panel.locator('[data-cmd="start"]')).to_be_disabled()
+    panel.keyboard.press("Escape")
+
+    with panel.expect_request("**/launch"):
+        second.get_by_role("button", name="打开", exact=True).click()
+    expect(dialog).to_contain_text("Window B")
+    assert len(pending) == 2
+    pending[0].fulfill(json={"data": {"state": "running", "session_id": "a"}})
+    expect(panel.locator("#toast")).to_have_text("「Window A」已启动")
+    expect(dialog).to_contain_text("Window B")
+    pending[1].fulfill(status=409, json={"error": {"message": "已达到并发上限"}})
+    failed = panel.get_by_role("dialog", name="启动失败")
+    expect(failed).to_be_visible()
+    expect(failed.locator("#launchStatus")).to_have_text("已达到并发上限")
+    expect(failed.get_by_role("progressbar")).to_have_count(0)
+    failed.get_by_role("button", name="返回列表").click()
+    expect(second.get_by_role("button", name="打开", exact=True)).to_be_enabled()
+
+    with panel.expect_request("**/launch"):
+        second.get_by_role("button", name="打开", exact=True).click()
+    pending[2].fulfill(json={"data": {"state": "running", "session_id": "b"}})
+    expect(dialog).to_have_count(0)
+    expect(panel.locator("#toast")).to_have_text("「Window B」已启动")
+
+
 def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.locator("#windowEmptyCreate").click()
     panel.locator("#fName").fill("Media A")

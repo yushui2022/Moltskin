@@ -974,6 +974,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .switch input:checked + span::after { transform: translateX(14px); }
 
 /* job progress */
+.launch-dialog { width: 420px; }
+.launch-dialog .body { overflow-wrap: anywhere; }
+.launch-name { font-size: 16px; font-weight: 600; }
+.launch-meter { height: 6px; margin: 13px 0 9px; border-radius: 4px; overflow: hidden; background: var(--border-soft); }
+.launch-meter::after { content: ""; display: block; width: 38%; height: 100%; border-radius: inherit;
+  background: var(--accent); animation: launch-pulse 1.3s ease-in-out infinite alternate; }
+@keyframes launch-pulse { to { transform: translateX(163%); } }
+.launch-dialog .field-error { margin-top: 8px; }
 .job-bar { height: 6px; border-radius: 3px; background: #ececec; overflow: hidden; }
 .job-bar span { display: block; height: 100%; width: 0; background: var(--accent);
   transition: width .25s; }
@@ -2069,6 +2077,18 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   </div>
 </dialog>
 
+<dialog class="mask" id="launchMask" aria-labelledby="launchTitle" aria-describedby="launchName launchStatus">
+  <div class="modal launch-dialog">
+    <div class="head"><span id="launchTitle">正在启动浏览器</span></div>
+    <div class="body single">
+      <div class="launch-name" id="launchName"></div>
+      <div class="launch-meter" id="launchMeter" role="progressbar" aria-label="启动进度"></div>
+      <div class="hint" id="launchStatus" role="status"></div>
+    </div>
+    <div class="foot"><button class="btn" id="launchDismiss" data-close="launchMask" data-initial-focus>后台继续</button></div>
+  </div>
+</dialog>
+
 <!-- 任务进度 -->
 <dialog class="mask" id="jobMask" aria-labelledby="jobTitle">
   <div class="modal" style="width:520px">
@@ -2430,6 +2450,13 @@ function closeModal(id, result = null) {
   }
   dialog.close();
   dialog.classList.remove("show");
+  if (id === "launchMask") {
+    const row = $(state.view === "table" ? "rows" : "cards");
+    const profile = CSS.escape(dialog.dataset.profileId);
+    const button = row.querySelector(`.open-btn[data-id="${profile}"]:enabled`)
+      || row.querySelector(`[data-action="detail"][data-id="${profile}"]`) || $("searchInput");
+    button.focus({ preventScroll: true });
+  }
   if (dialog.contains($("toast"))) (document.activeElement?.closest("dialog[open]") || document.body).append($("toast"));
   if (id === "confirmMask") {
     confirmResolve?.(result === true);
@@ -2791,7 +2818,7 @@ function rowHtml(p, index) {
 function openBtn(p) {
   const running = p.status === "running";
   const busy = state.busy.has(p.id);
-  return `<button class="open-btn ${running ? "stop" : ""}" data-action="${running ? "stop" : "start"}" data-id="${p.id}" ${busy ? "disabled" : ""}>
+  return `<button class="open-btn ${running ? "stop" : ""}" data-action="${running ? "stop" : "start"}" data-id="${p.id}" ${busy ? 'disabled aria-label="正在处理"' : ""}>
     ${busy ? '<span class="spinner"></span>' : (running ? "关闭" : "打开")}
   </button>`;
 }
@@ -3159,7 +3186,7 @@ function openRowMenu(anchor, id) {
   if (!p) return;
   const running = p.status === "running";
   const html = `
-    <button data-cmd="${running ? "stop" : "start"}" data-id="${id}">${icon(running ? "stop" : "play")}${running ? "关闭窗口" : "打开窗口"}</button>
+    <button data-cmd="${running ? "stop" : "start"}" data-id="${id}" ${state.busy.has(id) ? "disabled" : ""}>${icon(running ? "stop" : "play")}${running ? "关闭窗口" : "打开窗口"}</button>
     <button data-cmd="detail" data-id="${id}">${icon("finger")}查看详情</button>
     <div class="sep"></div>
     <button data-cmd="edit" data-id="${id}">${icon("edit")}编辑环境</button>
@@ -3265,12 +3292,34 @@ async function runBatch(action) {
 
 /* ---------------- 环境操作 ---------------- */
 async function startProfile(id) {
-  state.busy.add(id); renderList();
+  const profile = state.profiles.find((p) => p.id === id);
+  if (!profile || state.busy.has(id)) return;
+  state.busy.add(id);
+  const dialog = $("launchMask");
+  const visible = () => dialog.open && dialog.dataset.profileId === id;
+  dialog.dataset.profileId = id;
+  $("launchTitle").textContent = "正在启动浏览器";
+  $("launchName").textContent = profile.name;
+  $("launchMeter").hidden = false;
+  $("launchStatus").classList.remove("field-error");
+  $("launchStatus").textContent = `正在等待 ${engineName(profile)} 确认启动…`;
+  $("launchDismiss").textContent = "后台继续";
+  openModal("launchMask");
+  renderList();
   try {
-    await api(`/profiles/${id}/launch`, { method: "POST" });
-    toast("已启动");
+    const result = await api(`/profiles/${id}/launch`, { method: "POST" });
+    if (visible()) closeModal("launchMask");
+    toast(result?.state === "running" ? `「${profile.name}」已启动` : `「${profile.name}」已提交启动请求`);
   } catch (err) {
-    toast(err.message, true);
+    if (visible()) {
+      $("launchTitle").textContent = "启动失败";
+      $("launchMeter").hidden = true;
+      $("launchStatus").classList.add("field-error");
+      $("launchStatus").textContent = err.message;
+      $("launchDismiss").textContent = "返回列表";
+    } else {
+      toast(`「${profile.name}」启动失败：${err.message}`, true);
+    }
   } finally {
     state.busy.delete(id);
     await refresh();
