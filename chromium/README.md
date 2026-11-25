@@ -1,6 +1,6 @@
 # Moltskin Chromium 开发预览
 
-本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录，可以设置本机字体、摄像头与麦克风采集、地理位置三类权限。各项指纹面的支持状态、实测范围与平台差异见[指纹能力对照](fingerprint-coverage.md)。
+本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录，可单独设置 Canvas 2D 读取、WebGL 显卡调试信息、本机字体、摄像头与麦克风采集及定位权限。各项指纹面的支持状态、实测范围与平台差异见[指纹能力对照](fingerprint-coverage.md)。
 
 ## 打开桌面管理窗口
 
@@ -21,6 +21,15 @@
 每个窗口可以单独静音、设置渲染进程数量的软上限，或限制 V8 老生代堆大小。老生代堆用于存放存活时间较长的 JavaScript 对象，设备内存和操作系统可用内存是独立的指标。「查看当前浏览器实测值」也会显示窗口的语言、时区、硬件并发数、设备内存档位及尺寸。
 
 Chromium 环境可在浏览器中登录并保留本机数据。面板里的 Cookie 文件管理、跨环境状态同步和备份中的登录态目前仅支持 Camoufox。Chromium 环境的名称和权限设置随面板数据库一起备份。
+
+### 图形隐私
+
+新建或编辑 Chromium 窗口时，在「指纹设置」中可以分别设置以下两项。已有环境和新窗口默认使用「标准」。
+
+- **Canvas 像素读取**。选择「限制读取」会让普通网页的 2D 像素读取与画布图像导出返回权限错误。绘图仍可使用，依赖像素读取的网页编辑器或图片导出可能受影响。
+- **WebGL 显卡信息**。限制后，WebGL 1 和 2 不再提供读取未遮蔽厂商和型号的调试扩展。普通 3D 绘制和像素读取仍可用。[扩展规范](https://registry.khronos.org/webgl/extensions/WEBGL_debug_renderer_info/)
+
+关闭窗口后可更改设置，重新打开该环境，在本机 `/runtime.html` 查看「图形隐私实测」。页面会尝试读回一个绿色像素并查询 WebGL 调试扩展。两项限制均需当前内核声明对应能力。
 
 ### 窗口代理
 
@@ -45,11 +54,11 @@ python3 chromium/launch_preview.py b --local-fonts restricted --media-capture bl
 
 在 B 环境中，网站申请摄像头、麦克风或两者时都会被阻止，即使这个站点以前已有授权。设置为 `--media-capture standard` 可恢复 Chromium 的站点授权行为。位置设置独立生效，`--geolocation blocked` 会拒绝网页的单次和持续定位请求。媒体权限适用于网站访问摄像头和麦克风，不涉及屏幕共享。
 
-关闭 B 的浏览器后，执行 `python3 chromium/launch_preview.py b` 即可恢复上次设置。要调整设置，关闭该环境后重新启动并指定 `--local-fonts`、`--media-capture` 或 `--geolocation`。每个环境的设置和浏览数据保存在 `data/chromium-preview/<环境名>/`，可用 `MOLTSKIN_DATA_DIR` 指定数据根目录。
+关闭 B 的浏览器后，执行 `python3 chromium/launch_preview.py b` 即可恢复上次设置。图形策略也可单独修改，例如 `python3 chromium/launch_preview.py b --canvas-readback blocked --webgl-debug-info standard`。每个环境的设置和浏览数据保存在 `data/chromium-preview/<环境名>/`，可用 `MOLTSKIN_DATA_DIR` 指定数据根目录。
 
 macOS 命名环境使用登录钥匙串保护 Cookie。如果系统询问当前开发版是否可访问「Chromium Safe Storage」，确认是自己启动的版本后，在系统弹窗输入登录钥匙串密码，选择「始终允许」可记住此次授权。重新编译的开发版可能需要重新授权。[Apple 钥匙串说明](https://support.apple.com/guide/mac-help/kychn002/mac)
 
-启动器优先查找下文的 `out/MoltskinLocation` 开发包，也能打开早期开发包。选择了阻止采集或定位的环境，需要使用包含对应权限补丁的构建。命令行字体预览还可以用 `--binary` 指定其他开发包。启动前会向内核确认它支持所需功能。
+启动器优先查找 `out/MoltskinGraphicsPrivacy` 开发包，也能打开早期开发包。选择了图形、采集或定位限制的环境，需要使用包含对应补丁的构建。命令行预览可用 `--binary` 指定其他开发包。启动前会向内核确认它支持所需功能。
 
 ## 检查上游版本
 
@@ -65,7 +74,7 @@ Linux 首批目标为 Ubuntu x86-64（至少 100 GB 空闲磁盘）；macOS 首�
 
 ### Linux x86-64 产品内核
 
-在 Moltskin 仓库根目录执行。检出和编译用普通用户，首次安装系统依赖时才需要 `sudo`。构建脚本使用 `upstream.json` 的提交，同步依赖，按顺序应用仓库内的补丁，生成 release 配置并编译。编译结束会运行产物，检查完整版本号和五项 Moltskin 能力。
+在 Moltskin 仓库根目录执行。检出和编译用普通用户，首次安装系统依赖时才需要 `sudo`。构建脚本使用 `upstream.json` 的提交，同步依赖，按顺序应用仓库内的补丁，生成 release 配置并编译。编译结束会运行产物，检查完整版本号和本分支要求的全部 Moltskin 能力。
 
 ```sh
 checkout="$HOME/chromium-baseline"
@@ -135,10 +144,12 @@ pin="$(python3 "$module/verify_upstream.py")" &&
     git apply --check "$patch"
     git apply "$patch"
   done
-  mkdir -p out/MoltskinLocation
-  cp "$module/args.gn" out/MoltskinLocation/args.gn
-  gn gen out/MoltskinLocation
-  autoninja -C out/MoltskinLocation -j 4 chrome
+  out=out/MoltskinLocation
+  if [ "$(uname -s)" = Darwin ]; then out=out/MoltskinGraphicsPrivacy; fi
+  mkdir -p "$out"
+  cp "$module/args.gn" "$out/args.gn"
+  gn gen "$out"
+  autoninja -C "$out" -j 4 chrome
 )
 ```
 
@@ -149,14 +160,15 @@ pin="$(python3 "$module/verify_upstream.py")" &&
 ```sh
 browser="$checkout/src/out/MoltskinLocation/chrome"
 if [ "$(uname -s)" = Darwin ]; then
-  browser="$checkout/src/out/MoltskinLocation/Chromium.app/Contents/MacOS/Chromium"
+  browser="$checkout/src/out/MoltskinGraphicsPrivacy/Chromium.app/Contents/MacOS/Chromium"
 fi
 "$browser" --version --moltskin-capabilities
 python3 chromium/check_local_fonts.py "$browser"
 MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m pytest -q \
   tests/test_chromium_font_rendering.py tests/test_chromium_storage_isolation.py \
   tests/test_chromium_media_capture.py tests/test_chromium_geolocation.py \
-  tests/test_chromium_graphics_audio.py tests/test_chromium_platform.py
+  tests/test_chromium_graphics_audio.py tests/test_chromium_graphics_privacy.py \
+  tests/test_chromium_worker_canvas_policy.py tests/test_chromium_platform.py
 ```
 
 测试在本机启动临时网页和两个独立的浏览器，给相同站点授予字体权限。通过条件为标准环境读到至少一种字体，限制环境读到零种。关闭后交换两边的策略，使用原数据目录重启，再次检查字体数量和各自的站点存储标记。测试只记录数量。

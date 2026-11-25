@@ -192,12 +192,26 @@ def test_proxy_selection_create_edit_and_batch(panel):
         expect(panel.locator("#rows tr").filter(has_text=name).locator(".addr")).to_have_text("Office")
 
 
-def test_chromium_permission_controls_create_edit_and_batch(panel):
+def test_chromium_permission_controls_create_edit_and_batch(panel, monkeypatch):
+    from chromium import native
+
+    # Exercise the panel for a capable build even when the installed UI test browser is older.
+    probe_capabilities = native.probe_capabilities
+
+    def graphics_capabilities(binary):
+        path, version, capabilities = probe_capabilities(binary)
+        return path, version, capabilities | {native.CANVAS_READBACK_CAPABILITY, native.WEBGL_DEBUG_INFO_CAPABILITY}
+
+    monkeypatch.setattr(native, "probe_capabilities", graphics_capabilities)
+    panel.reload()
     panel.locator("#windowEmptyCreate").click()
     panel.locator("#fName").fill("Media A")
     panel.locator('button[aria-controls="profileBrowser"]').click()
     field = panel.locator("#fMediaCapture")
     location = panel.locator("#fGeolocation")
+    canvas = panel.locator("#fCanvasReadback")
+    webgl = panel.locator("#fWebglDebugInfo")
+    expect(canvas).to_be_hidden()
     expect(location).to_be_hidden()
     expect(field).to_be_hidden()
     panel.locator("#fEngine").select_option("chromium")
@@ -206,22 +220,33 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     field.select_option("blocked")
     expect(location).to_have_value("standard")
     location.select_option("blocked")
+    expect(canvas).to_have_value("standard")
+    canvas.select_option("blocked")
+    webgl.select_option("blocked")
     panel.locator("#confirmProfile").click()
 
     row = panel.locator("#rows tr").filter(has_text="Media A")
     row.get_by_role("button", name="Media A").click()
     expect(panel.locator("#fingerprintPreview .kv").filter(has_text="摄像头和麦克风")).to_contain_text("始终阻止")
+    expect(panel.locator("#fingerprintPreview .kv").filter(has_text="Canvas 像素读取")).to_contain_text("限制读取")
+    expect(panel.locator("#fingerprintPreview .kv").filter(has_text="WebGL 显卡信息")).to_contain_text("限制读取")
     panel.keyboard.press("Escape")
     row.get_by_label("更多操作").click()
     panel.locator('[data-cmd="edit"]').click()
     panel.locator('button[aria-controls="profileFingerprint"]').click()
     expect(field).to_have_value("blocked")
     expect(location).to_have_value("blocked")
+    expect(canvas).to_have_value("blocked")
+    canvas.select_option("standard")
+    expect(webgl).to_have_value("blocked")
+    webgl.select_option("standard")
     field.select_option("standard")
     location.select_option("standard")
     with panel.expect_response(lambda r: r.request.method == "PATCH" and "/profiles/" in r.url) as updated:
         panel.locator("#confirmProfile").click()
     assert updated.value.json()["data"]["geolocation"] == "standard"
+    assert updated.value.json()["data"]["canvas_readback"] == "standard"
+    assert updated.value.json()["data"]["webgl_debug_info"] == "standard"
     row.get_by_role("button", name="Media A").click()
     expect(panel.locator("#fingerprintPreview .kv").filter(has_text="地理位置")).to_contain_text("由网站请求授权")
     panel.keyboard.press("Escape")
@@ -243,6 +268,8 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.locator("#bMuteAudio").check()
     panel.locator("#bMediaCapture").select_option("blocked")
     panel.locator("#bGeolocation").select_option("blocked")
+    panel.locator("#bCanvasReadback").select_option("blocked")
+    panel.locator("#bWebglDebugInfo").select_option("blocked")
     panel.locator("#confirmBatch").click()
     for name in ("Media batch-1", "Media batch-2"):
         panel.get_by_role("button", name=name, exact=True).click()
@@ -256,6 +283,8 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="静音播放")).to_contain_text("开启")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="摄像头和麦克风")).to_contain_text("始终阻止")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="地理位置")).to_contain_text("始终阻止")
+        expect(panel.locator("#fingerprintPreview .kv").filter(has_text="Canvas 像素读取")).to_contain_text("限制读取")
+        expect(panel.locator("#fingerprintPreview .kv").filter(has_text="WebGL 显卡信息")).to_contain_text("限制读取")
         panel.keyboard.press("Escape")
 
 
@@ -306,7 +335,7 @@ def test_chromium_fingerprint_choices_saved_by_window_and_locked_while_running(p
     expect(language).to_be_disabled()
     expect(timezone).to_be_disabled()
     expect(size).to_be_disabled()
-    for control in ("fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio", "fUserAgent", "fResetUserAgent",
+    for control in ("fCanvasReadback", "fWebglDebugInfo", "fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio", "fUserAgent", "fResetUserAgent",
                     "fPreviewPlatform", "fPreviewPlatformVersion", "fPreviewArchitecture", "fResetPlatformPreview"):
         expect(panel.locator("#" + control)).to_be_disabled()
     expect(panel.locator("#fRegionHint")).to_contain_text("关闭此窗口后")
@@ -358,11 +387,15 @@ def test_chromium_build_pin_and_resource_controls(panel):
 
 def test_only_installed_build_enables_its_own_permissions(panel):
     version = "150.0.2.3"
+    older_version = "149.0.1.0"
     panel.route("**/api/v1/engine", lambda route: route.fulfill(json={"data": {
         "browsers": [], "chromium": {
             "version": None, "available": True, "installed_versions": [
-                {"version": version, "supports_media_capture_policy": True, "supports_geolocation_policy": False}],
+                {"version": version, "supports_media_capture_policy": True, "supports_geolocation_policy": False,
+                 "supports_canvas_readback_policy": True, "supports_webgl_debug_info_policy": True},
+                {"version": older_version, "supports_webgl_debug_info_policy": True}],
             "supports_media_capture_policy": False, "supports_geolocation_policy": False,
+            "supports_canvas_readback_policy": False, "supports_webgl_debug_info_policy": False,
         },
     }}))
     panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/browser")
@@ -375,15 +408,41 @@ def test_only_installed_build_enables_its_own_permissions(panel):
     hint = panel.locator("#fChromiumVersionHint")
     expect(hint).to_contain_text("缺少默认内核")
     panel.locator("#fChromiumVersion").select_option(version)
-    expect(hint).to_contain_text("1 个版本")
+    expect(hint).to_contain_text("2 个版本")
     panel.locator('button[aria-controls="profileFingerprint"]').click()
     expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_enabled()
     expect(panel.locator('#fGeolocation option[value="blocked"]')).to_be_disabled()
+    webgl = panel.locator("#fWebglDebugInfo")
+    canvas = panel.locator("#fCanvasReadback")
+    canvas.select_option("blocked")
+    webgl.select_option("blocked")
     panel.locator('button[aria-controls="profileBrowser"]').click()
+    panel.locator("#fChromiumVersion").select_option(older_version)
+    expect(canvas.locator('option[value="blocked"]')).to_be_disabled()
+    expect(webgl.locator('option[value="blocked"]')).to_be_enabled()
     panel.locator("#fChromiumVersion").select_option("")
     expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_disabled()
+    expect(canvas.locator('option[value="blocked"]')).to_be_disabled()
+    expect(webgl.locator('option[value="blocked"]')).to_be_disabled()
+    panel.locator('button[aria-controls="profileBasics"]').click()
+    panel.locator("#fName").fill("GPU permissions")
+    panel.locator("#confirmProfile").click()
+    expect(canvas).to_be_focused()
+    expect(canvas).to_have_value("blocked")
+    expect(panel.locator("#fCanvasHint")).to_contain_text("不支持")
+    canvas.select_option("standard")
+    panel.locator("#confirmProfile").click()
+    expect(webgl).to_be_focused()
+    expect(webgl).to_have_value("blocked")
+    expect(panel.locator("#fWebglHint")).to_contain_text("不支持")
+    webgl.select_option("standard")
     panel.locator('button[aria-controls="profileStartup"]').click()
     expect(panel.locator("#fDashboardHint")).to_have_text("此启动方式默认打开空白页。")
+    with panel.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/profiles")) as saved:
+        panel.locator("#confirmProfile").click()
+    assert saved.value.status == 201
+    assert saved.value.json()["data"]["canvas_readback"] == "standard"
+    assert saved.value.json()["data"]["webgl_debug_info"] == "standard"
     panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/hardware")
     expect(panel.locator("#profileHardware")).to_have_attribute("open", "")
 

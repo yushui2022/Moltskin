@@ -1719,7 +1719,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <h3 style="margin:0 0 8px;font-size:14px">1. 准备窗口代理（可选）</h3>
             <p class="muted" style="margin:0 0 16px">在「代理 IP」添加代理并检测连通性。Chromium 支持免账号密码的 HTTP、HTTPS 和 SOCKS5 代理，未指定时使用系统网络。</p>
             <h3 style="margin:0 0 8px;font-size:14px">2. 创建环境</h3>
-            <p class="muted" style="margin:0 0 16px">选择内核和启动页面，在「代理设置」选择窗口代理。两个内核都可以禁止加载网页图片。Camoufox 可以设置操作系统。Moltskin Chromium 可在「指纹设置」选择网页语言、时区、启动窗口大小，以及字体、音视频采集和定位权限。</p>
+            <p class="muted" style="margin:0 0 16px">选择内核和启动页面，在「代理设置」选择窗口代理。两个内核都可以禁止加载网页图片。Camoufox 可以设置操作系统。Chromium 的「指纹设置」提供网页语言、时区、窗口大小，以及图形、字体、音视频采集和定位权限。</p>
             <h3 style="margin:0 0 8px;font-size:14px">3. 打开窗口</h3>
             <p class="muted" style="margin:0 0 16px">点击「打开」启动所选内核。登录状态保存在该环境自己的数据目录里。</p>
             <h3 style="margin:0 0 8px;font-size:14px">查看窗口参数</h3>
@@ -1800,6 +1800,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <p class="editor-note" id="fRegionHint" hidden></p>
             <div class="field"><label for="fLocalFonts">本机字体访问</label>
               <select class="select" id="fLocalFonts"><option value="standard">标准（由站点请求授权）</option><option value="restricted">受限（禁止枚举）</option></select>
+            </div>
+            <div class="field"><label for="fCanvasReadback">Canvas 像素读取</label>
+              <select class="select" id="fCanvasReadback" aria-describedby="fCanvasHint"><option value="standard">标准</option><option value="blocked">限制读取</option></select>
+              <span class="hint" id="fCanvasHint"></span>
+            </div>
+            <div class="field"><label for="fWebglDebugInfo">WebGL 显卡信息</label>
+              <select class="select" id="fWebglDebugInfo" aria-describedby="fWebglHint"><option value="standard">标准</option><option value="blocked">限制读取</option></select>
+              <span class="hint" id="fWebglHint"></span>
             </div>
             <div class="field"><label for="fMediaCapture">摄像头和麦克风</label>
               <select class="select" id="fMediaCapture" aria-describedby="fMediaHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
@@ -1883,6 +1891,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <label class="editor-switch" data-engine="chromium" hidden><span>静音播放</span><input type="checkbox" id="bMuteAudio" role="switch"></label>
       <div class="field" data-engine="chromium" hidden><label for="bLocalFonts">本机字体访问</label>
         <select class="select" id="bLocalFonts"><option value="standard">标准（由站点请求授权）</option><option value="restricted">受限（禁止枚举）</option></select>
+      </div>
+      <div class="field" data-engine="chromium" hidden><label for="bCanvasReadback">Canvas 像素读取</label>
+        <select class="select" id="bCanvasReadback" aria-describedby="bCanvasHint"><option value="standard">标准</option><option value="blocked">限制读取</option></select>
+        <span class="hint" id="bCanvasHint"></span>
+      </div>
+      <div class="field" data-engine="chromium" hidden><label for="bWebglDebugInfo">WebGL 显卡信息</label>
+        <select class="select" id="bWebglDebugInfo" aria-describedby="bWebglHint"><option value="standard">标准</option><option value="blocked">限制读取</option></select>
+        <span class="hint" id="bWebglHint"></span>
       </div>
       <div class="field" data-engine="chromium" hidden><label for="bMediaCapture">摄像头和麦克风</label>
         <select class="select" id="bMediaCapture" aria-describedby="bMediaHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
@@ -2722,6 +2738,12 @@ const chromiumProfileFields = [
   {control: "BrowserTimezone", key: "browser_timezone", options: "browser_timezones", fallback: "跟随系统"},
   {control: "BrowserWindowSize", key: "browser_window_size", options: "browser_window_sizes", fallback: "浏览器默认"},
 ];
+const chromiumGraphicsFields = [
+  { key: "canvas_readback", control: "CanvasReadback", hint: "CanvasHint",
+    description: "限制后，网页无法读取 2D 画布像素，部分图片编辑和画布导出功能可能无法使用。" },
+  { key: "webgl_debug_info", control: "WebglDebugInfo", hint: "WebglHint",
+    description: "限制网页通过 WebGL 调试扩展读取显卡厂商和型号。3D 绘图仍可使用。" },
+];
 const chromiumResourceFields = [
   {control: "RendererLimit", key: "chromium_renderer_limit", options: "chromium_renderer_limits", unit: "个进程"},
   {control: "HeapLimit", key: "chromium_js_heap_mb", options: "chromium_js_heap_limits", unit: "MiB"},
@@ -2765,6 +2787,7 @@ function rowHtml(p, index) {
   if (p.engine === "chromium") {
     cfg = [p.chromium_version ? "Chromium " + p.chromium_version : "Chromium", chromiumConfigSummary(p),
       "字体" + fontsLabel(p), p.media_capture === "blocked" && "音视频采集已阻止", p.geolocation === "blocked" && "位置已阻止",
+      p.canvas_readback === "blocked" && "Canvas 读取受限", p.webgl_debug_info === "blocked" && "WebGL 显卡信息受限",
       p.chromium_mute_audio && "静音", p.chromium_renderer_limit && p.chromium_renderer_limit + " 个渲染进程"].filter(Boolean).join(" · ");
   } else if (preview) {
     const os = { macos: "macOS", linux: "Linux", windows: "Win" }[preview.os];
@@ -3772,6 +3795,15 @@ function setEngineFields(prefix, saved = null) {
     "下次启动生效。最多 512 个可打印 ASCII 字符。Client Hints 由 Chromium 处理。";
   validateUserAgent(prefix);
   const capabilities = setChromiumBuildChoices(prefix, info, saved ? saved.chromium_version || "" : null, locked);
+  for (const field of chromiumGraphicsFields) {
+    const control = $(prefix + field.control);
+    const supported = capabilities?.["supports_" + field.key + "_policy"] === true;
+    if (saved) control.value = saved[field.key] || "standard";
+    control.disabled = locked || !state.engine;
+    control.querySelector('[value="blocked"]').disabled = !supported;
+    $(prefix + field.hint).textContent = !state.engine ? "正在读取内核设置…" :
+      supported ? field.description : "当前选择的内核不支持此限制，可使用标准设置。";
+  }
   setPlatformPreviewFields(prefix, info, saved, locked);
   for (const field of chromiumResourceFields) {
     const control = $(prefix + field.control);
@@ -3850,6 +3882,10 @@ function engineSettings(prefix, creating) {
     if (!media.disabled) values.media_capture = media.value;
     const location = $(prefix + "Geolocation");
     if (!location.disabled) values.geolocation = location.value;
+    for (const field of chromiumGraphicsFields) {
+      const control = $(prefix + field.control);
+      if (!control.disabled) values[field.key] = control.value;
+    }
   } else {
     if (creating) values.os = $(prefix + "Os").value;
   }
@@ -3986,6 +4022,20 @@ function validateProxyChoice(prefix) {
   return false;
 }
 
+function validateGraphicsChoices(prefix) {
+  if ($(prefix + "Engine").value !== "chromium") return true;
+  for (const field of chromiumGraphicsFields) {
+    const control = $(prefix + field.control);
+    if (!control.disabled && control.selectedOptions[0]?.disabled) {
+      if (prefix === "f") showEditorSection("profileFingerprint");
+      control.focus();
+      toast(`请选择支持「${control.labels[0].textContent}」限制的内核，或将该设置改为标准。`, true);
+      return false;
+    }
+  }
+  return true;
+}
+
 function fillSelects() {
   fillProxyChoices("f", $("fProxy").value);
   if ($("batchMask").open) fillProxyChoices("b", $("bProxy").value);
@@ -4004,7 +4054,7 @@ $("confirmProfile").onclick = async () => {
   const name = $("fName").value.trim();
   if (!name) return reportNameError("请填写窗口名称");
   if (Array.from(name).length > 120) return reportNameError("窗口名称最多 120 个字符");
-  if (!validateProxyChoice("f") || !updatePlatformPreviewActions("f", true) || !validateUserAgent("f", true)) return;
+  if (!validateProxyChoice("f") || !validateGraphicsChoices("f") || !updatePlatformPreviewActions("f", true) || !validateUserAgent("f", true)) return;
   const payload = {
     name,
     ...engineSettings("f", !state.editingId),
@@ -4119,7 +4169,7 @@ function fillBatchSelects() {
     `<option value="${g.id}">${esc(g.name)}</option>`).join("");
 }
 $("confirmBatch").onclick = async () => {
-  if (!validateProxyChoice("b") || !updatePlatformPreviewActions("b", true) || !validateUserAgent("b", true)) return;
+  if (!validateProxyChoice("b") || !validateGraphicsChoices("b") || !updatePlatformPreviewActions("b", true) || !validateUserAgent("b", true)) return;
   const count = Math.max(1, Math.min(200, Number($("bCount").value) || 1));
   const prefix = $("bPrefix").value.trim() || "环境";
   const start = Math.max(1, Number($("bStart").value) || 1);
@@ -4260,6 +4310,8 @@ function openDetail(id, initialFocus = null) {
       <div class="kv"><div class="k">时区</div><div class="v">${esc(regionLabel(p.browser_timezone) || "跟随系统")}</div></div>
       <div class="kv"><div class="k">启动窗口大小</div><div class="v">${esc(regionLabel(p.browser_window_size) || "浏览器默认")}</div></div>
       <div class="kv"><div class="k">本机字体访问</div><div class="v">${fontsLabel(p)}</div></div>
+      <div class="kv"><div class="k">Canvas 像素读取</div><div class="v">${p.canvas_readback === "blocked" ? "限制读取" : "标准"}</div></div>
+      <div class="kv"><div class="k">WebGL 显卡信息</div><div class="v">${p.webgl_debug_info === "blocked" ? "限制读取" : "标准"}</div></div>
       <div class="kv"><div class="k">摄像头和麦克风</div><div class="v">${p.media_capture === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
       <div class="kv"><div class="k">地理位置</div><div class="v">${p.geolocation === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
       <div class="kv"><div class="k">启动方式</div><div class="v">${p.headless ? "无头（后台）" : "有头（显示窗口）"}</div></div>

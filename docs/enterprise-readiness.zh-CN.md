@@ -8,6 +8,8 @@
 
 **评审后的进展**　开发分支已接入 Chromium 按窗口绑定固定代理。macOS arm64 的本地 HTTP 实测覆盖两个窗口各走各的代理、重启保留绑定，以及代理断开后该窗口请求失败而另一个窗口继续可用。HTTPS 和 SOCKS5 已验证配置校验与启动参数，认证代理和 WebRTC 仍需单独处理。下表保留评审基线当时的行为。[使用说明](../chromium/README.md#窗口代理) · [原生网络回归](../tests/test_chromium_proxy_routing.py)
 
+Chromium 也已接入独立的 Canvas 2D 读取控制和 WebGL 显卡调试扩展控制。本地实测页能核对这两个设置。屏幕分辨率、处理器型号与音频参数仍没有可替换的硬件预设。[图形能力对照](../chromium/fingerprint-coverage.md)
+
 代理库中已有的密码仍作为文本写入 SQLite。进入多人试用前应补上凭据存储保护，并用一份带测试凭据的备份验证访问和恢复范围。Chromium 本次仅接受未填写凭据的代理。[代理写入](../moltskin/services/core/main.py) · [数据库备份](../moltskin/services/core/backup.py)
 
 | 用户操作 | 当前行为 | 下一步与验收方法 |
