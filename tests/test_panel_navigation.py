@@ -108,6 +108,7 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     expect(location).to_be_hidden()
     expect(field).to_be_hidden()
     panel.locator("#fEngine").select_option("chromium")
+    panel.locator('button[aria-controls="profileFingerprint"]').click()
     expect(field).to_have_value("standard")
     field.select_option("blocked")
     expect(location).to_have_value("standard")
@@ -120,7 +121,7 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.keyboard.press("Escape")
     row.get_by_label("更多操作").click()
     panel.locator('[data-cmd="edit"]').click()
-    panel.locator('button[aria-controls="profileBrowser"]').click()
+    panel.locator('button[aria-controls="profileFingerprint"]').click()
     expect(field).to_have_value("blocked")
     expect(location).to_have_value("blocked")
     field.select_option("standard")
@@ -137,14 +138,70 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.locator("#bPrefix").fill("Media batch")
     panel.locator("#bCount").fill("2")
     panel.locator("#bEngine").select_option("chromium")
+    panel.locator("#bBrowserLanguage").select_option("en-GB")
+    panel.locator("#bBrowserTimezone").select_option("Europe/London")
+    panel.locator("#bBrowserWindowSize").select_option("1440x900")
     panel.locator("#bMediaCapture").select_option("blocked")
     panel.locator("#bGeolocation").select_option("blocked")
     panel.locator("#confirmBatch").click()
     for name in ("Media batch-1", "Media batch-2"):
         panel.get_by_role("button", name=name, exact=True).click()
+        expect(panel.locator("#fingerprintPreview")).to_contain_text("en-GB")
+        expect(panel.locator("#fingerprintPreview")).to_contain_text("Europe/London")
+        expect(panel.locator("#fingerprintPreview")).to_contain_text("1440 × 900")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="摄像头和麦克风")).to_contain_text("始终阻止")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="地理位置")).to_contain_text("始终阻止")
         panel.keyboard.press("Escape")
+
+
+def test_chromium_fingerprint_choices_saved_by_window_and_locked_while_running(panel):
+    from moltskin.services.core import db
+
+    panel.set_viewport_size({"width": 390, "height": 844})
+    panel.locator("#windowEmptyCreate").click()
+    panel.locator("#fName").fill("东京窗口")
+    panel.locator('button[aria-controls="profileBrowser"]').click()
+    settings_tab = panel.locator('button[aria-controls="profileFingerprint"]')
+    expect(settings_tab).to_be_hidden()
+    panel.locator("#fEngine").select_option("chromium")
+    settings_tab.click()
+    language = panel.get_by_label("网站首选语言", exact=True).filter(visible=True)
+    timezone = panel.locator("#fBrowserTimezone")
+    size = panel.locator("#fBrowserWindowSize")
+    expect(language).to_have_value("")
+    expect(timezone).to_have_value("")
+    expect(size).to_have_value("")
+    language.select_option("ja-JP")
+    timezone.select_option("Asia/Tokyo")
+    size.select_option("1280x800")
+    with panel.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/profiles")) as created:
+        panel.locator("#confirmProfile").click()
+    profile_id = created.value.json()["data"]["id"]
+    panel.get_by_role("button", name="东京窗口", exact=True).click()
+    detail = panel.locator("#fingerprintPreview")
+    for text in ("ja-JP", "Asia/Tokyo", "1280 × 800"):
+        expect(detail).to_contain_text(text)
+    panel.get_by_role("button", name="编辑指纹设置").click()
+    expect(panel.locator("#profileFingerprint")).to_have_attribute("open", "")
+    expect(language).to_have_value("ja-JP")
+    expect(timezone).to_have_value("Asia/Tokyo")
+    expect(size).to_have_value("1280x800")
+    language.select_option("")
+    with panel.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith(profile_id)) as updated:
+        panel.locator("#confirmProfile").click()
+    assert updated.value.json()["data"]["browser_language"] == ""
+
+    with db.session() as conn:
+        conn.execute("UPDATE profiles SET status='running' WHERE id=?", (profile_id,))
+    panel.reload()
+    panel.get_by_role("button", name="东京窗口", exact=True).click()
+    expect(detail).to_contain_text("浏览器默认")
+    expect(detail).to_contain_text("Asia/Tokyo")
+    panel.get_by_role("button", name="查看指纹设置").click()
+    expect(language).to_be_disabled()
+    expect(timezone).to_be_disabled()
+    expect(size).to_be_disabled()
+    expect(panel.locator("#fRegionHint")).to_contain_text("关闭此窗口后")
 
 
 def test_hubstudio_file_import_targets_selected_camoufox_window(panel):
