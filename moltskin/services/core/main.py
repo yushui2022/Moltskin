@@ -495,6 +495,12 @@ def logo_png():
     return FileResponse(config.WEB_DIR / "logo.png", media_type="image/png")
 
 
+@app.get("/chameleon-canopy.webp")
+@app.get("/chameleon-scales.webp")
+def workspace_image(request: Request):
+    return FileResponse(config.WEB_DIR / request.url.path.rsplit("/", 1)[-1], media_type="image/webp")
+
+
 @app.get("/apple-touch-icon.png")
 def apple_touch_icon():
     return FileResponse(config.WEB_DIR / "apple-touch-icon.png", media_type="image/png")

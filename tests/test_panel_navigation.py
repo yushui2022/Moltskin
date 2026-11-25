@@ -352,3 +352,101 @@ def test_proxy_import_limits_and_unreadable_files_preserve_draft(panel):
         expect(confirm).to_be_disabled()
     with db.session() as conn:
         assert conn.execute("SELECT COUNT(*) FROM proxies").fetchone()[0] == 0
+
+
+@pytest.fixture
+def proxy_inventory(panel):
+    from moltskin.services.core import db
+
+    with db.session() as conn:
+        conn.executemany(
+            "INSERT INTO proxies(id,name,host,status,exit_ip,protocol,port,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,'http',8080,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+            [
+                ("px_alpha", "Office A", "alpha.example.test", "ok", "192.0.2.10"),
+                ("px_beta", "Office B", "beta.example.test", "slow", "192.0.2.11"),
+                ("px_gamma", "Lab", "gamma.example.test", "failed", None),
+                ("px_delta", "Spare", "delta.example.test", "unchecked", None),
+            ],
+        )
+    panel.locator('a[href="#/proxies"]').click()
+    panel.locator("#refreshProxies").click()
+    expect(panel.locator("#proxyRows tr")).to_have_count(4)
+    return panel
+
+
+def test_workspace_header_images_decode_locally(panel):
+    windows_header = panel.locator("#page-windows .page-head")
+    texture_url = windows_header.evaluate("el => getComputedStyle(el, '::before').backgroundImage")
+    assert texture_url.startswith('url("http://panel.test/') and texture_url.endswith('")')
+    assert panel.evaluate("""async src => {
+      const image = new Image();
+      image.src = src;
+      await image.decode();
+      return image.naturalWidth > 0;
+    }""", texture_url[5:-2])
+
+    panel.locator('a[href="#/proxies"]').click()
+    hero = panel.locator("#page-proxies .proxy-hero-image")
+    assert hero.evaluate("""async image => {
+      await image.decode();
+      return new URL(image.currentSrc).origin === location.origin && image.naturalWidth > 0;
+    }""")
+
+
+def test_proxy_inventory_combines_search_and_status_and_refreshes(proxy_inventory):
+    from moltskin.services.core import db
+
+    page = proxy_inventory
+    search = page.locator("#proxySearch")
+    status = page.locator("#proxyStatusFilter")
+    rows = page.locator("#proxyRows tr")
+    search.fill("office")
+    expect(rows).to_have_count(2)
+    status.select_option("slow")
+    expect(rows).to_have_count(1)
+    expect(rows.first).to_contain_text("Office B")
+    expect(page.locator("#proxyTotal")).to_have_text("4")
+    expect(page.locator("#proxyAvailable")).to_have_text("2")
+    expect(page.locator("#proxyFailed")).to_have_text("1")
+    expect(page.locator("#proxyUnchecked")).to_have_text("1")
+
+    search.fill("alpha.example")
+    expect(rows).to_have_count(0)
+    expect(page.locator("#proxyNoMatches")).to_be_visible()
+    expect(page.locator("#proxyEmpty")).to_be_hidden()
+    page.locator("#clearProxyFilters").click()
+    expect(search).to_have_value("")
+    expect(status).to_have_value("all")
+    expect(rows).to_have_count(4)
+
+    for query in ("ALPHA.EXAMPLE", "192.0.2.10"):
+        search.fill(query)
+        expect(rows).to_have_count(1)
+        expect(rows.first).to_contain_text("Office A")
+    status.select_option("ok")
+    with db.session() as conn:
+        conn.execute("UPDATE proxies SET status='failed' WHERE id='px_alpha'")
+    page.locator("#refreshProxies").click()
+    expect(page.locator("#proxyNoMatches")).to_be_visible()
+    expect(search).to_have_value("192.0.2.10")
+    expect(status).to_have_value("ok")
+    expect(page.locator("#proxyFailed")).to_have_text("2")
+
+
+def test_proxy_inventory_mobile_address_and_actions_fit(proxy_inventory):
+    page = proxy_inventory
+    page.set_viewport_size({"width": 390, "height": 844})
+    row = page.locator("#proxyRows tr").filter(has_text="Office A")
+    endpoint = row.get_by_text("http://alpha.example.test:8080", exact=True)
+    check = row.get_by_role("button", name=re.compile("检测"))
+    delete = row.get_by_role("button", name=re.compile("删除"))
+    row.scroll_into_view_if_needed()
+    for element in (endpoint, check, delete):
+        expect(element).to_be_visible()
+        box = element.bounding_box()
+        assert box["x"] >= 0 and box["x"] + box["width"] <= 390
+    delete.click()
+    expect(page.locator("#confirmMask")).to_contain_text("Office A")
+    page.keyboard.press("Escape")
+    expect(row).to_be_visible()
