@@ -96,10 +96,29 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   display: flex; flex-direction: column; min-height: 0; padding: 0 13px 15px;
 }
 .brand { display: flex; align-items: center; gap: 6px; padding: 28px 3px 24px; }
+.camo-header { position: relative; isolation: isolate; }
+.camo-print {
+  position: absolute; pointer-events: none; overflow: hidden; background: #ecf0f4;
+}
+/* Two stepped silhouettes give the print its irregular patches at the native pixel size. */
+.camo-print::before, .camo-print::after { content: ""; position: absolute; inset: 0; }
+.camo-print::before {
+  background: #d0dbe4;
+  clip-path: path("M0 12H18V6H42V0H62V12H52V20H34V28H14V34H0Z M68 0H120V8H140V18H126V24H102V34H74V26H58V16H68Z M142 0H216V16H198V24H180V36H160V28H142V18H150V8H142Z M0 52H16V44H36V38H48V46H66V58H58V70H36V80H0Z M80 50H96V42H118V34H136V42H152V50H166V64H150V74H118V84H92V72H72V60H80Z M170 52H188V42H202V36H216V84H182V72H166V62H170Z");
+}
+.camo-print::after {
+  background: #b4c4d2;
+  clip-path: path("M0 22H16V16H32V10H44V20H36V28H20V34H0Z M74 0H104V8H98V14H82V20H66V12H74Z M134 14H146V8H166V2H180V12H170V20H158V30H138V24H126V18H134Z M26 56H44V48H56V54H70V62H60V68H42V76H30V70H18V64H26Z M94 46H108V38H128V44H138V52H126V60H110V66H96V58H86V52H94Z M176 42H186V32H202V28H216V42H208V50H194V56H178V52H168V46H176Z M142 70H158V62H170V72H182V84H134V78H142Z");
+}
+.camo-header > .camo-print {
+  z-index: -1; inset: 0 -12px 4px auto; width: min(100%, 216px);
+  mask-image: linear-gradient(105deg, transparent 18%, #000 94%), linear-gradient(#000 56%, transparent);
+  mask-composite: intersect;
+}
 .brand img { flex: none; width: 32px; height: 32px; object-fit: contain; display: block; }
 .brand-name { font: bold italic 24px/1 Georgia, "Times New Roman", serif; color: var(--text);
   letter-spacing: -1.4px; }
-.brand-ver { margin-left: auto; color: var(--dim); font-size: 10px; white-space: nowrap;
+.brand-ver { margin-left: auto; color: #414e61; font-size: 10px; white-space: nowrap;
   font-variant-numeric: tabular-nums; }
 .mobile-nav-btn, button.mobile-filter-btn, .mobile-select-page { display: none; }
 .nav { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
@@ -387,9 +406,11 @@ table.grid { width: 100%; min-width: 1000px; border-collapse: separate; border-s
   background: #f1f4fa; border-bottom: 1px solid #d8dfeb; }
 #empty .window-bar::before { content: ""; width: 4px; height: 4px; border-radius: 50%;
   background: #899cbd; box-shadow: 7px 0 #aab8d1, 14px 0 #c1cbde; }
-#empty .window-canvas { display: grid; place-items: center; height: calc(100% - 15px);
+#empty .window-canvas { position: relative; isolation: isolate; display: grid; place-items: center; height: calc(100% - 15px);
   background: linear-gradient(123deg, #ffffff, #f4f6fb); }
+#empty .window-canvas .camo-print { z-index: -1; inset: 0; mask-image: linear-gradient(115deg, transparent 12%, #000 100%); }
 #empty .window-canvas img { width: 52px; height: 38px; }
+@media (forced-colors: active), print { .camo-print { display: none; } }
 @media (max-height: 650px) {
   #empty { min-height: 194px; padding-block: 12px 18px; }
   #empty .window-art { zoom: .75; }
@@ -827,6 +848,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
     height: 40px; padding: 0 10px; background: transparent; border: 0; border-radius: var(--r-sm);
     color: var(--accent-strong); cursor: pointer; }
   .brand { padding-block: 4px; }
+  .camo-header > .camo-print {
+    inset: 0 32px 0 auto; width: min(48%, 196px);
+    mask-image: linear-gradient(95deg, transparent, #000 60%, transparent);
+  }
   .mobile-nav-drawer { position: fixed; inset: 0 auto 0 0; width: min(292px, 85vw); max-width: none;
     height: 100dvh; max-height: none; margin: 0; padding: 14px 14px max(16px, env(safe-area-inset-bottom));
     background: var(--panel); color: var(--text); border: 0; border-right: 1px solid var(--border);
@@ -940,7 +965,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 <a class="skip-content" id="skipContent" href="#mainContent">跳到主要内容</a>
 <div class="shell">
   <aside class="side" aria-label="主导航">
-    <div class="brand">
+    <div class="brand camo-header">
+      <span class="camo-print" aria-hidden="true"></span>
       <img src="/logo.svg" width="30" height="30" alt="">
       <div class="brand-name">Moltskin</div>
       <span class="brand-ver">v0.4.1</span>
@@ -992,7 +1018,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
   </aside>
 
   <dialog class="mobile-nav-drawer" id="mobileNavDrawer" aria-label="主导航">
-    <div class="mobile-nav-head">
+    <div class="mobile-nav-head camo-header">
+      <span class="camo-print" aria-hidden="true"></span>
       <div class="brand"><img src="/logo.svg" width="29" height="27" alt=""><span class="brand-name">Moltskin</span></div>
       <button class="icon-btn" id="mobileNavClose" type="button" aria-label="关闭导航" autofocus><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
@@ -1140,7 +1167,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           <div class="empty" id="empty" hidden>
             <div class="window-art" aria-hidden="true">
               <span class="window-sheet back"></span><span class="window-sheet mid"></span>
-              <div class="window-front"><div class="window-bar"></div><div class="window-canvas"><img src="/logo.svg" width="52" height="38" alt=""></div></div>
+              <div class="window-front"><div class="window-bar"></div><div class="window-canvas"><span class="camo-print" aria-hidden="true"></span><img src="/logo.svg" width="52" height="38" alt=""></div></div>
             </div>
             <div class="empty-title" id="windowEmptyTitle">还没有浏览器环境</div>
             <p id="windowEmptyHint">选择浏览器内核，为第一个环境命名。</p>
