@@ -50,7 +50,7 @@ Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` sho
 | Camoufox fingerprint preview (UA, screen, WebGL, cores) | ✅ |
 | Camoufox preset and browser readings compared on launch, with separate configuration and proxy checks | ✅ |
 | Camoufox CreepJS self-test with screenshot | ✅ |
-| Proxy pool with exit IP / country / timezone / latency check | ✅ |
+| Proxy pool with TXT/CSV or clipboard import, per-line validation, duplicate detection, and exit IP / country / timezone / latency checks | ✅ |
 | Camoufox GeoIP alignment (timezone, locale, coordinates) | ✅ |
 | Local API with bearer token | ✅ |
 | Manager UI: dashboard, window list, groups, proxies, logs, settings | ✅ |

@@ -647,6 +647,28 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .field.full { grid-column: 1 / -1; }
 .field[hidden] { display: none; }
 
+.proxy-import.modal { width: 630px; }
+.proxy-import .body { display: flex; flex-direction: column; gap: 14px; }
+.proxy-import .source-tools, .proxy-import .preview-totals {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+}
+.proxy-import .source-tools .hint { color: var(--muted); font-size: 12px; }
+.proxy-import textarea { font: 12px/1.55 ui-monospace, monospace; min-height: 88px; resize: vertical; }
+.proxy-import .preview-totals { font-weight: 600; font-size: 12px; margin-bottom: 7px; }
+.proxy-import .preview-totals .valid { color: var(--ok); }
+.proxy-import .invalid { color: var(--err); }
+.proxy-import .duplicate { color: var(--warn); }
+.proxy-import .preview-list { max-height: 170px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.proxy-import .preview-row { display: grid; grid-template-columns: 5em 4em minmax(0,1fr); gap: 8px; padding: 6px 10px; font-size: 12px; }
+.proxy-import .preview-row + .preview-row { border-top: 1px solid var(--border-soft); }
+.proxy-import .preview-row span:last-child { overflow-wrap: anywhere; }
+.proxy-import .preview-row button { margin-inline-start: 8px; border: 0; padding: 2px 4px; background: transparent;
+  color: var(--accent-strong); font: inherit; text-decoration: underline; cursor: pointer; }
+.proxy-import .preview-more { margin-top: 6px; }
+.proxy-import [hidden] { display: none; }
+.proxy-import .import-feedback { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.proxy-import .import-feedback:empty { display: none; }
+
 /* Environment editor */
 .profile-editor.modal { width: 810px; height: min(662px, 88dvh); }
 .profile-editor .head { padding: 14px 20px; gap: 11px; font-size: 17px; font-weight: 600; }
@@ -1653,20 +1675,30 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 
 <!-- 批量导入代理 -->
 <dialog class="mask" id="bulkProxyMask" aria-labelledby="bulkProxyTitle">
-  <div class="modal" style="width:560px">
+  <div class="modal proxy-import">
     <div class="head"><span id="bulkProxyTitle">批量导入代理</span><button class="x" data-close="bulkProxyMask" aria-label="关闭"><svg class="i"><use href="#i-x"/></svg></button></div>
-    <div class="body single">
-      <div class="field">
-        <label for="bulkProxyText">每行一个代理</label>
-        <textarea class="input" id="bulkProxyText" rows="9" spellcheck="false"
-          placeholder="socks5://user:pass@1.2.3.4:1080&#10;http://5.6.7.8:8080&#10;9.9.9.9:3128:user:pass"></textarea>
-        <div class="hint">支持 <code>协议://用户:密码@主机:端口</code>、<code>主机:端口:用户:密码</code>、<code>主机:端口</code>。协议默认 http。</div>
+    <div class="body">
+      <div class="source-tools">
+        <button type="button" class="btn" id="bulkProxyChoose"><svg class="i" aria-hidden="true"><use href="#i-import"/></svg>选择文件</button>
+        <input type="file" id="bulkProxyFile" accept=".txt,.csv,text/plain,text/csv" aria-label="选择代理文件" hidden>
+        <span class="hint">TXT 或 CSV（UTF-8），每个文件最大 2 MiB。选中文件后，内容会追加到下方。</span>
       </div>
-      <div class="hint" id="bulkProxyPreview" style="margin-top:8px"></div>
+      <div class="field">
+        <label for="bulkProxyText">代理列表</label>
+        <textarea class="input" id="bulkProxyText" rows="5" spellcheck="false" autocapitalize="off" autocomplete="off" aria-describedby="bulkProxyFormat"
+          placeholder="192.0.2.1:8080&#10;socks5://user:password@proxy.example:1080"></textarea>
+        <div class="hint" id="bulkProxyFormat">每行一条，默认 HTTP。也支持 <code>主机:端口:用户名:密码</code> 和 CSV 列 <code>host,port,username,password</code>。每次最多导入 500 条有效代理。</div>
+      </div>
+      <div id="bulkProxyPreview" hidden>
+        <div id="bulkProxyCounts" class="preview-totals" role="status"></div>
+        <div class="preview-list" role="list" aria-label="逐行识别结果" id="bulkProxyRows"></div>
+        <button class="btn preview-more" type="button" id="bulkProxyMore" hidden>显示更多</button>
+      </div>
+      <div id="bulkProxyResult" class="import-feedback" role="status"></div>
     </div>
     <div class="foot">
       <button class="btn" data-close="bulkProxyMask">取消</button>
-      <button class="btn primary" id="confirmBulkProxy">导入</button>
+      <button class="btn primary" id="confirmBulkProxy" disabled>导入</button>
     </div>
   </div>
 </dialog>
@@ -2120,6 +2152,15 @@ function openModal(id, initialFocus = null) {
 function closeModal(id, result = null) {
   const dialog = $(id);
   if (!dialog.open) return;
+  if (id === "bulkProxyMask") {
+    if (bulkProxyDraft?.saving) return;
+    bulkProxyDraft = null;
+    $("bulkProxyFile").value = "";
+    $("bulkProxyText").value = "";
+    $("bulkProxyRows").replaceChildren();
+    $("bulkProxyPreview").hidden = true;
+    $("bulkProxyResult").textContent = "";
+  }
   if (id === "profileMask") profileForm = null;
   if (id === "cookieMask") {
     cookieImportTarget = null;
@@ -3841,63 +3882,254 @@ async function refreshProxies() {
 }
 
 /* ---------------- 批量导入代理 ---------------- */
-function parseProxyLine(raw) {
-  const line = raw.trim();
-  if (!line || line.startsWith("#")) return null;
-  const withScheme = line.match(/^(https?|socks5):\/\/(?:([^:@/]+):([^@/]*)@)?([^:/]+):(\d+)$/i);
-  if (withScheme) {
-    return {
-      protocol: withScheme[1].toLowerCase(),
-      username: withScheme[2] || null,
-      password: withScheme[3] || "",
-      host: withScheme[4],
-      port: Number(withScheme[5]),
-    };
+class ProxyImportError extends Error {}
+
+function canonicalProxyHost(input) {
+  if (!/^[\x21-\x7e]+$/.test(input)) throw new ProxyImportError("请输入 IP 地址或 ASCII 域名");
+  const host = input.toLowerCase();
+  if (/^\[[a-f\d:.]+\]$/i.test(host)) {
+    try { return new URL(`http://${host}/`).hostname; }
+    catch { throw new ProxyImportError("IPv6 地址无效"); }
   }
-  const parts = line.split(/[\s,;]+/).filter(Boolean);
-  if (parts.length >= 4 && /^\d+$/.test(parts[1])) {
-    return { protocol: "http", host: parts[0], port: Number(parts[1]), username: parts[2], password: parts[3] };
+  const dns = host.replace(/\.$/, "");
+  const labels = dns.split(".");
+  if (dns.length > 253 || labels.some(label => !/^[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?$/.test(label))) {
+    throw new ProxyImportError("主机名或 IP 地址无效");
   }
-  if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
-    return { protocol: "http", host: parts[0], port: Number(parts[1]), username: null, password: "" };
+  if (/^(?:\d+|0x[\da-f]*)$/.test(labels.at(-1)) &&
+      (labels.length !== 4 || labels.some(part => !/^(?:0|[1-9]\d{0,2})$/.test(part) || Number(part) > 255))) {
+    throw new ProxyImportError("IPv4 地址无效");
   }
-  const colon = line.includes(":") ? line.split(":") : line.split(",");
-  if (colon.length === 2) return { protocol: "http", host: colon[0], port: Number(colon[1]), username: null, password: "" };
-  if (colon.length >= 4) return { protocol: "http", host: colon[0], port: Number(colon[1]), username: colon[2], password: colon.slice(3).join(":") };
-  return null;
+  return dns;
 }
 
-function bulkProxyItems() {
-  return $("bulkProxyText").value
-    .split("\n")
-    .map(parseProxyLine)
-    .filter((item) => item && item.host && Number.isFinite(item.port) && item.port > 0 && item.port < 65536);
+function splitProxyColumns(line) {
+  // Only the delimiter after the first field determines the format. A password
+  // can contain other delimiters, or the same delimiter inside CSV quotes.
+  const delimited = line.match(/^(?:"(?:[^"]|"")*"|[^,;"\s]+)[ \t]*([,;])/);
+  if (!delimited) return line.split(/\s+/);
+  const separator = delimited[1];
+  const cell = separator === ","
+    ? /(?:[ \t]*"((?:[^"]|"")*)"[ \t]*|([^",]*)),/y
+    : /(?:[ \t]*"((?:[^"]|"")*)"[ \t]*|([^";]*));/y;
+  const terminated = line + separator;
+  const fields = [];
+  while (cell.lastIndex < terminated.length) {
+    const match = cell.exec(terminated);
+    if (!match) throw new ProxyImportError("CSV 引号格式错误");
+    fields.push(match[1] === undefined ? match[2].trim() : match[1].replace(/""/g, '"'));
+  }
+  return fields;
+}
+
+function parseProxyLine(line) {
+  let protocol = "http", host, port, username = "", password = "";
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(line)) {
+    const url = line.match(/^([a-z][a-z\d+.-]*):\/\/(?:([^@\s/?#\\]*)@)?(\[[^\]]+\]|[^:@\s/?#\\]+):(\d+)\/?$/i);
+    if (!url) throw new ProxyImportError("代理网址格式错误，需要主机和端口");
+    [, protocol, , host, port] = url;
+    if (url[2] !== undefined) {
+      const [user, ...rest] = url[2].split(":");
+      if (!user) throw new ProxyImportError("代理网址缺少用户名");
+      try {
+        username = decodeURIComponent(user);
+        password = decodeURIComponent(rest.join(":"));
+      } catch { throw new ProxyImportError("用户名或密码的百分号编码无效"); }
+    }
+  } else {
+    const compact = line.match(/^(\[[^\]]+\]|[^\[\]:\s,;]+):([^:\s,;]+)(?::([^:]*):(.*))?$/);
+    if (compact) {
+      [, host, port, username = "", password = ""] = compact;
+    } else {
+      const fields = splitProxyColumns(line);
+      const header = fields.map(field => field.toLowerCase());
+      if (header[0] === "protocol") header.shift();
+      if (header[0] === "host" && header[1] === "port" &&
+          (header.length === 2 || (header.length === 4 && header[2] === "username" && header[3] === "password"))) return null;
+      if (/^(http|https|socks5)$/i.test(fields[0])) protocol = fields.shift();
+      if (fields.length !== 2 && fields.length !== 4) {
+        throw new ProxyImportError("需要主机、端口；账号和密码请成对提供");
+      }
+      [host, port, username = "", password = ""] = fields;
+    }
+  }
+  protocol = protocol.toLowerCase();
+  if (!["http", "https", "socks5"].includes(protocol)) throw new ProxyImportError("仅支持 HTTP、HTTPS、SOCKS5");
+  host = canonicalProxyHost(host);
+  if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
+    throw new ProxyImportError("端口必须是 1–65535 的整数");
+  }
+  if (password && !username) throw new ProxyImportError("填写密码时也需要用户名");
+  if ([username, password].some(part => /[\x00-\x1f\x7f-\x9f\uD800-\uDFFF]/u.test(part)) ||
+      (protocol !== "socks5" && username.includes(":"))) {
+    throw new ProxyImportError("用户名或密码含有无效字符");
+  }
+  return { protocol, host, port: Number(port), username: username || null, password };
+}
+
+function parseProxyImport(text, existing = []) {
+  const key = proxy => JSON.stringify([proxy.protocol.toLowerCase(), proxy.host, Number(proxy.port)]);
+  const known = new Set();
+  for (const proxy of existing) {
+    // A legacy record may store an IPv6 literal without URL brackets.
+    const host = proxy.host.includes(":") && !proxy.host.startsWith("[") ? `[${proxy.host}]` : proxy.host;
+    try { known.add(key({ ...proxy, host: canonicalProxyHost(host.trim()) })); }
+    catch { /* Malformed legacy rows cannot match a valid endpoint. */ }
+  }
+  const seen = new Map();
+  const rows = [];
+  text.split(/\r\n|\r|\n/).forEach((raw, index) => {
+    const value = raw.trim();
+    if (!value || value.startsWith("#")) return;
+    const line = index + 1;
+    try {
+      const item = parseProxyLine(value);
+      if (!item) return;
+      const endpoint = key(item);
+      if (known.has(endpoint) || seen.has(endpoint)) {
+        const reason = known.has(endpoint) ? "代理池中已存在" : `与第 ${seen.get(endpoint)} 行重复`;
+        rows.push({ line, status: "duplicate", item: { protocol: item.protocol, host: item.host, port: item.port }, reason });
+      } else {
+        seen.set(endpoint, line);
+        rows.push({ line, status: "valid", item });
+      }
+    } catch (error) {
+      const reason = error instanceof ProxyImportError ? error.message : "代理格式无效";
+      rows.push({ line, status: "invalid", reason });
+    }
+  });
+  return rows;
+}
+
+let bulkProxyDraft = null;
+
+function renderBulkProxyImport() {
+  const draft = bulkProxyDraft;
+  if (!draft) return;
+  const rows = parseProxyImport($("bulkProxyText").value, [...state.proxies, ...draft.added]);
+  for (const row of rows) {
+    const issue = draft.serverIssues.get(row.line);
+    if (issue) Object.assign(row, {status: issue.status, reason: issue.reason});
+  }
+  draft.rows = rows;
+  const valid = rows.filter(row => row.status === "valid").length;
+  const duplicate = rows.filter(row => row.status === "duplicate").length;
+  const invalid = rows.length - valid - duplicate;
+  $("bulkProxyPreview").hidden = !rows.length;
+  $("bulkProxyCounts").innerHTML = `<span class="valid">可导入 ${valid} 条</span><span class="duplicate">重复 ${duplicate} 条</span><span class="invalid">无效 ${invalid} 条</span>`
+    + (valid > 500 ? '<span class="invalid">请分批导入，每次最多 500 条</span>' : "");
+  const labels = {valid: "有效", duplicate: "重复", invalid: "无效"};
+  $("bulkProxyRows").innerHTML = rows.slice(0, draft.visible).map(row => {
+    const endpoint = row.item ? `${row.item.protocol}://${row.item.host}:${row.item.port}` : "";
+    const edit = row.status === "invalid" ? `<button type="button" data-line="${row.line}" aria-label="修改第 ${row.line} 行">修改</button>` : "";
+    return `<div class="preview-row" role="listitem"><span>第 ${row.line} 行</span><span class="${row.status}">${labels[row.status]}</span><span>${esc([endpoint, row.reason].filter(Boolean).join(" · "))}${edit}</span></div>`;
+  }).join("");
+  $("bulkProxyMore").hidden = rows.length <= draft.visible;
+  $("bulkProxyChoose").disabled = draft.reading || draft.saving;
+  $("bulkProxyFile").disabled = draft.reading || draft.saving;
+  $("bulkProxyText").readOnly = draft.saving;
+  $("bulkProxyMask").querySelectorAll("[data-close]").forEach(btn => { btn.disabled = draft.saving; });
+  const submit = $("confirmBulkProxy");
+  submit.disabled = !valid || valid > 500 || draft.reading || draft.saving;
+  submit.textContent = draft.saving ? "正在导入…" : valid ? `导入 ${valid} 条有效代理` : "导入";
 }
 
 $("bulkProxyBtn").onclick = () => {
-  $("bulkProxyText").value = "";
-  $("bulkProxyPreview").textContent = "";
-  openModal("bulkProxyMask");
+  bulkProxyDraft = {rows: [], added: [], serverIssues: new Map(), visible: 50, reading: false, saving: false};
+  renderBulkProxyImport();
+  openModal("bulkProxyMask", $("bulkProxyText"));
 };
-$("bulkProxyText").addEventListener("input", () => {
-  const items = bulkProxyItems();
-  $("bulkProxyPreview").textContent = items.length
-    ? `识别到 ${items.length} 条：${items.slice(0, 2).map((i) => `${i.protocol}://${i.host}:${i.port}`).join("、")}${items.length > 2 ? " …" : ""}`
-    : "还没有识别到有效代理";
-});
-$("confirmBulkProxy").onclick = async () => {
-  const items = bulkProxyItems();
-  if (!items.length) return toast("没有可导入的代理", true);
-  const btn = $("confirmBulkProxy");
-  btn.disabled = true;
+$("bulkProxyMore").onclick = () => {
+  bulkProxyDraft.visible += 50;
+  renderBulkProxyImport();
+};
+$("bulkProxyRows").onclick = event => {
+  const edit = event.target.closest("button[data-line]");
+  if (!edit || bulkProxyDraft?.saving) return;
+  const textarea = $("bulkProxyText");
+  const lines = textarea.value.split("\n");
+  const index = Number(edit.dataset.line) - 1;
+  const start = lines.slice(0, index).reduce((offset, line) => offset + line.length + 1, 0);
+  textarea.focus();
+  textarea.setSelectionRange(start, start + lines[index].length);
+};
+$("bulkProxyText").oninput = () => {
+  bulkProxyDraft.serverIssues.clear();
+  bulkProxyDraft.visible = 50;
+  $("bulkProxyResult").textContent = "";
+  renderBulkProxyImport();
+};
+$("bulkProxyChoose").onclick = () => $("bulkProxyFile").click();
+$("bulkProxyFile").onchange = async () => {
+  const draft = bulkProxyDraft;
+  const file = $("bulkProxyFile").files[0];
+  if (!draft || !file || draft.saving || draft.reading) return;
+  $("bulkProxyFile").value = "";
+  if (file.size > 2 * 1024 * 1024) {
+    $("bulkProxyResult").textContent = "文件超过 2 MiB，请拆分后再选择。";
+    return;
+  }
+  draft.reading = true;
+  renderBulkProxyImport();
   try {
-    const result = await api("/proxies/bulk", { method: "POST", body: JSON.stringify({ proxies: items }) });
-    toast(`导入 ${result.created} 个${result.skipped.length ? `，跳过 ${result.skipped.length}` : ""}`, result.skipped.length > 0);
-    closeModal("bulkProxyMask");
-    await refreshProxies();
-    await refresh();
-  } catch (err) { toast(err.message, true); }
-  finally { btn.disabled = false; }
+    const text = new TextDecoder("utf-8", {fatal: true}).decode(await file.arrayBuffer());
+    if (bulkProxyDraft !== draft) return;
+    if (!text.trim()) {
+      $("bulkProxyResult").textContent = "文件中没有代理记录。";
+      return;
+    }
+    const input = $("bulkProxyText");
+    input.value += (input.value && !input.value.endsWith("\n") ? "\n" : "") + text;
+    draft.serverIssues.clear();
+    $("bulkProxyResult").textContent = `已读取 ${file.name}，请核对预览后导入。`;
+  } catch {
+    if (bulkProxyDraft === draft) $("bulkProxyResult").textContent = "无法读取文件，请选择 UTF-8 编码的文本文件。";
+  } finally {
+    draft.reading = false;
+    if (bulkProxyDraft === draft) renderBulkProxyImport();
+  }
+};
+$("confirmBulkProxy").onclick = async () => {
+  const draft = bulkProxyDraft;
+  if (!draft || draft.reading || draft.saving) return;
+  renderBulkProxyImport();
+  const valid = draft.rows.filter(row => row.status === "valid");
+  if (!valid.length || valid.length > 500) return;
+  const skippedInPreview = draft.rows.length - valid.length;
+  const needsCorrection = draft.rows.some(row => row.status === "invalid");
+  draft.saving = true;
+  renderBulkProxyImport();
+  try {
+    const result = await api("/proxies/bulk", {
+      method: "POST",
+      body: JSON.stringify({proxies: valid.map(({line, item}) => ({...item, line}))}),
+    });
+    const skipped = new Map(result.skipped.map(row => [row.line, row]));
+    for (const {line, item} of valid) {
+      if (skipped.has(line)) {
+        const issue = skipped.get(line);
+        draft.serverIssues.set(line, {status: issue.status === "duplicate" ? "duplicate" : "invalid", reason: issue.reason});
+      } else {
+        draft.added.push({protocol: item.protocol, host: item.host, port: item.port});
+      }
+    }
+    const totalSkipped = skippedInPreview + skipped.size;
+    const summary = `已导入 ${result.created} 条代理` + (totalSkipped ? `，跳过 ${totalSkipped} 条` : "");
+    let refreshError = false;
+    try { await refreshProxies(); } catch { refreshError = true; }
+    draft.saving = false;
+    if (needsCorrection || skipped.size || refreshError) {
+      $("bulkProxyResult").textContent = summary + (refreshError ? "。代理列表刷新失败，请稍后刷新。" : "。");
+    } else {
+      closeModal("bulkProxyMask");
+      toast(summary);
+    }
+  } catch (err) {
+    $("bulkProxyResult").textContent = err.message;
+  } finally {
+    draft.saving = false;
+    if (bulkProxyDraft === draft) renderBulkProxyImport();
+  }
 };
 
 /* ---------------- 日志 ---------------- */
