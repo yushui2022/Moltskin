@@ -19,7 +19,8 @@ from . import config
 
 
 def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
-                   chromium_version: str = "", block_images: bool = False, open_dashboard: bool = False,
+                   chromium_version: str = "", chromium_user_agent: str = "",
+                   block_images: bool = False, open_dashboard: bool = False,
                    chromium_js_heap_mb: int = 0, chromium_mute_audio: bool = False, chromium_renderer_limit: int = 0,
                    media_capture: str = "standard", geolocation: str = "standard",
                    browser_language: str = "", browser_window_size: str = "") -> tuple[list[str], str]:
@@ -39,6 +40,7 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("未知的网站首选语言")
     if browser_window_size and browser_window_size not in config.CHROMIUM_BROWSER_WINDOW_SIZES:
         raise ValueError("未知的启动窗口大小")
+    config.validate_chromium_user_agent(chromium_user_agent)
     binary, version, capabilities = resolve_build(chromium_version)
     check_access_policies(capabilities, media_capture, geolocation)
     if chromium_owns_directory(profile_dir):
@@ -64,6 +66,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--blink-settings=imagesEnabled=false")
     if browser_language:
         args.append(f"--accept-lang={browser_language}")
+    if chromium_user_agent:
+        args.append(f"--user-agent={chromium_user_agent}")
     if browser_window_size:
         args.append("--window-size=" + browser_window_size.replace("x", ","))
     if headless:
@@ -115,6 +119,7 @@ def matches_process(profile_dir: Path, pid: int) -> bool:
     """A persisted PID or a leftover SingletonLock alone cannot identify a browser."""
     result = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "command="], capture_output=True,
                             text=True, errors="replace", timeout=3, check=False)
-    # ps flattens argv, so include the next fixed option to delimit paths containing spaces.
-    expected = f" --user-data-dir={profile_dir.resolve()} --no-first-run"
-    return result.returncode == 0 and expected in result.stdout
+    # Our first switch identifies the directory. Later user-supplied text may resemble switches.
+    _, marker, options = result.stdout.partition(" --user-data-dir=")
+    expected = f"{profile_dir.resolve()} --no-first-run --no-default-browser-check"
+    return result.returncode == 0 and bool(marker) and options.startswith(expected)

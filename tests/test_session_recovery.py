@@ -3,11 +3,13 @@
 import json
 import os
 import signal
+import subprocess
+import sys
 from unittest.mock import Mock
 
 import pytest
 
-from moltskin.services.core import config, db, launcher
+from moltskin.services.core import chromium, config, db, launcher
 
 
 @pytest.fixture
@@ -115,3 +117,15 @@ def test_requested_shutdown_signals_are_terminal_not_crashes(session_row, exit_c
     launcher._monitor(sid, "pf_test", Mock(wait=Mock(return_value=exit_code)), None)
     assert saved_state(sid)["state"] == state
     assert launcher.status("pf_test")["status"] == "ready"
+
+
+@pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="native profile matcher uses ps")
+def test_chromium_process_owner_ignores_directory_text_inside_user_agent(tmp_path):
+    owner = (tmp_path / "window A").resolve()
+    other = (tmp_path / "window B").resolve()
+    flags = ["--no-first-run", "--no-default-browser-check"]
+    fake_path_text = f"--user-agent=QA/1.0 ( --user-data-dir={other} {' '.join(flags)} )"
+    argv = [sys.executable, "-c", "import sys; sys.stdin.read()", f"--user-data-dir={owner}", *flags, fake_path_text]
+    with subprocess.Popen(argv, stdin=subprocess.PIPE) as proc:
+        assert chromium.matches_process(owner, proc.pid)
+        assert not chromium.matches_process(other, proc.pid)

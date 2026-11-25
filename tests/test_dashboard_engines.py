@@ -180,6 +180,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
         conn.execute("ALTER TABLE profiles DROP COLUMN browser_timezone")
         conn.execute("ALTER TABLE profiles DROP COLUMN browser_window_size")
         conn.execute("ALTER TABLE profiles DROP COLUMN chromium_version")
+        conn.execute("ALTER TABLE profiles DROP COLUMN chromium_user_agent")
         conn.execute("ALTER TABLE profiles DROP COLUMN engine")
         conn.execute("ALTER TABLE profiles DROP COLUMN startup_page")
         conn.execute("ALTER TABLE profiles DROP COLUMN block_images")
@@ -194,6 +195,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
         row = conn.execute("SELECT * FROM profiles WHERE id='old-id'").fetchone()
     assert row["engine"] == "camoufox"
     assert row["chromium_version"] == ""
+    assert row["chromium_user_agent"] == ""
     assert row["media_capture"] == row["geolocation"] == "standard"
     assert row["browser_language"] == row["browser_timezone"] == row["browser_window_size"] == ""
     assert row["user_data_dir"] == str(data_dir / "old-profile")
@@ -267,6 +269,60 @@ def test_chromium_window_settings_survive_partial_edits_duplication_and_import(c
     reset = client.patch(url, json=defaults).raise_for_status().json()["data"]
     assert defaults.items() <= reset.items()
     assert client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).json()["version"] == 1
+
+
+def test_manual_user_agent_roundtrip_and_launch(client):
+    agent = 'Moltskin-QA/1.0 (Window "A"; argv boundary)'
+    profile = create_chromium(client, "UA original", chromium_user_agent=agent)
+    assert profile["chromium_user_agent"] == agent
+    url = f"{PROFILES}/{profile['id']}"
+    updated = client.patch(url, json={"remark": "updated"}).raise_for_status().json()["data"]
+    assert updated["chromium_user_agent"] == agent
+    clone = client.post(url + "/duplicate").raise_for_status().json()["data"]
+    assert clone["chromium_user_agent"] == agent
+    selection = {"ids": [profile["id"]]}
+    exported = client.post("/api/v1/export/profiles", json=selection).raise_for_status().json()
+    assert exported["version"] == 6 and exported["profiles"][0]["chromium_user_agent"] == agent
+    exported["profiles"][0]["name"] = "UA restored"
+    restored = client.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]
+    assert restored["created"] == 1
+    rows = client.get(PROFILES).raise_for_status().json()["data"]["items"]
+    assert next(p for p in rows if p["name"] == "UA restored")["chromium_user_agent"] == agent
+
+    argv_file = Path(profile["user_data_dir"]) / "test-args.json"
+    for expected in (agent, ""):
+        if not expected:
+            reset = client.patch(url, json={"chromium_user_agent": ""}).raise_for_status().json()["data"]
+            assert reset["chromium_user_agent"] == ""
+        client.post(url + "/launch").raise_for_status()
+        try:
+            args = json.loads(argv_file.read_text())
+            switches = [arg for arg in args if arg.startswith("--user-agent=")]
+            assert switches == (["--user-agent=" + expected] if expected else [])
+            change = client.patch(url, json={"chromium_user_agent": "Change/2"})
+            assert change.status_code == 409 and change.json()["error"]["code"] == "PROFILE_RUNNING"
+        finally:
+            client.post(url + "/stop").raise_for_status()
+    assert client.post("/api/v1/export/profiles", json=selection).json()["version"] == 1
+
+
+def test_manual_user_agent_validation_and_legacy_import(client):
+    value = "A" * 512
+    original = create_chromium(client, "UA boundary", chromium_user_agent=value)
+    url = f"{PROFILES}/{original['id']}"
+    invalid = ("A" * 513, " UA", "UA ", " ", "UA\r\nExtra: x", "UA\tX", "UA\x00", "UA\x7f", "版", None)
+    for bad in invalid:
+        assert client.patch(url, json={"chromium_user_agent": bad}).status_code == 422
+    assert client.get(url).json()["data"]["chromium_user_agent"] == value
+    other_engine = {"name": "Firefox UA", "engine": "camoufox", "chromium_user_agent": "UA/1.0"}
+    assert client.post(PROFILES, json=other_engine).status_code == 422
+    rows = [other_engine, {"name": "bad control", "engine": "chromium", "chromium_user_agent": "UA\nX"}]
+    skipped = client.post("/api/v1/import/profiles", json={"profiles": rows}).raise_for_status().json()["data"]
+    assert skipped["created"] == 0 and len(skipped["skipped"]) == 2
+    legacy = {"version": 5, "profiles": [{"name": "Older profile", "engine": "chromium"}]}
+    assert client.post("/api/v1/import/profiles", json=legacy).json()["data"]["created"] == 1
+    items = client.get(PROFILES).json()["data"]["items"]
+    assert next(p for p in items if p["name"] == "Older profile")["chromium_user_agent"] == ""
 
 
 def test_chromium_startup_controls_roundtrip(client):

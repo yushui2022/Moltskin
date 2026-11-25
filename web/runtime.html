@@ -22,6 +22,9 @@
     dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     dd small { color: #64736a; display: block; }
     code { font: 13px/1.6 ui-monospace, monospace; }
+    #copyUa { display: block; margin-top: 6px; padding: 2px 9px; border: 1px solid #b7cac0;
+      border-radius: 5px; background: #fff; color: #215d49; font: inherit; font-size: 13px; cursor: pointer; }
+    #copyUa[hidden] { display: none; }
     @media (max-width: 480px) {
       main { padding: 22px 14px; }
       section { padding: 14px 16px; }
@@ -43,7 +46,9 @@
         <div><dt>平台</dt><dd id="platform">—</dd></div>
         <div><dt>网站语言</dt><dd id="language">—</dd></div>
         <div><dt>时区</dt><dd id="timezone">—</dd></div>
-        <div class="wide"><dt lang="en">User-Agent</dt><dd><code id="ua">—</code></dd></div>
+        <div class="wide"><dt>HTTP 请求头 UA</dt><dd><code id="httpUa">__HTTP_USER_AGENT__</code></dd></div>
+        <div class="wide"><dt>网页读取的 UA</dt><dd><code id="ua">—</code>
+          <button type="button" id="copyUa" hidden>复制 UA</button><small id="copyMessage" role="status"></small></dd></div>
       </dl>
     </section>
     <section aria-labelledby="hardware-heading">
@@ -71,6 +76,18 @@
       show("dpr", window.devicePixelRatio);
     }
     show("ua", navigator.userAgent);
+    const copyUa = document.getElementById("copyUa");
+    copyUa.hidden = false;
+    copyUa.addEventListener("click", async () => {
+      const source = document.getElementById("ua");
+      try {
+        await navigator.clipboard.writeText(source.textContent);
+        show("copyMessage", "已复制");
+      } catch {
+        window.getSelection().selectAllChildren(source);
+        show("copyMessage", "文本已选中，可手动复制。");
+      }
+    });
     show("platform", navigator.userAgentData?.platform || navigator.platform);
     show("language", navigator.languages.join("、") || navigator.language);
     show("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);

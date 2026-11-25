@@ -753,6 +753,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 .editor-fields :is(.select, .input, .btn) { min-height: 35px; }
 .editor-fields .select:disabled { color: var(--dim); background-color: var(--panel-2); cursor: default; }
 .editor-fields .required-mark { color: var(--accent); }
+.ua-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ua-label button { border: 0; background: transparent; padding: 3px 0 3px 8px; color: var(--accent-strong); font-size: 12px; cursor: pointer; }
+.ua-label button:disabled { color: var(--dim); cursor: default; }
+.ua-field textarea { font-family: ui-monospace, monospace; }
 .editor-readout { display: flex; align-items: center; min-height: 35px; padding: 6px 10px; border-radius: var(--r-md);
   background: var(--panel-2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .editor-caption { font-size: 12px; color: var(--muted); }
@@ -1754,6 +1758,13 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <div class="field" data-engine="chromium" hidden><label for="fChromiumVersion">启动内核版本</label><select class="select" id="fChromiumVersion" aria-describedby="fChromiumVersionHint"><option value="">跟随本机默认</option></select><span class="hint" id="fChromiumVersionHint"></span></div>
             <div class="field" data-engine="chromium" hidden><label for="fHostOs">运行系统</label><output class="editor-readout" id="fHostOs"></output></div>
             <div class="field" data-engine="chromium" hidden><label for="fHostArch">处理器架构</label><output class="editor-readout" id="fHostArch"></output></div>
+            <div class="field full ua-field" data-engine="chromium" hidden>
+              <div class="ua-label"><label for="fUserAgent">User-Agent</label><button type="button" id="fResetUserAgent" disabled>恢复默认</button></div>
+              <textarea class="input" id="fUserAgent" rows="2" dir="ltr" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="留空使用所选内核的默认 User-Agent" aria-describedby="fUserAgentHint fUserAgentError"></textarea>
+              <span class="hint" id="fUserAgentHint"></span>
+              <span class="hint field-error" id="fUserAgentError" aria-live="polite" hidden></span>
+              <span class="hint">在目标窗口打开<a class="runtime-link" href="/runtime.html" target="_blank" rel="noopener">本窗口参数</a>，可核对请求头和网页读到的 UA。</span>
+            </div>
             <div class="field" data-engine="camoufox"><label for="fOs">操作系统</label>
               <select class="select" id="fOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
             </div>
@@ -1839,6 +1850,12 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserLanguage">网站首选语言</label><select class="select" id="bBrowserLanguage"><option value="">浏览器默认</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bChromiumVersion">启动内核版本</label><select class="select" id="bChromiumVersion" aria-describedby="bChromiumVersionHint"><option value="">跟随本机默认</option></select><span class="hint" id="bChromiumVersionHint"></span></div>
+      <div class="field full ua-field" data-engine="chromium" hidden>
+        <div class="ua-label"><label for="bUserAgent">User-Agent</label><button type="button" id="bResetUserAgent" disabled>恢复默认</button></div>
+        <textarea class="input" id="bUserAgent" rows="2" dir="ltr" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="留空使用所选内核的默认 User-Agent" aria-describedby="bUserAgentHint bUserAgentError"></textarea>
+        <span class="hint" id="bUserAgentHint"></span>
+        <span class="hint field-error" id="bUserAgentError" aria-live="polite" hidden></span>
+      </div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserTimezone">时区</label><select class="select" id="bBrowserTimezone"><option value="">跟随系统</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserWindowSize">启动窗口大小</label><select class="select" id="bBrowserWindowSize"><option value="">浏览器默认</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bRendererLimit">渲染进程上限</label><select class="select" id="bRendererLimit"><option value="0">由 Chromium 分配</option></select></div>
@@ -3550,6 +3567,27 @@ function setChromiumBuildChoices(prefix, info, storedVersion, locked) {
   return pin ? selected : info;
 }
 
+function validateUserAgent(prefix, focusInvalid = false) {
+  const ua = $(prefix + "UserAgent");
+  const value = ua.value;
+  const error = $(prefix + "UserAgentError");
+  let message = "";
+  if (!ua.disabled && $(prefix + "Engine").value === "chromium") {
+    if (value.length > 512) message = "User-Agent 最多 512 个字符，请缩短后保存。";
+    else if (/[^\x20-\x7e]/.test(value)) message = "请使用单行可打印 ASCII 字符，移除换行、制表符或非英文字符。";
+    else if (value !== value.trim()) message = "请移除首尾空格，或清空以使用默认值。";
+  }
+  error.textContent = message;
+  error.hidden = !message;
+  ua.setAttribute("aria-invalid", String(Boolean(message)));
+  $(prefix + "ResetUserAgent").disabled = ua.disabled || !value;
+  if (focusInvalid && message) {
+    if (prefix === "f") showEditorSection("profileBrowser");
+    ua.focus();
+  }
+  return !message;
+}
+
 function setEngineFields(prefix, saved = null) {
   const select = $(prefix + "Engine");
   const chromium = select.value === "chromium";
@@ -3560,6 +3598,13 @@ function setEngineFields(prefix, saved = null) {
   const unavailable = state.engine?.chromium?.available === false;
   const locked = $(prefix + "LocalFonts").disabled;
   const info = state.engine?.chromium;
+  const ua = $(prefix + "UserAgent");
+  if (saved) ua.value = saved.chromium_user_agent || "";
+  ua.disabled = locked || !info?.supports_custom_user_agent;
+  $(prefix + "UserAgentHint").textContent = locked ? "关闭此窗口后可修改 User-Agent。" :
+    !state.engine ? "正在读取内核设置…" : !info?.supports_custom_user_agent ? "当前服务版本未提供 UA 编辑，请更新后使用。" :
+    "下次启动生效。最多 512 个可打印 ASCII 字符。Client Hints 由 Chromium 处理。";
+  validateUserAgent(prefix);
   const capabilities = setChromiumBuildChoices(prefix, info, saved ? saved.chromium_version || "" : null, locked);
   for (const field of chromiumResourceFields) {
     const control = $(prefix + field.control);
@@ -3616,6 +3661,8 @@ function engineSettings(prefix, creating) {
   const values = creating ? { engine } : {};
   if (engine === "chromium") {
     const version = $(prefix + "ChromiumVersion");
+    const ua = $(prefix + "UserAgent");
+    if (!ua.disabled) values.chromium_user_agent = ua.value;
     if (!version.disabled && !version.selectedOptions[0]?.disabled) values.chromium_version = version.value;
     for (const field of chromiumResourceFields) {
       const control = $(prefix + field.control);
@@ -3645,6 +3692,13 @@ $("fOs").onchange = renderPresetAction;
 $("bEngine").onchange = () => setEngineFields("b");
 for (const prefix of ["f", "b"]) {
   $(prefix + "ChromiumVersion").onchange = () => setEngineFields(prefix);
+  const ua = $(prefix + "UserAgent");
+  ua.oninput = () => validateUserAgent(prefix);
+  $(prefix + "ResetUserAgent").onclick = () => {
+    ua.value = "";
+    validateUserAgent(prefix);
+    ua.focus();
+  };
 }
 
 function updateEditLock(id, status) {
@@ -3720,6 +3774,7 @@ $("confirmProfile").onclick = async () => {
   const name = $("fName").value.trim();
   if (!name) return reportNameError("请填写窗口名称");
   if (Array.from(name).length > 120) return reportNameError("窗口名称最多 120 个字符");
+  if (!validateUserAgent("f", true)) return;
   const payload = {
     name,
     ...engineSettings("f", !state.editingId),
@@ -3837,6 +3892,7 @@ function fillBatchSelects() {
     `<option value="${p.id}">${esc(p.name)} · ${esc(p.host)}:${p.port}</option>`).join("");
 }
 $("confirmBatch").onclick = async () => {
+  if (!validateUserAgent("b", true)) return;
   const count = Math.max(1, Math.min(200, Number($("bCount").value) || 1));
   const prefix = $("bPrefix").value.trim() || "环境";
   const start = Math.max(1, Number($("bStart").value) || 1);
@@ -3969,6 +4025,7 @@ function openDetail(id, initialFocus = null) {
     const defaultVersion = info?.version ? "跟随本机默认 · " + info.version : "跟随本机默认";
     $("fingerprintPreview").innerHTML = `<div class="kv"><div class="k">启动内核版本</div><div class="v">${esc(p.chromium_version || defaultVersion)}</div></div>
       <div class="kv"><div class="k">运行系统</div><div class="v">${esc([info?.host_os, info?.host_arch].filter(Boolean).join(" · ") || "未提供")}</div></div>
+      <div class="kv full"><div class="k">User-Agent</div><div class="v">${esc(p.chromium_user_agent || "跟随内核默认")}</div></div>
       <div class="kv"><div class="k">网站首选语言</div><div class="v">${esc(regionLabel(p.browser_language) || "浏览器默认")}</div></div>
       <div class="kv"><div class="k">时区</div><div class="v">${esc(regionLabel(p.browser_timezone) || "跟随系统")}</div></div>
       <div class="kv"><div class="k">启动窗口大小</div><div class="v">${esc(regionLabel(p.browser_window_size) || "浏览器默认")}</div></div>

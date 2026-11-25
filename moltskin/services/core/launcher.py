@@ -237,6 +237,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             command, browser_version = chromium.prepare_launch(
                 profile_dir, profile["local_fonts"], headless,
                 chromium_version=profile["chromium_version"],
+                chromium_user_agent=profile["chromium_user_agent"],
                 open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
                 block_images=bool(profile["block_images"]),
                 chromium_js_heap_mb=profile["chromium_js_heap_mb"],
@@ -266,7 +267,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         if _active_session(conn, profile_id):
             raise LaunchError("PROFILE_LOCKED", "该环境正在启动或运行")
         launch_fields = ("engine", "chromium_version", "local_fonts", "media_capture", "geolocation", "headless",
-                         "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
+                         "chromium_user_agent", "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
                          "proxy_id", "startup_page", "block_images", "browser_language",
                          "browser_timezone", "browser_window_size")
         if any(current[k] != profile[k] for k in launch_fields):

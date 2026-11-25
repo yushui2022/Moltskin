@@ -138,6 +138,7 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.locator("#bPrefix").fill("Media batch")
     panel.locator("#bCount").fill("2")
     panel.locator("#bEngine").select_option("chromium")
+    panel.locator("#bUserAgent").fill("Moltskin-Batch-QA/1.0")
     panel.locator("#bBrowserLanguage").select_option("en-GB")
     panel.locator("#bBrowserTimezone").select_option("Europe/London")
     panel.locator("#bBrowserWindowSize").select_option("1440x900")
@@ -149,6 +150,7 @@ def test_chromium_permission_controls_create_edit_and_batch(panel):
     panel.locator("#confirmBatch").click()
     for name in ("Media batch-1", "Media batch-2"):
         panel.get_by_role("button", name=name, exact=True).click()
+        expect(panel.locator("#fingerprintPreview")).to_contain_text("Moltskin-Batch-QA/1.0")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("en-GB")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("Europe/London")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("1440 × 900")
@@ -207,7 +209,7 @@ def test_chromium_fingerprint_choices_saved_by_window_and_locked_while_running(p
     expect(language).to_be_disabled()
     expect(timezone).to_be_disabled()
     expect(size).to_be_disabled()
-    for control in ("fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio"):
+    for control in ("fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio", "fUserAgent", "fResetUserAgent"):
         expect(panel.locator("#" + control)).to_be_disabled()
     expect(panel.locator("#fRegionHint")).to_contain_text("关闭此窗口后")
 
@@ -267,6 +269,8 @@ def test_only_installed_build_enables_its_own_permissions(panel):
     }}))
     panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/browser")
     expect(panel.locator("#profileBrowser")).to_have_attribute("open", "")
+    expect(panel.locator("#fUserAgent")).to_be_disabled()
+    expect(panel.locator("#fUserAgentHint")).to_contain_text("当前服务版本")
     hint = panel.locator("#fChromiumVersionHint")
     expect(hint).to_contain_text("缺少默认内核")
     panel.locator("#fChromiumVersion").select_option(version)
@@ -279,6 +283,48 @@ def test_only_installed_build_enables_its_own_permissions(panel):
     expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_disabled()
     panel.goto("http://panel.test/?build-catalog#/windows/new/chromium/hardware")
     expect(panel.locator("#profileHardware")).to_have_attribute("open", "")
+
+
+def test_chromium_manual_ua_validation_save_and_reset(panel):
+    ua = panel.locator("#fUserAgent")
+    reset = panel.locator("#fResetUserAgent")
+    error = panel.locator("#fUserAgentError")
+    panel.locator("#windowEmptyCreate").click()
+    panel.locator("#fName").fill("UA test window")
+    browser_tab = panel.locator('button[aria-controls="profileBrowser"]')
+    browser_tab.click()
+    expect(ua).to_be_hidden()
+    panel.locator("#fEngine").select_option("chromium")
+    expect(ua).to_have_value("")
+    expect(reset).to_be_disabled()
+    for value, feedback in [("test\nheader", "单行"), ("UA 尾", "ASCII"), (" UA/1", "首尾空格"), ("A" * 513, "512")]:
+        ua.fill(value)
+        expect(error).to_contain_text(feedback)
+    panel.locator('button[aria-controls="profileStartup"]').click()
+    panel.locator("#confirmProfile").click()
+    expect(ua).to_be_focused()
+    custom = "Moltskin-Test/1.0 (<lab> & local)"
+    ua.fill(custom)
+    expect(error).to_be_hidden()
+    with panel.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/profiles")) as created:
+        panel.locator("#confirmProfile").click()
+    assert created.value.json()["data"]["chromium_user_agent"] == custom
+    panel.get_by_role("button", name="UA test window").click()
+    preview = panel.locator("#fingerprintPreview")
+    expect(preview).to_contain_text(custom)
+    expect(preview.locator("lab")).to_have_count(0)
+    panel.get_by_role("button", name="编辑指纹设置").click()
+    browser_tab.click()
+    expect(ua).to_have_value(custom)
+    reset.click()
+    expect(ua).to_be_focused()
+    expect(ua).to_have_value("")
+    expect(reset).to_be_disabled()
+    with panel.expect_response(lambda r: r.request.method == "PATCH") as updated:
+        panel.locator("#confirmProfile").click()
+    assert updated.value.json()["data"]["chromium_user_agent"] == ""
+    panel.get_by_role("button", name="UA test window").click()
+    expect(preview.locator(".kv").filter(has_text="User-Agent")).to_contain_text("跟随内核默认")
 
 
 def test_hubstudio_file_import_targets_selected_camoufox_window(panel):

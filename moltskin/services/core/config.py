@@ -55,6 +55,13 @@ def local_dashboard_url() -> str:
     return f"http://127.0.0.1:{PORT}/#/home"
 
 
+def validate_chromium_user_agent(value: str) -> str:
+    if (not isinstance(value, str) or len(value) > 512 or not value.isascii()
+            or not value.isprintable() or value != value.strip()):
+        raise ValueError("User-Agent 可留空，或填写最多 512 个可打印 ASCII 字符，首尾不能有空格。")
+    return value
+
+
 def profile_directory(profile_id: str) -> Path:
     """Return a direct child of the data root that can safely hold a profile."""
     if (not isinstance(profile_id, str) or not profile_id or profile_id in (".", "..")
