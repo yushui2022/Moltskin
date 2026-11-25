@@ -11,7 +11,8 @@ import sys
 from pathlib import Path
 
 from chromium.native import (
-    CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
+    CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
+    WEBGL_DEBUG_INFO_CAPABILITY,
     check_access_policies, chromium_owns_directory, resolve_build,
 )
 
@@ -25,6 +26,7 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    block_images: bool = False, open_dashboard: bool = False, workbench_session: str | None = None,
                    chromium_js_heap_mb: int = 0, chromium_mute_audio: bool = False, chromium_renderer_limit: int = 0,
                    media_capture: str = "standard", geolocation: str = "standard",
+                   canvas_readback: str = "standard", webgl_debug_info: str = "standard",
                    browser_language: str = "", browser_window_size: str = "") -> tuple[list[str], str]:
     if sys.platform not in ("darwin", "linux"):
         raise ValueError("Chromium 预览版仅支持 macOS 和 Linux")
@@ -34,6 +36,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("未知的摄像头与麦克风访问设置")
     if geolocation not in ("standard", "blocked"):
         raise ValueError("未知的地理位置访问设置")
+    if canvas_readback not in ("standard", "blocked") or webgl_debug_info not in ("standard", "blocked"):
+        raise ValueError("未知的图形隐私设置")
     if chromium_js_heap_mb and chromium_js_heap_mb not in config.CHROMIUM_JS_HEAP_LIMITS:
         raise ValueError("不支持的 JavaScript 堆内存设置")
     if chromium_renderer_limit and chromium_renderer_limit not in config.CHROMIUM_RENDERER_LIMITS:
@@ -44,7 +48,7 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("未知的启动窗口大小")
     config.validate_chromium_user_agent(chromium_user_agent)
     binary, version, capabilities = resolve_build(chromium_version)
-    check_access_policies(capabilities, media_capture, geolocation)
+    check_access_policies(capabilities, media_capture, geolocation, webgl_debug_info, canvas_readback)
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
     args = [str(binary), f"--user-data-dir={profile_dir.absolute()}", "--no-first-run", "--no-default-browser-check"]
@@ -60,6 +64,10 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--" + MEDIA_CAPTURE_CAPABILITY)
     if geolocation == "blocked":
         args.append("--" + GEOLOCATION_CAPABILITY)
+    if canvas_readback == "blocked":
+        args.append("--" + CANVAS_READBACK_SWITCH)
+    if webgl_debug_info == "blocked":
+        args.append("--" + WEBGL_DEBUG_INFO_CAPABILITY)
     if chromium_js_heap_mb:
         args.append(f"--js-flags=--max-old-space-size={chromium_js_heap_mb}")
     if chromium_mute_audio:

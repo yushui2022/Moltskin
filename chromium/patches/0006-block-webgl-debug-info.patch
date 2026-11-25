@@ -1,0 +1,90 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 87aec26..87fce11 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -444,6 +444,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+       puts("moltskin-disable-local-font-access");
+       puts("moltskin-block-media-capture");
+       puts("moltskin-block-geolocation");
++      puts("moltskin-block-webgl-debug-info");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 232d1c2..a049951 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -204,6 +204,7 @@
+ #include "storage/browser/quota/quota_manager.h"
+ #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/public/common/page/launching_process_state.h"
+ #include "third_party/blink/public/common/storage_key/storage_key.h"
+ #include "third_party/blink/public/common/switches.h"
+@@ -4031,6 +4032,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       blink::switches::kMinHeightForGpuRasterTile,
+       blink::switches::kMaxUntiledLayerWidth,
+       blink::switches::kMaxUntiledLayerHeight,
++      blink::switches::kMoltskinBlockWebGLDebugInfo,
+       blink::switches::kNetworkQuietTimeout,
+       blink::switches::kShowContentfulPaintRects,
+       blink::switches::kShowLayoutShiftRegions,
+diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
+index cada4d7..d1b28f2 100644
+--- a/third_party/blink/public/common/BUILD.gn
++++ b/third_party/blink/public/common/BUILD.gn
+@@ -229,6 +229,7 @@ source_set("headers") {
+     "metrics/accept_language_and_content_language_usage.h",
+     "metrics/document_update_reason.h",
+     "mime_util/mime_util.h",
++    "moltskin_switches.h",
+     "navigation/navigation_params.h",
+     "navigation/navigation_params_mojom_traits.h",
+     "navigation/navigation_policy.h",
+diff --git a/third_party/blink/public/common/moltskin_switches.h b/third_party/blink/public/common/moltskin_switches.h
+new file mode 100644
+index 0000000..e54ba29
+--- /dev/null
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -0,0 +1,16 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
++#define THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
++
++namespace blink::switches {
++
++// Disables the optional WebGL extension that exposes the unmasked GPU strings.
++inline constexpr char kMoltskinBlockWebGLDebugInfo[] =
++    "moltskin-block-webgl-debug-info";
++
++}  // namespace blink::switches
++
++#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc b/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
+index 0871be8..b51769c 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
+@@ -25,6 +25,9 @@
+
+ #include "third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.h"
+
++#include "base/command_line.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
++
+ namespace blink {
+
+ WebGLDebugRendererInfo::WebGLDebugRendererInfo(
+@@ -37,7 +40,8 @@ WebGLExtensionName WebGLDebugRendererInfo::GetName() const {
+ }
+
+ bool WebGLDebugRendererInfo::Supported(WebGLRenderingContextBase*) {
+-  return true;
++  return !base::CommandLine::ForCurrentProcess()->HasSwitch(
++      switches::kMoltskinBlockWebGLDebugInfo);
+ }
+
+ const char* WebGLDebugRendererInfo::ExtensionName() {

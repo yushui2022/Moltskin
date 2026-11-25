@@ -64,6 +64,15 @@ def test_conflict_leaves_all_original_files_intact(series):
     assert not (src / "header").exists()
 
 
+def test_series_upgrades_already_installed_prefix(series):
+    src, patches = series
+    build_linux.apply_series(src, patches[:1])
+    build_linux.apply_series(src, patches)
+    assert (src / "first").read_text() == "second patch\n"
+    assert (src / "second").read_text() == "also patched\n"
+    assert git(src, "diff", "--cached") == b""
+
+
 def test_wrong_prepared_revision_rejected_before_sync_or_patching(series):
     src, patches = series
     (src.parent / ".gclient").touch()

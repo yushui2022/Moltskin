@@ -134,6 +134,29 @@ else:
         self.assertFalse(last.exists())
         self.assertNotIn(LOCATION_SWITCH, self.browser_args("updated", "--geolocation", "standard"))
 
+    def test_graphics_policies_on_new_and_older_packages(self):
+        canvas = "--moltskin-block-canvas-readback"
+        webgl = "--moltskin-block-webgl-debug-info"
+        args = self.browser_args("graphics")
+        self.assertNotIn(canvas, args)
+        self.assertNotIn(webgl, args)
+        result = self.run_cli("graphics", "--canvas-readback", "blocked")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("moltskin-block-canvas-readback", result.stderr)
+        result = self.run_cli("graphics", "--webgl-debug-info", "blocked")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(webgl[2:], result.stderr)
+        self.assertEqual(self.browser_args("graphics"), args)
+        caps = "\n".join([SWITCH[2:], webgl[2:], "moltskin-block-canvas-readback"])
+        result = self.run_cli("graphics", "--webgl-debug-info", "blocked", "--canvas-readback", "blocked",
+                              TEST_CAPABILITY=caps)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.run_cli("graphics", TEST_CAPABILITY=caps).returncode, 0)
+        restarted = json.loads((self.data / "last-launch").read_text())
+        self.assertIn(canvas, restarted)
+        self.assertIn(webgl, restarted)
+        self.assertNotIn(webgl, self.browser_args("graphics", "--webgl-debug-info", "standard", "--canvas-readback", "standard"))
+
     def test_active_launches_cannot_change_saved_mode(self):
         self.browser_args("one")
         profile = self.data / "chromium-preview" / "one"

@@ -52,7 +52,7 @@ Engine = Literal["camoufox", "chromium"]
 FontPolicy = Literal["standard", "restricted"]
 AccessPolicy = Literal["standard", "blocked"]
 StartupPage = Literal["default", "dashboard", "blank"]
-PROFILE_FORMAT_VERSION = 8
+PROFILE_FORMAT_VERSION = 9
 
 
 class PlatformPreviewSettings(BaseModel):
@@ -62,6 +62,10 @@ class PlatformPreviewSettings(BaseModel):
 
 
 class ChromiumWindowSettings(PlatformPreviewSettings):
+    media_capture: AccessPolicy = "standard"
+    geolocation: AccessPolicy = "standard"
+    canvas_readback: AccessPolicy = "standard"
+    webgl_debug_info: AccessPolicy = "standard"
     chromium_user_agent: Annotated[str, AfterValidator(config.validate_chromium_user_agent)] = ""
     chromium_version: str = Field(default="", pattern=rf"^(?:{chromium_native.VERSION_PATTERN})?$")
     chromium_js_heap_mb: int = Field(default=0, strict=True)
@@ -75,8 +79,6 @@ class ChromiumWindowSettings(PlatformPreviewSettings):
 class ProfileCreate(ChromiumWindowSettings):
     engine: Engine = "camoufox"
     local_fonts: FontPolicy = "standard"
-    media_capture: AccessPolicy = "standard"
-    geolocation: AccessPolicy = "standard"
     startup_page: StartupPage = "default"
     block_images: bool = False
     name: str = Field(min_length=1, max_length=120)
@@ -92,8 +94,6 @@ class ProfileCreate(ChromiumWindowSettings):
 class ProfileUpdate(ChromiumWindowSettings):
     engine: Engine | None = None
     local_fonts: FontPolicy | None = None
-    media_capture: AccessPolicy = "standard"
-    geolocation: AccessPolicy = "standard"
     startup_page: StartupPage = "default"
     block_images: bool = False
     name: str | None = None
@@ -317,6 +317,8 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
         "local_fonts": row["local_fonts"],
         "media_capture": row["media_capture"],
         "geolocation": row["geolocation"],
+        "canvas_readback": row["canvas_readback"],
+        "webgl_debug_info": row["webgl_debug_info"],
         "chromium_js_heap_mb": row["chromium_js_heap_mb"],
         "chromium_mute_audio": bool(row["chromium_mute_audio"]),
         "chromium_renderer_limit": row["chromium_renderer_limit"],
@@ -415,8 +417,7 @@ def _check_chromium_proxy(conn: sqlite3.Connection, proxy_id: str) -> None:
         raise HTTPException(422, detail={"code": "INVALID_CHROMIUM_PROXY", "message": str(exc)}) from exc
 
 
-def _check_engine_options(engine: str, local_fonts: str, media_capture: str, geolocation: str,
-                          fingerprint: Any, window: ChromiumWindowSettings) -> None:
+def _check_engine_options(engine: str, local_fonts: str, fingerprint: Any, window: ChromiumWindowSettings) -> None:
     if engine not in ("camoufox", "chromium") or local_fonts not in ("standard", "restricted"):
         message = "不支持的浏览器内核或字体访问设置"
     elif engine == "camoufox" and window.chromium_version:
@@ -427,10 +428,12 @@ def _check_engine_options(engine: str, local_fonts: str, media_capture: str, geo
         message = "本地平台兼容性预览仅支持 Chromium 环境"
     elif engine == "camoufox" and local_fonts != "standard":
         message = "本机字体访问设置仅支持 Chromium 环境"
-    elif engine == "camoufox" and media_capture != "standard":
+    elif engine == "camoufox" and window.media_capture != "standard":
         message = "阻止摄像头与麦克风访问仅支持 Chromium 环境"
-    elif engine == "camoufox" and geolocation != "standard":
+    elif engine == "camoufox" and window.geolocation != "standard":
         message = "阻止地理位置访问仅支持 Chromium 环境"
+    elif engine == "camoufox" and (window.canvas_readback != "standard" or window.webgl_debug_info != "standard"):
+        message = "Canvas 读取和 WebGL 调试信息设置仅支持 Chromium 环境"
     elif engine == "camoufox" and (window.chromium_mute_audio or window.chromium_renderer_limit or window.chromium_js_heap_mb):
         message = "窗口静音、渲染进程数量和 JavaScript 堆内存设置仅支持 Chromium 环境"
     elif window.chromium_js_heap_mb and window.chromium_js_heap_mb not in config.CHROMIUM_JS_HEAP_LIMITS:
@@ -450,7 +453,9 @@ def _check_engine_options(engine: str, local_fonts: str, media_capture: str, geo
     elif window.chromium_version:
         try:
             build = chromium_native.resolve_build(window.chromium_version)
-            chromium_native.check_access_policies(build.capabilities, media_capture, geolocation)
+            chromium_native.check_access_policies(
+                build.capabilities, window.media_capture, window.geolocation, window.webgl_debug_info, window.canvas_readback,
+            )
         except ValueError as exc:
             message = str(exc)
         else:
@@ -742,6 +747,8 @@ def _profile_export(ids: list[str] | None = None):
             "local_fonts": row["local_fonts"],
             "media_capture": row["media_capture"],
             "geolocation": row["geolocation"],
+            "canvas_readback": row["canvas_readback"],
+            "webgl_debug_info": row["webgl_debug_info"],
             "chromium_js_heap_mb": row["chromium_js_heap_mb"],
             "chromium_mute_audio": bool(row["chromium_mute_audio"]),
             "chromium_renderer_limit": row["chromium_renderer_limit"],
@@ -763,7 +770,9 @@ def _profile_export(ids: list[str] | None = None):
         })
     # Older importers ignore unknown fields; require a reader that preserves the selected settings.
     version = 1
-    if any(item["engine"] == "chromium" and item["proxy"] for item in items):
+    if any(item["canvas_readback"] == "blocked" or item["webgl_debug_info"] == "blocked" for item in items):
+        version = 9
+    elif any(item["engine"] == "chromium" and item["proxy"] for item in items):
         version = 8
     elif any(item["preview_platform"] or item["preview_platform_version"] or item["preview_architecture"] for item in items):
         version = 7
@@ -792,8 +801,7 @@ def _read_import_profile(raw: Any) -> ImportedProfile:
     item.name = item.name.strip()
     if not item.name:
         raise ValueError("名称为空")
-    _check_engine_options(item.engine, item.local_fonts, item.media_capture, item.geolocation,
-                          item.fingerprint, item)
+    _check_engine_options(item.engine, item.local_fonts, item.fingerprint, item)
     if item.engine == "chromium":
         if item.proxy:
             chromium_proxy_server({**item.proxy.model_dump(), "password": item.proxy.password})
@@ -863,14 +871,15 @@ def _store_import_profile(item: ImportedProfile) -> str:
                 "user_data_dir, headless, status, created_at, updated_at, engine, chromium_version, local_fonts, media_capture, "
                 "geolocation, startup_page, block_images, chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
                 "browser_language, browser_timezone, browser_window_size, chromium_user_agent, "
-                "preview_platform, preview_platform_version, preview_architecture) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (profile_id, name, group_id, proxy_id, json.dumps(item.tags, ensure_ascii=False), item.remark,
                  item.os, json.dumps(item.fingerprint, ensure_ascii=False), str(user_data_dir),
                  int(item.headless), ts, ts, item.engine, item.chromium_version, item.local_fonts, item.media_capture, item.geolocation,
                  item.startup_page, int(item.block_images), item.chromium_js_heap_mb, int(item.chromium_mute_audio),
                  item.chromium_renderer_limit, item.browser_language, item.browser_timezone, item.browser_window_size,
-                 item.chromium_user_agent, item.preview_platform, item.preview_platform_version, item.preview_architecture),
+                 item.chromium_user_agent, item.preview_platform, item.preview_platform_version, item.preview_architecture,
+                 item.canvas_readback, item.webgl_debug_info),
             )
             user_data_dir.mkdir(mode=0o700)
             cleanup.callback(user_data_dir.rmdir)
@@ -968,6 +977,15 @@ def _host_os_label() -> str:
     return platform.system()
 
 
+def _chromium_policy_support(capabilities: frozenset[str]) -> dict[str, bool]:
+    return {
+        "supports_media_capture_policy": chromium_native.MEDIA_CAPTURE_CAPABILITY in capabilities,
+        "supports_geolocation_policy": chromium_native.GEOLOCATION_CAPABILITY in capabilities,
+        "supports_webgl_debug_info_policy": chromium_native.WEBGL_DEBUG_INFO_CAPABILITY in capabilities,
+        "supports_canvas_readback_policy": chromium_native.CANVAS_READBACK_CAPABILITY in capabilities,
+    }
+
+
 @app.get("/api/v1/engine")
 def engine():
     """Report installed builds and whether this host can launch the Chromium preview."""
@@ -983,11 +1001,8 @@ def engine():
             }
         )
     builds, chromium_version, problem = chromium_native.build_catalog()
-    installed_versions = [{
-        "version": build.version,
-        "supports_media_capture_policy": chromium_native.MEDIA_CAPTURE_CAPABILITY in build.capabilities,
-        "supports_geolocation_policy": chromium_native.GEOLOCATION_CAPABILITY in build.capabilities,
-    } for build in builds.values()]
+    installed_versions = [{"version": build.version, **_chromium_policy_support(build.capabilities)}
+                          for build in builds.values()]
     default_capabilities = builds[chromium_version].capabilities if chromium_version else frozenset()
     return {
         "data": {
@@ -1007,8 +1022,7 @@ def engine():
                          "host_os": _host_os_label(), "host_arch": platform.machine(),
                          "browser_timezones": config.CHROMIUM_BROWSER_TIMEZONES,
                          "browser_window_sizes": config.CHROMIUM_BROWSER_WINDOW_SIZES,
-                         "supports_media_capture_policy": chromium_native.MEDIA_CAPTURE_CAPABILITY in default_capabilities,
-                         "supports_geolocation_policy": chromium_native.GEOLOCATION_CAPABILITY in default_capabilities},
+                         **_chromium_policy_support(default_capabilities)},
         }
     }
 
@@ -1162,8 +1176,7 @@ def preview_profile_preset(payload: PresetPreviewRequest):
 
 @app.post("/api/v1/profiles", status_code=201)
 def create_profile(payload: NewProfile):
-    _check_engine_options(payload.engine, payload.local_fonts, payload.media_capture, payload.geolocation,
-                          payload.fingerprint, payload)
+    _check_engine_options(payload.engine, payload.local_fonts, payload.fingerprint, payload)
     if payload.engine == "chromium" and "os" in payload.model_fields_set and payload.os != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     if payload.preset_draft_id and (payload.engine != "camoufox" or payload.fingerprint):
@@ -1205,8 +1218,8 @@ def create_profile(payload: NewProfile):
                     "engine, chromium_version, local_fonts, media_capture, geolocation, startup_page, block_images, "
                     "chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
                     "browser_language, browser_timezone, browser_window_size, chromium_user_agent, "
-                    "preview_platform, preview_platform_version, preview_architecture) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (profile_id, payload.name.strip(), payload.group_id or None, payload.proxy_id or None,
                      json.dumps(payload.tags, ensure_ascii=False), payload.remark,
                      "native" if payload.engine == "chromium" else payload.os,
@@ -1215,7 +1228,8 @@ def create_profile(payload: NewProfile):
                      payload.startup_page, int(payload.block_images), payload.chromium_js_heap_mb,
                      int(payload.chromium_mute_audio), payload.chromium_renderer_limit, payload.browser_language,
                      payload.browser_timezone, payload.browser_window_size, payload.chromium_user_agent,
-                     payload.preview_platform, payload.preview_platform_version, payload.preview_architecture),
+                     payload.preview_platform, payload.preview_platform_version, payload.preview_architecture,
+                     payload.canvas_readback, payload.webgl_debug_info),
                 )
             except sqlite3.IntegrityError as exc:
                 raise HTTPException(409, detail={"code": "PROFILE_NAME_EXISTS", "message": "环境名称已存在"}) from exc
@@ -1238,17 +1252,18 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     provided = payload.model_dump(exclude_unset=True)
     if "engine" in provided and provided["engine"] != row["engine"]:
         raise HTTPException(409, detail={"code": "ENGINE_IMMUTABLE", "message": "环境创建后不能更换内核"})
+    policy_fields = ("chromium_version", "media_capture", "geolocation", "webgl_debug_info", "canvas_readback")
     window = payload
-    if "chromium_version" not in provided and provided.keys() & {"media_capture", "geolocation"}:
-        window = payload.model_copy(update={"chromium_version": row["chromium_version"]})
+    if provided.keys() & policy_fields:
+        window = payload.model_copy(update={key: row[key] for key in policy_fields if key not in provided})
     _check_engine_options(row["engine"], provided.get("local_fonts", row["local_fonts"]),
-                          provided.get("media_capture", row["media_capture"]), provided.get("geolocation", row["geolocation"]),
                           provided.get("fingerprint"), window)
     if row["engine"] == "chromium" and "os" in provided and provided["os"] != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     fields: dict[str, Any] = {}
     runtime_fields = ("chromium_version", "chromium_user_agent", "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
-                      "local_fonts", "media_capture", "geolocation", "browser_language", "browser_timezone", "browser_window_size",
+                      "local_fonts", "media_capture", "geolocation", "canvas_readback", "webgl_debug_info",
+                      "browser_language", "browser_timezone", "browser_window_size",
                       "preview_platform", "preview_platform_version", "preview_architecture")
     for key in runtime_fields:
         if key in provided and provided[key] != row[key]:
@@ -1293,10 +1308,9 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
                 raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改内核设置"})
             where = "id=?"
             expected = [profile_id]
-            policy_fields = ("chromium_version", "media_capture", "geolocation")
             if fields.keys() & policy_fields:
-                # The selected package and its two permission policies were validated together.
-                where += " AND chromium_version=? AND media_capture=? AND geolocation=?"
+                # These policies were validated against the same build.
+                where += "".join(f" AND {key}=?" for key in policy_fields)
                 expected.extend(row[key] for key in policy_fields)
             if conn.execute(f"UPDATE profiles SET {assignments} WHERE {where}",
                             (*fields.values(), *expected)).rowcount == 0:
@@ -1380,14 +1394,15 @@ def duplicate_profile(profile_id: str):
                 "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, chromium_version, local_fonts, media_capture, "
                 "geolocation, startup_page, block_images, chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
                 "browser_language, browser_timezone, browser_window_size, chromium_user_agent, "
-                "preview_platform, preview_platform_version, preview_architecture) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (new_profile_id, name, row["group_id"], row["proxy_id"], row["tags"], row["remark"], row["os"],
                  json.dumps(duplicated_fp, ensure_ascii=False), str(user_data_dir), row["headless"], ts, ts,
                  row["engine"], row["chromium_version"], row["local_fonts"], row["media_capture"], row["geolocation"],
                  row["startup_page"], row["block_images"], row["chromium_js_heap_mb"], row["chromium_mute_audio"],
                  row["chromium_renderer_limit"], row["browser_language"], row["browser_timezone"], row["browser_window_size"],
-                 row["chromium_user_agent"], row["preview_platform"], row["preview_platform_version"], row["preview_architecture"]),
+                 row["chromium_user_agent"], row["preview_platform"], row["preview_platform_version"], row["preview_architecture"],
+                 row["canvas_readback"], row["webgl_debug_info"]),
             )
             user_data_dir.mkdir(mode=0o700)
             cleanup.callback(user_data_dir.rmdir)

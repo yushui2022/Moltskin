@@ -65,12 +65,43 @@
         <div><dt>设备像素比</dt><dd id="dpr">—</dd></div>
       </dl>
     </section>
+    <section aria-labelledby="graphics-heading">
+      <h2 id="graphics-heading">图形隐私实测</h2>
+      <dl>
+        <div><dt>Canvas 2D 像素读取</dt><dd id="canvasReadback">—</dd></div>
+        <div><dt>WebGL 显卡调试信息</dt><dd id="webglDebugInfo">—</dd></div>
+      </dl>
+    </section>
   </main>
   <script>
     const unavailable = "浏览器未提供";
     function show(id, value) {
       document.getElementById(id).textContent = value ?? unavailable;
     }
+    function checkGraphics() {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "#00ff00";
+        ctx.fillRect(0, 0, 1, 1);
+        try {
+          const rgba = ctx.getImageData(0, 0, 1, 1).data;
+          show("canvasReadback", rgba.join(",") === "0,255,0,255" ? "可读取测试像素" : "读取值与测试色不同");
+        } catch (error) {
+          show("canvasReadback", error.name === "SecurityError" ? "已阻止读取" : "读取失败");
+        }
+      } else {
+        show("canvasReadback", "Canvas 2D 不可用");
+      }
+      const gl = document.createElement("canvas").getContext("webgl");
+      const ext = gl?.getExtension("WEBGL_debug_renderer_info");
+      if (!gl) show("webglDebugInfo", "WebGL 不可用");
+      else if (!ext) show("webglDebugInfo", "调试扩展不可用");
+      else show("webglDebugInfo", gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || "扩展未提供型号");
+      gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    }
+    checkGraphics();
     function showGeometry() {
       show("screen", screen.width + " × " + screen.height + " CSS px");
       show("outer", outerWidth + " × " + outerHeight + " CSS px");

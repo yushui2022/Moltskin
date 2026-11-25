@@ -13,7 +13,11 @@ from typing import NamedTuple
 CAPABILITY = "moltskin-disable-local-font-access"
 MEDIA_CAPTURE_CAPABILITY = "moltskin-block-media-capture"
 GEOLOCATION_CAPABILITY = "moltskin-block-geolocation"
+WEBGL_DEBUG_INFO_CAPABILITY = "moltskin-block-webgl-debug-info"
+CANVAS_READBACK_CAPABILITY = "moltskin-block-canvas-readback"
+CANVAS_READBACK_SWITCH = CANVAS_READBACK_CAPABILITY
 DESKTOP_CAPABILITIES = frozenset({CAPABILITY, MEDIA_CAPTURE_CAPABILITY, GEOLOCATION_CAPABILITY,
+                                  WEBGL_DEBUG_INFO_CAPABILITY, CANVAS_READBACK_CAPABILITY,
                                   "moltskin-panel", "moltskin-toolbar"})
 
 
@@ -23,7 +27,7 @@ def default_binary() -> Path:
         return Path(configured).expanduser()
     out = Path.home() / "chromium-baseline" / "src" / "out"
     executable = "Chromium.app" if sys.platform == "darwin" else "chrome"
-    for directory in ("MoltskinLocation", "MoltskinMedia", "MoltskinToolbar", "MoltskinPanel"):
+    for directory in ("MoltskinGraphicsPrivacy", "MoltskinLocation", "MoltskinMedia", "MoltskinToolbar", "MoltskinPanel"):
         binary = out / directory / executable
         if binary.exists():
             return binary
@@ -105,11 +109,16 @@ def resolve_build(version: str) -> InstalledBuild:
     return builds[version]
 
 
-def check_access_policies(capabilities: frozenset[str], media_capture: str, geolocation: str) -> None:
+def check_access_policies(capabilities: frozenset[str], media_capture: str, geolocation: str,
+                          webgl_debug_info: str = "standard", canvas_readback: str = "standard") -> None:
     if media_capture == "blocked" and MEDIA_CAPTURE_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {MEDIA_CAPTURE_CAPABILITY} 补丁，请更新内核以阻止摄像头与麦克风访问")
     if geolocation == "blocked" and GEOLOCATION_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {GEOLOCATION_CAPABILITY} 补丁，请更新内核以阻止地理位置访问")
+    if webgl_debug_info == "blocked" and WEBGL_DEBUG_INFO_CAPABILITY not in capabilities:
+        raise ValueError(f"当前内核缺少 {WEBGL_DEBUG_INFO_CAPABILITY} 补丁，请更新内核以限制 WebGL 显卡信息")
+    if canvas_readback == "blocked" and CANVAS_READBACK_CAPABILITY not in capabilities:
+        raise ValueError(f"当前内核缺少 {CANVAS_READBACK_CAPABILITY} 补丁，请更新内核以限制 Canvas 2D 读取")
 
 
 def probe(path: Path, *, capability: str = CAPABILITY) -> tuple[Path, str]:

@@ -15,6 +15,8 @@ PROFILES = "/api/v1/profiles"
 RESTRICT_FONTS = "--moltskin-disable-local-font-access"
 BLOCK_MEDIA = "--moltskin-block-media-capture"
 BLOCK_LOCATION = "--moltskin-block-geolocation"
+BLOCK_WEBGL = "--moltskin-block-webgl-debug-info"
+BLOCK_CANVAS = "--moltskin-block-canvas-readback"
 
 
 @pytest.fixture
@@ -35,6 +37,9 @@ if sys.argv[1:] == ["--version", "--moltskin-capabilities"]:
         print("moltskin-block-media-capture")
         if not os.environ.get("TEST_MEDIA_ONLY_CHROMIUM"):
             print("moltskin-block-geolocation")
+            for capability in ("moltskin-block-webgl-debug-info", "moltskin-block-canvas-readback"):
+                if capability != os.environ.get("TEST_MISSING_GRAPHICS_CAPABILITY"):
+                    print(capability)
     sys.exit(0)
 directory = Path(next(a.split("=", 1)[1] for a in sys.argv if a.startswith("--user-data-dir=")))
 lock = directory / "SingletonLock"
@@ -222,6 +227,8 @@ def test_migrate_existing_camoufox_profile(data_dir):
         conn.execute("ALTER TABLE profiles DROP COLUMN local_fonts")
         conn.execute("ALTER TABLE profiles DROP COLUMN media_capture")
         conn.execute("ALTER TABLE profiles DROP COLUMN geolocation")
+        conn.execute("ALTER TABLE profiles DROP COLUMN canvas_readback")
+        conn.execute("ALTER TABLE profiles DROP COLUMN webgl_debug_info")
         conn.execute("ALTER TABLE profiles DROP COLUMN chromium_js_heap_mb")
         conn.execute("ALTER TABLE profiles DROP COLUMN chromium_mute_audio")
         conn.execute("ALTER TABLE profiles DROP COLUMN chromium_renderer_limit")
@@ -250,6 +257,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
     assert row["chromium_user_agent"] == ""
     assert row["preview_platform"] == row["preview_platform_version"] == row["preview_architecture"] == ""
     assert row["media_capture"] == row["geolocation"] == "standard"
+    assert row["canvas_readback"] == row["webgl_debug_info"] == "standard"
     assert row["browser_language"] == row["browser_timezone"] == row["browser_window_size"] == ""
     assert row["user_data_dir"] == str(data_dir / "old-profile")
     assert (row["chromium_mute_audio"], row["chromium_renderer_limit"], row["chromium_js_heap_mb"]) == (0, 0, 0)
@@ -294,6 +302,64 @@ def test_engine_contract_and_portable_settings(client):
     assert restored["media_capture"] == restored["geolocation"] == "blocked"
     assert restored["user_data_dir"] != original["user_data_dir"]
     assert (restored["startup_page"], restored["block_images"]) == ("dashboard", True)
+
+
+@pytest.mark.parametrize(("policy", "other"), [
+    ("canvas_readback", "webgl_debug_info"),
+    ("webgl_debug_info", "canvas_readback"),
+])
+def test_graphics_policies_are_independent_and_portable(client, policy, other):
+    original = create_chromium(client, "Graphics policy", **{policy: "blocked"})
+    url = f"{PROFILES}/{original['id']}"
+    expected = {policy: "blocked", other: "standard"}
+    assert expected.items() <= original.items()
+    assert expected.items() <= client.patch(url, json={"remark": "edited"}).raise_for_status().json()["data"].items()
+    assert expected.items() <= client.post(url + "/duplicate").raise_for_status().json()["data"].items()
+    client.post(url + "/trash").raise_for_status()
+    recovered = client.post(f"/api/v1/trash/profiles/{original['id']}/restore").raise_for_status().json()["data"]
+    assert expected.items() <= recovered.items()
+    for invalid in (None, "randomized"):
+        assert client.patch(url, json={policy: invalid}).status_code == 422
+    assert client.post(PROFILES, json={"name": "Firefox", "engine": "camoufox", policy: "blocked"}).status_code == 422
+
+    switched = client.patch(url, json={policy: "standard", other: "blocked"}).raise_for_status().json()["data"]
+    assert (switched[policy], switched[other]) == ("standard", "blocked")
+
+
+@pytest.mark.parametrize(("unsupported", "supported", "missing_switch"), [
+    ("canvas_readback", "webgl_debug_info", BLOCK_CANVAS),
+    ("webgl_debug_info", "canvas_readback", BLOCK_WEBGL),
+])
+def test_graphics_support_follows_individual_build_capabilities(client, monkeypatch, unsupported, supported, missing_switch):
+    monkeypatch.setenv("TEST_MISSING_GRAPHICS_CAPABILITY", missing_switch[2:])
+    engine = client.get("/api/v1/engine").raise_for_status().json()["data"]["chromium"]
+    pinned = next(item for item in engine["installed_versions"] if item["version"] == engine["version"])
+    for info in (engine, pinned):
+        assert info[f"supports_{supported}_policy"]
+        assert not info[f"supports_{unsupported}_policy"]
+    profile = create_chromium(client, "single capability", chromium_version=pinned["version"], **{supported: "blocked"})
+    url = f"{PROFILES}/{profile['id']}"
+    refused = client.patch(url, json={unsupported: "blocked"})
+    assert refused.status_code == 422 and missing_switch[2:] in refused.json()["error"]["message"]
+    exported = client.post("/api/v1/export/profiles", json={"ids": [profile["id"]]}).raise_for_status().json()
+    exported["profiles"][0][unsupported] = "blocked"
+    imported = client.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]
+    assert imported["created"] == 0 and missing_switch[2:] in imported["skipped"][0]["reason"]
+
+
+def test_graphics_policies_cannot_change_while_starting(client):
+    from moltskin.services.core import db
+
+    profile = create_chromium(client, "Starting")
+    url = f"{PROFILES}/{profile['id']}"
+    with db.session() as conn:
+        conn.execute("INSERT INTO sessions(id,profile_id,state,started_at) VALUES ('ss_starting',?,'starting',?)",
+                     (profile["id"], db.now()))
+    for field in ("canvas_readback", "webgl_debug_info"):
+        response = client.patch(url, json={field: "blocked"})
+        assert response.status_code == 409 and response.json()["error"]["code"] == "PROFILE_RUNNING"
+    saved = client.get(url).raise_for_status().json()["data"]
+    assert saved["canvas_readback"] == saved["webgl_debug_info"] == "standard"
 
 
 def test_chromium_window_settings_survive_partial_edits_duplication_and_import(client):
@@ -498,6 +564,8 @@ def test_missing_binary_never_leaves_a_running_session(client, data_dir, monkeyp
     assert engines["chromium"]["available"] is True
     assert engines["chromium"]["supports_media_capture_policy"] is True
     assert engines["chromium"]["supports_geolocation_policy"] is True
+    assert engines["chromium"]["supports_webgl_debug_info_policy"] is True
+    assert engines["chromium"]["supports_canvas_readback_policy"] is True
     assert engines["chromium"]["version"] == "158.0.0.1"
     profile = create_chromium(client, "missing-build")
     monkeypatch.setenv("MOLTSKIN_CHROMIUM_BINARY", str(data_dir / "missing"))
@@ -505,6 +573,8 @@ def test_missing_binary_never_leaves_a_running_session(client, data_dir, monkeyp
     assert missing["available"] is False
     assert missing["supports_media_capture_policy"] is False
     assert missing["supports_geolocation_policy"] is False
+    assert missing["supports_webgl_debug_info_policy"] is False
+    assert missing["supports_canvas_readback_policy"] is False
     assert missing["version"] is None and missing["message"]
     url = f"{PROFILES}/{profile['id']}"
     failure = client.post(url + "/launch")
@@ -520,6 +590,8 @@ def test_missing_binary_never_leaves_a_running_session(client, data_dir, monkeyp
 @pytest.mark.parametrize(("legacy_flag", "policy", "switch"), [
     ("TEST_LEGACY_CHROMIUM", "media_capture", BLOCK_MEDIA),
     ("TEST_MEDIA_ONLY_CHROMIUM", "geolocation", BLOCK_LOCATION),
+    ("TEST_MEDIA_ONLY_CHROMIUM", "webgl_debug_info", BLOCK_WEBGL),
+    ("TEST_MEDIA_ONLY_CHROMIUM", "canvas_readback", BLOCK_CANVAS),
 ])
 def test_legacy_binary_refuses_unsupported_policy_before_start(client, monkeypatch, legacy_flag, policy, switch):
     from moltskin.services.core import db
@@ -529,6 +601,8 @@ def test_legacy_binary_refuses_unsupported_policy_before_start(client, monkeypat
     assert engine["available"] is True
     assert engine["supports_media_capture_policy"] == (legacy_flag == "TEST_MEDIA_ONLY_CHROMIUM")
     assert engine["supports_geolocation_policy"] is False
+    assert engine["supports_webgl_debug_info_policy"] is False
+    assert engine["supports_canvas_readback_policy"] is False
     profile = create_chromium(client, "old-browser", **{policy: "blocked"})
     url = f"{PROFILES}/{profile['id']}"
     failure = client.post(url + "/launch")
@@ -756,6 +830,8 @@ def test_choose_installed_build_and_protect_profile_data(client, data_dir, monke
     assert versions["version"] == "158.0.0.1"
     assert [v["version"] for v in versions["installed_versions"]] == ["158.0.0.1", "147.0.0.1"]
     assert not versions["installed_versions"][1]["supports_media_capture_policy"]
+    assert [v["supports_webgl_debug_info_policy"] for v in versions["installed_versions"]] == [True, False]
+    assert [v["supports_canvas_readback_policy"] for v in versions["installed_versions"]] == [True, False]
 
     with monkeypatch.context() as patch:
         patch.setenv("MOLTSKIN_CHROMIUM_BINARY", str(data_dir / "uninstalled"))
@@ -763,11 +839,21 @@ def test_choose_installed_build_and_protect_profile_data(client, data_dir, monke
         assert alternate["available"] and alternate["version"] is None
         assert [v["version"] for v in alternate["installed_versions"]] == ["147.0.0.1"]
 
+    for field in ("webgl_debug_info", "canvas_readback"):
+        policy = {field: "blocked"}
+        unsupported = {"name": "bad pin", "engine": "chromium", "chromium_version": "147.0.0.1", **policy}
+        assert client.post(PROFILES, json=unsupported).status_code == 422
+        pinned = create_chromium(client, field, chromium_version="158.0.0.1", **policy)
+        pinned_url = f"{PROFILES}/{pinned['id']}"
+        assert client.patch(pinned_url, json={"chromium_version": "147.0.0.1"}).status_code == 422
+        assert client.get(pinned_url).json()["data"]["chromium_version"] == "158.0.0.1"
     original = create_chromium(client, "pinned", chromium_version="147.0.0.1")
     url = f"{PROFILES}/{original['id']}"
     for invalid in ("147.0.0.2", str(old_binary)):
         assert client.patch(url, json={"chromium_version": invalid}).status_code == 422
     assert client.patch(url, json={"media_capture": "blocked"}).status_code == 422
+    assert client.patch(url, json={"webgl_debug_info": "blocked"}).status_code == 422
+    assert client.patch(url, json={"canvas_readback": "blocked"}).status_code == 422
     assert client.post(PROFILES, json={"name": "other-engine", "chromium_version": "147.0.0.1"}).status_code == 422
     assert client.post(url + "/duplicate").json()["data"]["chromium_version"] == "147.0.0.1"
     export = client.post("/api/v1/export/profiles", json={"ids": [original["id"]]}).json()

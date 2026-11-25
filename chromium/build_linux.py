@@ -34,19 +34,30 @@ def apply_series(src, patches):
     with tempfile.TemporaryDirectory() as tmp:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
         subprocess.run(["git", "read-tree", "HEAD"], cwd=src, env=env, check=True)
+        trees = []
         for patch in patches:
             subprocess.run(["git", "apply", "--cached", str(patch)], cwd=src, env=env, check=True)
-        delta = subprocess.check_output(
-            ["git", "diff", "--cached", "--binary", "--no-renames", "--no-ext-diff", "--no-textconv", "HEAD"],
-            cwd=src, env=env,
-        )
+            trees.append(subprocess.check_output(["git", "write-tree"], cwd=src, env=env, text=True).strip())
+
+    def diff(start, end):
+        return subprocess.check_output(
+            ["git", "diff", "--binary", "--no-renames", "--no-ext-diff", "--no-textconv", start, end], cwd=src)
+
+    def present(patch):
+        return subprocess.run(["git", "apply", "--reverse", "--check", "-"], cwd=src, input=patch,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+    delta = diff("HEAD", trees[-1])
     if not delta:
         raise ValueError("The Moltskin patch series produces no changes")
-    already = subprocess.run(["git", "apply", "--reverse", "--check", "-"], cwd=src,
-                             input=delta, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if already.returncode == 0:
+    if present(delta):
         print("Moltskin patches are already present.", flush=True)
         return
+    # Existing builders may have the previously released prefix in their working tree.
+    for tree in reversed(trees[:-1]):
+        if present(diff("HEAD", tree)):
+            delta = diff(tree, trees[-1])
+            break
     # git apply checks all hunks before updating the working tree.
     subprocess.run(["git", "apply", "-"], cwd=src, input=delta, check=True)
 

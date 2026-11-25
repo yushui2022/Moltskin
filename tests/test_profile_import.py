@@ -85,6 +85,25 @@ def test_required_geolocation_restriction_uses_version_three(api):
     }
 
 
+@pytest.mark.parametrize("policy", ["canvas_readback", "webgl_debug_info"])
+def test_graphics_policy_needs_version_nine_and_roundtrips(api, policy):
+    rows = [
+        {"name": "restricted", "engine": "chromium", policy: "blocked"},
+        {"name": "legacy", "engine": "chromium"},
+        {"name": "unsupported", "engine": "camoufox", policy: "blocked"},
+    ]
+    result = import_rows(api, rows)
+    assert result["created"] == 2 and [r["row"] for r in result["skipped"]] == [3]
+    exported = api.get("/api/v1/export/profiles").raise_for_status().json()
+    assert exported["version"] == 9
+    assert {p["name"]: p[policy] for p in exported["profiles"]} == {"restricted": "blocked", "legacy": "standard"}
+    assert api.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]["created"] == 2
+    imported = api.get("/api/v1/profiles").raise_for_status().json()["data"]["items"]
+    assert {p["name"]: p[policy] for p in imported if p["name"].endswith("(2)")} == {
+        "restricted (2)": "blocked", "legacy (2)": "standard",
+    }
+
+
 def test_unsupported_or_invalid_file_version_rejects_whole_import(api):
     rows = [{"name": "untouched", "group": "team", "proxy": {"host": "proxy.invalid", "port": 80}}]
     unsupported = main.PROFILE_FORMAT_VERSION + 1

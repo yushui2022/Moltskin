@@ -1,0 +1,102 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 87fce11..6283530 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -445,6 +445,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+       puts("moltskin-block-media-capture");
+       puts("moltskin-block-geolocation");
+       puts("moltskin-block-webgl-debug-info");
++      puts("moltskin-block-canvas-readback");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index a049951..0cdfde1 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4032,6 +4032,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       blink::switches::kMinHeightForGpuRasterTile,
+       blink::switches::kMaxUntiledLayerWidth,
+       blink::switches::kMaxUntiledLayerHeight,
++      blink::switches::kMoltskinBlockCanvasReadback,
+       blink::switches::kMoltskinBlockWebGLDebugInfo,
+       blink::switches::kNetworkQuietTimeout,
+       blink::switches::kShowContentfulPaintRects,
+diff --git a/third_party/blink/public/common/moltskin_switches.h b/third_party/blink/public/common/moltskin_switches.h
+index e54ba29..c387bbf 100644
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -7,6 +7,10 @@
+
+ namespace blink::switches {
+
++// Restricts pixel readback for 2D canvas contexts in this browser profile.
++inline constexpr char kMoltskinBlockCanvasReadback[] =
++    "moltskin-block-canvas-readback";
++
+ // Disables the optional WebGL extension that exposes the unmasked GPU strings.
+ inline constexpr char kMoltskinBlockWebGLDebugInfo[] =
+     "moltskin-block-webgl-debug-info";
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 5d9d963..1895af4 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -34,6 +34,7 @@
+ #include <utility>
+
+ #include "base/auto_reset.h"
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/location.h"
+@@ -49,6 +50,7 @@
+ #include "services/metrics/public/cpp/ukm_recorder.h"
+ #include "services/metrics/public/cpp/ukm_source_id.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/mojom/gpu/gpu.mojom-blink.h"
+ #include "third_party/blink/public/platform/platform.h"
+@@ -1597,6 +1599,11 @@ void HTMLCanvasElement::RemoveListener(CanvasDrawListener* listener) {
+ }
+
+ bool HTMLCanvasElement::OriginClean() const {
++  if (IsRenderingContext2D() &&
++      base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinBlockCanvasReadback)) {
++    return false;
++  }
+   if (GetDocument().GetSettings() &&
+       GetDocument().GetSettings()->GetDisableReadingFromCanvas()) {
+     return false;
+diff --git a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc
+index 8789899..c4b5de3 100644
+--- a/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.cc
+@@ -7,11 +7,13 @@
+ #include <optional>
+
+ #include "base/check.h"
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/rand_util.h"
+ #include "base/trace_event/trace_event.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_font_stretch.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_text_rendering.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_union_offscreen_rendering_context.h"
+@@ -114,6 +116,12 @@ OffscreenCanvasRenderingContext2D::OffscreenCanvasRenderingContext2D(
+                              canvas->GetTopExecutionContext()->GetTaskRunner(
+                                  TaskType::kInternalDefault)) {
+   FlushForImageListener::Get()->AddObserver(this);
++  // This process policy also applies to workers without document settings.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinBlockCanvasReadback)) {
++    canvas->SetDisableReadingFromCanvasTrue();
++    return;
++  }
+   ExecutionContext* execution_context = canvas->GetTopExecutionContext();
+   if (auto* window = DynamicTo<LocalDOMWindow>(execution_context)) {
+     if (window->GetFrame() && window->GetFrame()->GetSettings() &&

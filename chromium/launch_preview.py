@@ -22,6 +22,8 @@ POLICIES = {
     "local_fonts": ("restricted", native.CAPABILITY),
     "media_capture": ("blocked", native.MEDIA_CAPTURE_CAPABILITY),
     "geolocation": ("blocked", native.GEOLOCATION_CAPABILITY),
+    "canvas_readback": ("blocked", native.CANVAS_READBACK_CAPABILITY),
+    "webgl_debug_info": ("blocked", native.WEBGL_DEBUG_INFO_CAPABILITY),
 }
 
 
@@ -35,15 +37,15 @@ def profile_name(value: str) -> str:
 
 def permission_switches(settings: dict[str, str], capabilities: frozenset[str]) -> list[str]:
     switches = []
-    for key, (restricted, capability) in POLICIES.items():
-        value = settings[key]
+    for key, (restricted, switch) in POLICIES.items():
+        value = settings.get(key, "standard")
         if value == "standard":
             continue
         if value != restricted:
             raise ValueError(f"invalid preview setting for {key}: {value!r}")
-        if capability not in capabilities:
-            raise ValueError(f"this binary does not report the {capability} capability")
-        switches.append("--" + capability)
+        if switch not in capabilities:
+            raise ValueError(f"this binary does not report the {switch} capability")
+        switches.append("--" + switch)
     return switches
 
 
@@ -80,8 +82,7 @@ def launch(profile: Path, binary: Path, capabilities: frozenset[str], overrides:
                      "media_capture": "standard"}
         if not isinstance(saved, dict) or not {"local_fonts", "media_capture"} <= saved.keys():
             raise ValueError(f"invalid Chromium preview permissions for {profile.name!r}")
-        # Older permissions.json files predate the location policy.
-        settings_for_launch = {"geolocation": "standard", **saved, **overrides}
+        settings_for_launch = dict.fromkeys(POLICIES, "standard") | saved | overrides
         switches = permission_switches(settings_for_launch, capabilities)
         if settings_for_launch != saved or not settings.exists():
             temporary = settings.with_suffix(".tmp")
@@ -99,6 +100,8 @@ def main() -> int:
     parser.add_argument("--local-fonts", choices=("standard", "restricted"), help="font access policy; new profiles default to standard")
     parser.add_argument("--media-capture", choices=("standard", "blocked"), help="camera and microphone policy (default: standard)")
     parser.add_argument("--geolocation", choices=("standard", "blocked"), help="site location policy (default: standard)")
+    parser.add_argument("--canvas-readback", choices=("standard", "blocked"), help="2D canvas pixel readback policy")
+    parser.add_argument("--webgl-debug-info", choices=("standard", "blocked"), help="WebGL debug renderer information policy")
     parser.add_argument(
         "--binary", type=Path, default=native.default_binary(),
         help="Moltskin Chromium executable or .app bundle (default: newest supported local build)",
