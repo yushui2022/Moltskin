@@ -8,7 +8,7 @@ Moltskin 是可自行部署的多环境指纹浏览器。每个环境有独立�
 
 ## Chromium 开发路线
 
-双击 Moltskin 即可在自编 Chromium 的标签页中管理环境。浏览器内置入口为 `chrome://moltskin/`。创建环境时可以选择 Camoufox 或 Chromium，并在 Chromium 环境中按需阻止本机字体枚举、摄像头与麦克风采集，以及网站定位。重启后沿用该环境的内核和数据目录。Chromium 已在 Apple Silicon 上验证，Linux x86-64 版仍待实机验收。[构建与使用 Chromium 预览版](chromium/README.md)
+双击 Moltskin 即可在自编 Chromium 的标签页中管理环境。浏览器内置入口为 `chrome://moltskin/`。创建环境时可以选择 Camoufox 或 Chromium，并在 Chromium 环境中按需阻止本机字体枚举、摄像头与麦克风采集，以及网站定位。重启后沿用该环境的内核和数据目录。Chromium 已在 Apple Silicon 上验证，Linux x86-64 版仍待实机验收。[构建与使用 Chromium 预览版](chromium/README.md) · [逐项指纹能力对照](chromium/fingerprint-coverage.md)
 
 | 里程碑 | 交付时怎样验证 |
 |---|---|

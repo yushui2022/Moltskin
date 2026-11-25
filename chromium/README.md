@@ -1,6 +1,6 @@
 # Moltskin Chromium 开发预览
 
-本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录、本机字体、摄像头与麦克风采集、地理位置三类权限。
+本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录，可以设置本机字体、摄像头与麦克风采集、地理位置三类权限。各项指纹面的支持状态、实测范围与平台差异见[指纹能力对照](fingerprint-coverage.md)。
 
 ## 打开浏览器内的控制面板
 
@@ -116,7 +116,8 @@ fi
 python3 chromium/check_local_fonts.py "$browser"
 MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m pytest -q \
   tests/test_chromium_font_rendering.py tests/test_chromium_storage_isolation.py \
-  tests/test_chromium_media_capture.py tests/test_chromium_geolocation.py
+  tests/test_chromium_media_capture.py tests/test_chromium_geolocation.py \
+  tests/test_chromium_graphics_audio.py tests/test_chromium_platform.py
 ```
 
 测试在本机启动临时网页和两个独立的浏览器，给相同站点授予字体权限。通过条件为标准环境读到至少一种字体，限制环境读到零种。关闭后交换两边的策略，使用原数据目录重启，再次检查字体数量和各自的站点存储标记。测试只记录数量。

@@ -8,7 +8,7 @@ Moltskin is a self-hosted browser for managing isolated profiles. Each profile h
 
 ## Chromium roadmap
 
-Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` shortcut opens the local dashboard. Select Camoufox or Chromium when creating a profile. Chromium profiles have separate settings for local font access, camera and microphone capture, and site geolocation. Each profile keeps its engine and data directory across restarts. The Chromium build has been verified on Apple Silicon. Linux x86-64 browser verification is pending. [Build and run the Chromium preview](chromium/README.md)
+Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` shortcut opens the local dashboard. Select Camoufox or Chromium when creating a profile. Chromium profiles have separate settings for local font access, camera and microphone capture, and site geolocation. Each profile keeps its engine and data directory across restarts. The Chromium build has been verified on Apple Silicon. Linux x86-64 browser verification is pending. [Build and run the Chromium preview](chromium/README.md) · [Fingerprint surface coverage (中文)](chromium/fingerprint-coverage.md)
 
 | Milestone | What we will verify |
 |---|---|
