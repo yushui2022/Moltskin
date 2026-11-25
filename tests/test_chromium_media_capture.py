@@ -15,12 +15,18 @@ from fastapi.testclient import TestClient
 
 PAGE = b"""<!doctype html><title>Local media capture test</title><script>
 (async () => {
-  const result = { grants: {}, capture: {} };
+  const result = { grants: {}, inputs: {}, capture: {} };
   try {
     result.marker = localStorage.getItem('marker') || crypto.randomUUID();
     localStorage.setItem('marker', result.marker);
     for (const name of ['microphone', 'camera']) {
       result.grants[name] = (await navigator.permissions.query({ name })).state;
+    }
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    for (const kind of ['audioinput', 'videoinput']) {
+      // Only record the presence of identifying metadata, never the identifiers.
+      result.inputs[kind] = devices.filter(device => device.kind === kind)
+        .map(({label, deviceId, groupId}) => [Boolean(label), Boolean(deviceId), Boolean(groupId)]);
     }
     for (const [name, constraints] of Object.entries({
       microphone: { audio: true }, camera: { video: true }, both: { audio: true, video: true }
@@ -146,5 +152,13 @@ def test_granted_media_capture_tracks_each_profile_after_restart(data_dir, monke
                     permission = "granted" if mode == "standard" else "denied"
                     assert result["grants"] == {"microphone": permission, "camera": permission}, result
                     assert result["capture"] == (allowed if mode == "standard" else denied), result
+                    for kind in ("audioinput", "videoinput"):
+                        inputs = result["inputs"][kind]
+                        if mode == "blocked":
+                            assert len(inputs) <= 1, result
+                            for fields in inputs:
+                                assert fields == [False, False, False], result
+                        else:
+                            assert any(all(fields) for fields in inputs), result
                     assert result["marker"] == markers.setdefault(url, result["marker"])
                 assert len(set(markers.values())) == 2
