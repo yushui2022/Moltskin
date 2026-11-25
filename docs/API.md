@@ -179,12 +179,29 @@ Each group carries `profile_count`. Deleting a group moves its environments to
 |---|---|---|
 | GET | `/proxies` | List |
 | POST | `/proxies` | Add (`http`, `https`, `socks5`) |
+| POST | `/proxies/bulk` | Import up to 500 proxy records |
 | PATCH | `/proxies/{id}` | Update |
 | DELETE | `/proxies/{id}` | Delete and unbind |
 | POST | `/proxies/{id}/check` | Check exit IP / country / timezone / latency |
 | POST | `/proxies/check-batch` | `{"ids": [...]}` |
 
 Each proxy includes `used_by`, the number of environments bound to it.
+
+`POST /proxies/bulk` accepts a JSON array under `proxies`. Each record requires
+`host` and `port`. Optional fields are `protocol` (defaults to `http`), `name`,
+`username`, `password`, and a positive `line` number from the source file. If
+omitted, the line number is the record’s one-based position in the request.
+
+```json
+{"proxies":[{"line":3,"protocol":"socks5","host":"192.0.2.1","port":1080}]}
+```
+
+The response includes `data.created` (count), `data.items` (created records
+with IDs, names and line numbers), and `data.skipped` (line, reason and
+`duplicate` or `invalid` status). Valid records can be saved alongside rejected
+rows. An existing protocol, normalized host and port counts as a duplicate
+even if the incoming credentials differ. The stored credentials are preserved.
+An empty list or a batch over 500 records returns HTTP 422 before any writes.
 
 ## Cookies
 

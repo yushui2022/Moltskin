@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from importlib.metadata import version as pkg_version
+from ipaddress import IPv4Address, IPv6Address
 from typing import Any, Literal
 from urllib.parse import quote
 from uuid import UUID
@@ -26,7 +27,7 @@ from uuid import UUID
 from camoufox.fingerprints import get_random_preset
 from camoufox.multiversion import list_installed
 from camoufox.pkgman import installed_verstr
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -1508,43 +1509,97 @@ def create_proxy(payload: ProxyCreate):
     return {"data": {"id": proxy_id, "name": payload.name, "status": "unchecked"}}
 
 
+def _bulk_proxy_host(value: Any) -> str:
+    if not isinstance(value, str) or not value.isascii():
+        raise ValueError("主机格式无效")
+    host = value.strip().lower()
+    if ":" in host:
+        address = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+        if "%" in address:
+            raise ValueError("不支持带区域标识的 IPv6 地址")
+        try:
+            return f"[{IPv6Address(address)}]"
+        except ValueError:
+            raise ValueError("IPv6 地址无效") from None
+    host = host.removesuffix(".")
+    labels = host.split(".")
+    if re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]*)", labels[-1]):
+        try:
+            return str(IPv4Address(host))
+        except ValueError:
+            raise ValueError("IPv4 地址无效") from None
+    if len(host) > 253 or not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in labels):
+        raise ValueError("主机格式无效")
+    return host
+
+
+def _bulk_proxy_fields(item: Any) -> dict:
+    if not isinstance(item, dict):
+        raise ValueError("代理条目必须为对象")
+    protocol = item.get("protocol", "http")
+    if not isinstance(protocol, str) or protocol.lower() not in ("http", "https", "socks5"):
+        raise ValueError("协议必须是 HTTP、HTTPS 或 SOCKS5")
+    protocol = protocol.lower()
+    host = _bulk_proxy_host(item.get("host"))
+    port = item.get("port")
+    if isinstance(port, str) and re.fullmatch(r"[0-9]{1,5}", port.strip()):
+        port = int(port.strip())
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError("端口应为 1 至 65535 的整数")
+    name, username, password = (item.get(k) for k in ("name", "username", "password"))
+    for value in (name, username, password):
+        if value is not None and (not isinstance(value, str) or re.search(r"[\x00-\x1f\x7f-\x9f\ud800-\udfff]", value)):
+            raise ValueError("名称或凭据含无效字符")
+    if password and not username:
+        raise ValueError("提供密码时需要填写用户名")
+    if username and ":" in username and protocol != "socks5":
+        raise ValueError("HTTP 代理用户名不能包含冒号")
+    return {"name": name or f"{host}:{port}", "protocol": protocol, "host": host,
+            "port": port, "username": username or None, "password": password or None}
+
+
 @app.post("/api/v1/proxies/bulk")
-def bulk_create_proxies(payload: dict[str, Any]):
-    """批量导入代理：[{name, protocol, host, port, username, password}]"""
-    items = payload.get("proxies") or []
+def bulk_create_proxies(payload: Any = Body(default=None)):
+    """Import up to 500 proxy rows and report individual failures without exposing credentials."""
+    items = payload.get("proxies") if isinstance(payload, dict) else None
     if not isinstance(items, list) or not items:
         raise HTTPException(422, detail={"code": "INVALID_PAYLOAD", "message": "proxies 不能为空"})
+    if len(items) > 500:
+        raise HTTPException(422, detail={"code": "PROXY_BATCH_LIMIT", "message": "每次最多导入 500 条代理"})
     created, skipped = [], []
     ts = db.now()
     with db.session() as conn:
-        existing = {
-            (row["protocol"], row["host"], row["port"])
-            for row in conn.execute("SELECT protocol, host, port FROM proxies")
-        }
-        for index, item in enumerate(items[:500], start=1):
-            protocol = str(item.get("protocol") or "http").lower()
-            host = str(item.get("host") or "").strip()
+        conn.execute("BEGIN IMMEDIATE")
+        existing = set()
+        for row in conn.execute("SELECT protocol, host, port FROM proxies"):
             try:
-                port = int(item.get("port"))
-            except (TypeError, ValueError):
-                skipped.append({"line": index, "reason": "端口无效"})
+                host = _bulk_proxy_host(row["host"])
+            except ValueError:
+                # Earlier versions allowed unvalidated hosts. They cannot match a valid import.
                 continue
-            if protocol not in ("http", "https", "socks5") or not host or not 0 < port < 65536:
-                skipped.append({"line": index, "reason": "格式无效"})
+            existing.add((row["protocol"], host, row["port"]))
+        for index, item in enumerate(items, start=1):
+            line = item.get("line") if isinstance(item, dict) else None
+            if type(line) is not int or line < 1:
+                line = index
+            try:
+                values = _bulk_proxy_fields(item)
+            except ValueError as exc:
+                skipped.append({"line": line, "status": "invalid", "reason": str(exc)})
                 continue
-            if (protocol, host, port) in existing:
-                skipped.append({"line": index, "reason": "已存在"})
+            key = (values["protocol"], values["host"], values["port"])
+            if key in existing:
+                skipped.append({"line": line, "status": "duplicate", "reason": "已存在"})
                 continue
             proxy_id = new_id("px")
-            name = str(item.get("name") or f"{host}:{port}")
             conn.execute(
                 "INSERT INTO proxies(id, name, protocol, host, port, username, password, "
-                "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'unchecked', ?, ?)",
-                (proxy_id, name, protocol, host, port,
-                 item.get("username") or None, item.get("password") or None, ts, ts),
+                "status, created_at, updated_at) VALUES (:id, :name, :protocol, :host, :port, "
+                ":username, :password, 'unchecked', :ts, :ts)",
+                {**values, "id": proxy_id, "ts": ts},
             )
-            existing.add((protocol, host, port))
-            created.append({"id": proxy_id, "name": name})
+            existing.add(key)
+            created.append({"id": proxy_id, "name": values["name"], "line": line})
     if created:
         db.log("proxy.bulk_create", None, {"count": len(created)})
     return {"data": {"created": len(created), "items": created, "skipped": skipped}}
