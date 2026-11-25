@@ -8,13 +8,13 @@ Moltskin 是可自行部署的多环境指纹浏览器。当前仓库的 **0.4.1
 
 ## Chromium 开发路线
 
-双击 Moltskin 即可在自编 Chromium 的标签页中管理环境。浏览器内置入口为 `chrome://moltskin/`。创建环境时可以选择 Camoufox 或 Chromium，并为 Chromium 环境设置网页能否请求本机字体列表。重启后沿用该环境的内核和数据目录。Chromium 已在 Apple Silicon 上验证，Linux x86-64 版仍待实机验收。[构建与使用 Chromium 预览版](chromium/README.md)
+双击 Moltskin 即可在自编 Chromium 的标签页中管理环境。浏览器内置入口为 `chrome://moltskin/`。创建环境时可以选择 Camoufox 或 Chromium，并在 Chromium 环境中设置本机字体权限，以及是否始终阻止网站使用摄像头和麦克风。重启后沿用该环境的内核和数据目录。Chromium 已在 Apple Silicon 上验证，Linux x86-64 版仍待实机验收。[构建与使用 Chromium 预览版](chromium/README.md)
 
 | 里程碑 | 交付时怎样验证 |
 |---|---|
 | 自编内核 | 在 Linux x86-64 和 macOS arm64 上编译同一份上游源码。两端都能从空环境启动，产物可核对版本和校验值。 |
 | 双内核共存 | 新建环境时可在面板选择内核。已有 Camoufox 环境保留原数据，两个 Chromium 环境可以独立运行和重启。 |
-| 第一项内核隐私设置 | 从限制网页枚举本机字体开始。在同一测试页，A 环境的限制能实际生效，B 环境仍遵循自己的授权。随后逐项验证图形、媒体设备和语言区域设置。 |
+| 第一项内核隐私设置 | 用同一个测试页验证两个环境各自的字体权限和音视频采集权限。交换策略并重启，分别核对网页的读取或采集结果。 |
 | 迁移和远程使用 | 将两个 Hubstudio 环境的 Cookie 分别导入对应的 Chromium 环境，在同一测试站点核对重启后的账号。在 Linux 云节点验证每位授权用户只能看到和操控自己的会话。 |
 | 跟进上游发布 | 跟踪 Chromium Beta 与 Stable，在升级分支应用补丁、编译双平台，验证环境升级和恢复，再发布稳定版。 |
 

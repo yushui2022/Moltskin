@@ -1,0 +1,100 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index d996c92..ebca9ee 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -442,6 +442,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+            chrome::GetChannelName(chrome::WithExtendedStable(true)).c_str());
+     if (command_line.HasSwitch("moltskin-capabilities")) {
+       puts("moltskin-disable-local-font-access");
++      puts("moltskin-block-media-capture");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+diff --git a/chrome/browser/media/webrtc/media_stream_device_permission_context.cc b/chrome/browser/media/webrtc/media_stream_device_permission_context.cc
+index 20e9025..138eb16 100644
+--- a/chrome/browser/media/webrtc/media_stream_device_permission_context.cc
++++ b/chrome/browser/media/webrtc/media_stream_device_permission_context.cc
+@@ -21,6 +21,7 @@
+ #include "content/public/browser/render_process_host.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/content_switches.h"
++#include "content/public/common/moltskin_switches.h"
+ #include "content/public/common/url_constants.h"
+ #include "extensions/buildflags/buildflags.h"
+ #include "extensions/common/constants.h"
+@@ -81,6 +82,11 @@ MediaStreamDevicePermissionContext::GetContentSettingStatusInternal(
+     content::RenderFrameHost* render_frame_host,
+     const GURL& requesting_origin,
+     const GURL& embedding_origin) const {
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinBlockMediaCapture)) {
++    return CONTENT_SETTING_BLOCK;
++  }
++
+   // TODO(raymes): Merge this policy check into content settings
+   // crbug.com/41014586.
+   const char* policy_name = nullptr;
+diff --git a/content/browser/renderer_host/media/media_stream_manager.cc b/content/browser/renderer_host/media/media_stream_manager.cc
+index 2326a2d..05bd9f0 100644
+--- a/content/browser/renderer_host/media/media_stream_manager.cc
++++ b/content/browser/renderer_host/media/media_stream_manager.cc
+@@ -67,6 +67,7 @@
+ #include "content/public/common/content_client.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/content_switches.h"
++#include "content/public/common/moltskin_switches.h"
+ #include "crypto/hmac.h"
+ #include "media/audio/audio_device_description.h"
+ #include "media/audio/audio_system.h"
+@@ -2726,6 +2727,17 @@ void MediaStreamManager::SetUpRequest(const std::string& label) {
+   request->SetAudioType(request->stream_controls().audio.stream_type);
+   request->SetVideoType(request->stream_controls().video.stream_type);
+
++  // Enforce the profile's capture policy before device access, including when
++  // a permission override has already granted access to the origin.
++  if ((blink::IsDeviceMediaType(request->audio_type()) ||
++       blink::IsDeviceMediaType(request->video_type())) &&
++      base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinBlockMediaCapture)) {
++    FinalizeRequestFailed(request_it,
++                          MediaStreamRequestResult::PERMISSION_DENIED);
++    return;
++  }
++
+   const bool is_display_capture =
+       request->video_type() == MediaStreamType::DISPLAY_VIDEO_CAPTURE ||
+       request->video_type() ==
+diff --git a/content/public/common/BUILD.gn b/content/public/common/BUILD.gn
+index 5a468ca..4280cf3 100644
+--- a/content/public/common/BUILD.gn
++++ b/content/public/common/BUILD.gn
+@@ -208,6 +208,7 @@ source_set("common_sources") {
+     "memory_coordinator/predicate_memory_coordinator_policy.h",
+     "mhtml_generation_params.cc",
+     "mhtml_generation_params.h",
++    "moltskin_switches.h",
+     "origin_util.h",
+     "page_type.h",
+     "page_visibility_state.h",
+diff --git a/content/public/common/moltskin_switches.h b/content/public/common/moltskin_switches.h
+new file mode 100644
+index 0000000..68825f4
+--- /dev/null
++++ b/content/public/common/moltskin_switches.h
+@@ -0,0 +1,16 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CONTENT_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
++#define CONTENT_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
++
++namespace switches {
++
++// Denies microphone and camera capture for this Moltskin browser process.
++inline constexpr char kMoltskinBlockMediaCapture[] =
++    "moltskin-block-media-capture";
++
++}  // namespace switches
++
++#endif  // CONTENT_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_

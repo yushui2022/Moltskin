@@ -32,15 +32,31 @@ def test_import_keeps_unversioned_and_current_files_compatible(api):
         assert response.status_code == 200, response.text
         assert response.json()["data"]["created"] == 1
     exported = api.get("/api/v1/export/profiles").raise_for_status().json()
-    assert exported["version"] == main.PROFILE_FORMAT_VERSION
+    assert exported["version"] == 1
     assert api.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]["created"] == 5
+
+
+def test_export_version_preserves_required_capture_restriction(api):
+    profiles = []
+    for mode in ("standard", "blocked"):
+        created = api.post("/api/v1/profiles", json={"name": mode, "engine": "chromium", "media_capture": mode})
+        profiles.append(created.raise_for_status().json()["data"]["id"])
+    export = "/api/v1/export/profiles"
+    assert api.post(export, json={"ids": profiles[:1]}).raise_for_status().json()["version"] == 1
+    assert api.post(export, json={"ids": profiles[1:]}).raise_for_status().json()["version"] == 2
+    mixed = api.get(export).raise_for_status().json()
+    assert mixed["version"] == 2
+    assert api.post("/api/v1/import/profiles", json=mixed).raise_for_status().json()["data"]["created"] == 2
+    listed = api.get("/api/v1/profiles").raise_for_status().json()["data"]["items"]
+    assert {p["media_capture"] for p in listed if p["name"].startswith("blocked")} == {"blocked"}
 
 
 def test_unsupported_or_invalid_file_version_rejects_whole_import(api):
     rows = [{"name": "untouched", "group": "team", "proxy": {"host": "proxy.invalid", "port": 80}}]
+    unsupported = main.PROFILE_FORMAT_VERSION + 1
     for payload in (
-        {"version": 2, "profiles": rows}, {"version": 2, "data": {"version": 1, "profiles": rows}},
-        {"data": {"version": 2, "profiles": rows}}, {"version": 0, "profiles": rows},
+        {"version": unsupported, "profiles": rows}, {"version": unsupported, "data": {"version": 1, "profiles": rows}},
+        {"data": {"version": unsupported, "profiles": rows}}, {"version": 0, "profiles": rows},
     ):
         response = api.post("/api/v1/import/profiles", json=payload)
         assert response.status_code == 422

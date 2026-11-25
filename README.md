@@ -8,13 +8,13 @@ Moltskin is a self-hosted browser for managing isolated profiles. In the **0.4.1
 
 ## Chromium roadmap
 
-Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` shortcut opens the local dashboard. Select Camoufox or Chromium when creating a profile. Chromium profiles also have a local font access setting. Each profile keeps its engine and data directory across restarts. The Chromium build has been verified on Apple Silicon. Linux x86-64 browser verification is pending. [Build and run the Chromium preview](chromium/README.md)
+Open Moltskin to manage profiles in a Chromium tab. The `chrome://moltskin/` shortcut opens the local dashboard. Select Camoufox or Chromium when creating a profile. Chromium profiles have separate settings for local font access and for blocking camera and microphone capture. Each profile keeps its engine and data directory across restarts. The Chromium build has been verified on Apple Silicon. Linux x86-64 browser verification is pending. [Build and run the Chromium preview](chromium/README.md)
 
 | Milestone | What we will verify |
 |---|---|
 | Build the engine | Build a pinned Chromium revision on Linux x86-64 and macOS arm64. Launch each build from a clean profile and record its version and checksum. |
 | Launch both engines | Choose the engine for each new profile in the dashboard. Existing Camoufox profiles keep their data. Separate Chromium profiles can run and restart independently. |
-| Ship a native privacy setting | Start with local font enumeration. A test page must observe the restriction in profile A while profile B retains its own permission. Extend coverage to graphics, media devices and locale as tests land. |
+| Ship a native privacy setting | Exercise local font access and camera and microphone capture on the same test origin in two profiles. Swap policies and restart to verify each profile independently. |
 | Migrate profiles and run them remotely | Import a separate Hubstudio cookie file into each of two Chromium profiles. Verify both accounts on the same test site after restart. On a Linux node, check that each authorized user sees and controls only their own session. |
 | Maintain releases | Track upstream Beta and Stable, apply our patches on upgrade branches, build both platforms and test profile upgrades and recovery before publishing. |
 

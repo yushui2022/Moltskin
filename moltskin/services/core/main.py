@@ -45,13 +45,15 @@ from .security import get_token
 
 Engine = Literal["camoufox", "chromium"]
 FontPolicy = Literal["standard", "restricted"]
+MediaCapturePolicy = Literal["standard", "blocked"]
 StartupPage = Literal["default", "dashboard", "blank"]
-PROFILE_FORMAT_VERSION = 1
+PROFILE_FORMAT_VERSION = 2
 
 
 class ProfileCreate(BaseModel):
     engine: Engine = "camoufox"
     local_fonts: FontPolicy = "standard"
+    media_capture: MediaCapturePolicy = "standard"
     startup_page: StartupPage = "default"
     block_images: bool = False
     name: str = Field(min_length=1, max_length=120)
@@ -67,6 +69,7 @@ class ProfileCreate(BaseModel):
 class ProfileUpdate(BaseModel):
     engine: Engine | None = None
     local_fonts: FontPolicy | None = None
+    media_capture: MediaCapturePolicy = "standard"
     startup_page: StartupPage = "default"
     block_images: bool = False
     name: str | None = None
@@ -145,10 +148,10 @@ class ImportRequest(BaseModel):
                 raise HTTPException(422, detail={
                     "code": "INVALID_PROFILE_FORMAT_VERSION", "message": "配置文件的 version 必须是整数。",
                 })
-            if version != PROFILE_FORMAT_VERSION:
+            if not 1 <= version <= PROFILE_FORMAT_VERSION:
                 raise HTTPException(422, detail={
                     "code": "UNSUPPORTED_PROFILE_FORMAT_VERSION",
-                    "message": f"此配置文件的格式版本为 {version}，当前支持版本 {PROFILE_FORMAT_VERSION}。此次未导入任何环境。",
+                    "message": f"此配置文件的格式版本为 {version}，当前支持 1 至 {PROFILE_FORMAT_VERSION}。此次未导入任何环境。",
                 })
         data = envelopes[-1]
         if "profiles" in data and not isinstance(data["profiles"], list):
@@ -282,6 +285,7 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
         "engine": row["engine"],
         "browser_version": row["browser_version"],
         "local_fonts": row["local_fonts"],
+        "media_capture": row["media_capture"],
         "startup_page": row["startup_page"],
         "block_images": bool(row["block_images"]),
         "group": {"id": row["group_id"], "name": row["group_name"]} if row["group_id"] else None,
@@ -358,11 +362,13 @@ def camoufox_profile(profile_id: str) -> sqlite3.Row:
     return row
 
 
-def _check_engine_options(engine: str, local_fonts: str, proxy: Any, fingerprint: Any) -> None:
+def _check_engine_options(engine: str, local_fonts: str, media_capture: str, proxy: Any, fingerprint: Any) -> None:
     if engine not in ("camoufox", "chromium") or local_fonts not in ("standard", "restricted"):
         message = "不支持的浏览器内核或字体访问设置"
     elif engine == "camoufox" and local_fonts != "standard":
         message = "本机字体访问设置仅支持 Chromium 环境"
+    elif engine == "camoufox" and media_capture != "standard":
+        message = "阻止摄像头与麦克风访问仅支持 Chromium 环境"
     elif engine == "chromium" and (proxy or fingerprint):
         message = "当前 Chromium 预览版不支持绑定代理或使用 Camoufox 指纹预设"
     else:
@@ -549,6 +555,7 @@ def _profile_export(ids: list[str] | None = None):
             "name": row["name"],
             "engine": row["engine"],
             "local_fonts": row["local_fonts"],
+            "media_capture": row["media_capture"],
             "startup_page": row["startup_page"],
             "block_images": bool(row["block_images"]),
             "group": row["group_name"],
@@ -562,7 +569,9 @@ def _profile_export(ids: list[str] | None = None):
                 "port": row["port"], "username": row["username"],
             } if row["proxy_name"] is not None else None,
         })
-    payload = {"version": PROFILE_FORMAT_VERSION, "exported_at": db.now(), "profiles": items}
+    # A v1 importer ignores unknown profile fields, including a capture restriction.
+    version = 2 if any(item["media_capture"] == "blocked" for item in items) else 1
+    payload = {"version": version, "exported_at": db.now(), "profiles": items}
     body = json.dumps(payload, ensure_ascii=False, indent=2)
     return Response(
         content=body,
@@ -576,7 +585,7 @@ def _read_import_profile(raw: Any) -> ImportedProfile:
     item.name = item.name.strip()
     if not item.name:
         raise ValueError("名称为空")
-    _check_engine_options(item.engine, item.local_fonts, item.proxy, item.fingerprint)
+    _check_engine_options(item.engine, item.local_fonts, item.media_capture, item.proxy, item.fingerprint)
     if item.engine == "chromium":
         if "os" in item.model_fields_set and item.os != "native":
             raise ValueError("Chromium 使用本机操作系统")
@@ -637,11 +646,12 @@ def _store_import_profile(item: ImportedProfile) -> str:
 
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
-                "user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, startup_page, block_images) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
+                "user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, media_capture, startup_page, block_images) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?)",
                 (profile_id, name, group_id, proxy_id, json.dumps(item.tags, ensure_ascii=False), item.remark,
                  item.os, json.dumps(item.fingerprint, ensure_ascii=False), str(user_data_dir),
-                 int(item.headless), ts, ts, item.engine, item.local_fonts, item.startup_page, int(item.block_images)),
+                 int(item.headless), ts, ts, item.engine, item.local_fonts, item.media_capture, item.startup_page,
+                 int(item.block_images)),
             )
             user_data_dir.mkdir(mode=0o700)
             cleanup.callback(user_data_dir.rmdir)
@@ -743,12 +753,14 @@ def engine():
             }
         )
     chromium_version = None
+    supports_media_capture_policy = False
     problem = None
     if sys.platform not in {"darwin", "linux"}:
         problem = "Chromium 预览版目前支持 macOS 和 Linux。"
     else:
         try:
-            _, chromium_version = chromium_native.probe(chromium_native.default_binary())
+            _, chromium_version, capabilities = chromium_native.probe_capabilities(chromium_native.default_binary())
+            supports_media_capture_policy = chromium_native.MEDIA_CAPTURE_CAPABILITY in capabilities
         except FileNotFoundError:
             problem = "未找到 Moltskin Chromium，可通过 MOLTSKIN_CHROMIUM_BINARY 指定开发包。"
         except ValueError:
@@ -761,7 +773,8 @@ def engine():
             "playwright": pkg_version("playwright"),
             "browsers": browsers,
             "dashboard_startup_available": config.OPEN_MANAGER,
-            "chromium": {"available": problem is None, "version": chromium_version, "message": problem},
+            "chromium": {"available": problem is None, "version": chromium_version, "message": problem,
+                         "supports_media_capture_policy": supports_media_capture_policy},
         }
     }
 
@@ -915,7 +928,7 @@ def preview_profile_preset(payload: PresetPreviewRequest):
 
 @app.post("/api/v1/profiles", status_code=201)
 def create_profile(payload: NewProfile):
-    _check_engine_options(payload.engine, payload.local_fonts, payload.proxy_id, payload.fingerprint)
+    _check_engine_options(payload.engine, payload.local_fonts, payload.media_capture, payload.proxy_id, payload.fingerprint)
     if payload.engine == "chromium" and "os" in payload.model_fields_set and payload.os != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     if payload.preset_draft_id and (payload.engine != "camoufox" or payload.fingerprint):
@@ -952,13 +965,14 @@ def create_profile(payload: NewProfile):
                 conn.execute(
                     "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
                     "fingerprint, user_data_dir, headless, status, created_at, updated_at, "
-                    "engine, local_fonts, startup_page, block_images) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
+                    "engine, local_fonts, media_capture, startup_page, block_images) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?)",
                     (profile_id, payload.name.strip(), payload.group_id or None, payload.proxy_id or None,
                      json.dumps(payload.tags, ensure_ascii=False), payload.remark,
                      "native" if payload.engine == "chromium" else payload.os,
                      json.dumps(fingerprint, ensure_ascii=False), str(user_data_dir), int(payload.headless),
-                     ts, ts, payload.engine, payload.local_fonts, payload.startup_page, int(payload.block_images)),
+                     ts, ts, payload.engine, payload.local_fonts, payload.media_capture, payload.startup_page,
+                     int(payload.block_images)),
                 )
             except sqlite3.IntegrityError as exc:
                 raise HTTPException(409, detail={"code": "PROFILE_NAME_EXISTS", "message": "环境名称已存在"}) from exc
@@ -982,12 +996,14 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     if "engine" in provided and provided["engine"] != row["engine"]:
         raise HTTPException(409, detail={"code": "ENGINE_IMMUTABLE", "message": "环境创建后不能更换内核"})
     _check_engine_options(row["engine"], provided.get("local_fonts", row["local_fonts"]),
-                          provided.get("proxy_id"), provided.get("fingerprint"))
+                          provided.get("media_capture", row["media_capture"]), provided.get("proxy_id"),
+                          provided.get("fingerprint"))
     if row["engine"] == "chromium" and "os" in provided and provided["os"] != "native":
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     fields: dict[str, Any] = {}
-    if "local_fonts" in provided and payload.local_fonts != row["local_fonts"]:
-        fields["local_fonts"] = payload.local_fonts
+    for key in ("local_fonts", "media_capture"):
+        if key in provided and provided[key] != row[key]:
+            fields[key] = provided[key]
     for key in ("name", "group_id", "proxy_id", "remark", "os", "headless", "startup_page", "block_images"):
         if key in provided:
             value = provided[key]
@@ -1017,8 +1033,8 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     try:
         with db.session() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            if "local_fonts" in fields and launcher._active_session(conn, profile_id):
-                raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改字体访问设置"})
+            if ("local_fonts" in fields or "media_capture" in fields) and launcher._active_session(conn, profile_id):
+                raise HTTPException(409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改设备或字体访问设置"})
             conn.execute(
                 f"UPDATE profiles SET {assignments} WHERE id=?",
                 (*fields.values(), profile_id),
@@ -1104,11 +1120,11 @@ def duplicate_profile(profile_id: str):
             duplicated_fp = _fingerprint_with_preset(source_fp, row["os"]) if row["engine"] == "camoufox" else {}
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
-                "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, startup_page, block_images) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
+                "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, media_capture, "
+                "startup_page, block_images) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?)",
                 (new_profile_id, name, row["group_id"], row["proxy_id"], row["tags"], row["remark"], row["os"],
                  json.dumps(duplicated_fp, ensure_ascii=False), str(user_data_dir), row["headless"], ts, ts,
-                 row["engine"], row["local_fonts"], row["startup_page"], row["block_images"]),
+                 row["engine"], row["local_fonts"], row["media_capture"], row["startup_page"], row["block_images"]),
             )
             user_data_dir.mkdir(mode=0o700)
             cleanup.callback(user_data_dir.rmdir)

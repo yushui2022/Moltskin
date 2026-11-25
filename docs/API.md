@@ -63,7 +63,9 @@ curl -G .../profiles -H "Authorization: Bearer $TOKEN" \
 
 ### Create
 
-Omitting `engine` selects Camoufox, including for profiles saved before dual-engine support. To create a Chromium profile, send `{"name":"local-preview","engine":"chromium","local_fonts":"restricted"}`. Supported font policies are `standard` (default, follows site permissions) and `restricted` (empty local font list). Each profile keeps its engine for its lifetime. Close a Chromium profile before updating its font policy. The usual launch, stop and status endpoints apply.
+Omitting `engine` selects Camoufox, including for profiles saved before dual-engine support. To create a Chromium profile, send `{"name":"local-preview","engine":"chromium","local_fonts":"restricted"}`. Supported font policies are `standard` (default, follows site permissions) and `restricted` (empty local font list). Each profile keeps its engine for its lifetime. Close a Chromium profile before changing its font or media capture policy. The usual launch, stop and status endpoints apply.
+
+Chromium profiles also accept `media_capture`. The default `standard` follows site permissions. Set `blocked` to deny camera and microphone capture, including requests from previously authorized sites. This preference is retained by profile duplication and configuration export/import. `GET /engine` reports `chromium.supports_media_capture_policy`. Launching a blocked profile on a build without this capability returns HTTP 503.
 
 Profiles accept `startup_page` and `block_images` on creation and update. Changes take effect at the next launch. `startup_page` accepts the following values.
 
@@ -312,10 +314,10 @@ curl -X POST .../import/profiles -H "Authorization: Bearer $TOKEN" \
 
 GET exports every environment. POST exports only the requested profile IDs in the same file format. A rename preserves the selection. If an ID no longer exists, the server returns HTTP 409 with `PROFILE_SELECTION_CHANGED` and `missing_ids` so the caller can refresh the selection.
 
-Pass the entire export to the importer to preserve its format version. The current version is `1`.
+Pass the entire export to the importer to preserve its format version. A selection containing a profile with blocked media capture uses version `2`, so a version-aware v1 importer rejects the file. Other selections use version `1`. This release reads both versions.
 Legacy unversioned files remain compatible. An unsupported version returns HTTP 422 before any profiles are created.
 
-The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font policy and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.
+The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font and media capture policies, and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.
 
 ## Settings and logs
 

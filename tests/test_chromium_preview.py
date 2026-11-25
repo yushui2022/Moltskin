@@ -19,6 +19,7 @@ except ImportError:
 
 CLI = Path(__file__).resolve().parents[1] / "chromium" / "launch_preview.py"
 SWITCH = "--moltskin-disable-local-font-access"
+MEDIA_SWITCH = "--moltskin-block-media-capture"
 
 
 @unittest.skipUnless(fcntl is not None and sys.platform in {"darwin", "linux"}, "macOS/Linux preview")
@@ -35,7 +36,7 @@ import json, os, sys
 from pathlib import Path
 if sys.argv[1:] == ["--version", "--moltskin-capabilities"]:
     print("Chromium Preview")
-    print(os.environ.get("TEST_CAPABILITY", "moltskin-disable-local-font-access"))
+    print(os.environ.get("TEST_CAPABILITY", "moltskin-disable-local-font-access\\nmoltskin-block-media-capture"))
 else:
     (Path(os.environ["MOLTSKIN_DATA_DIR"]) / "last-launch").write_text(json.dumps(sys.argv[1:]))
 ''', encoding="utf-8"
@@ -91,6 +92,25 @@ else:
         self.assertFalse(last.exists())
         self.assertNotIn(SWITCH, self.browser_args("one"))
 
+    def test_media_policy_survives_restart_and_requires_patched_binary(self):
+        profile = self.data / "chromium-preview" / "one"
+        profile.mkdir(parents=True)
+        (profile / "local-fonts").write_text("restricted\n", encoding="utf-8")
+        args = self.browser_args("one", "--media-capture", "blocked")
+        self.assertIn(SWITCH, args)
+        self.assertIn(MEDIA_SWITCH, args)
+        self.assertEqual(self.browser_args("one"), args)
+        self.assertNotIn(MEDIA_SWITCH, self.browser_args("two"))
+
+        last = self.data / "last-launch"
+        last.unlink()
+        result = self.run_cli("one", TEST_CAPABILITY=SWITCH.removeprefix("--"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("moltskin-block-media-capture", result.stderr)
+        self.assertFalse(last.exists())
+        self.assertIn(MEDIA_SWITCH, self.browser_args("one"))
+        self.assertNotIn(MEDIA_SWITCH, self.browser_args("one", "--media-capture", "standard"))
+
     def test_active_launches_cannot_change_saved_mode(self):
         self.browser_args("one")
         profile = self.data / "chromium-preview" / "one"
@@ -102,7 +122,7 @@ else:
         native_lock = user_data / "SingletonLock"
         native_lock.symlink_to(f"{socket.gethostname()}-{os.getpid()}")
         self.assertIn("already open", self.run_cli("one", "--local-fonts", "restricted").stderr)
-        self.assertEqual((profile / "local-fonts").read_text().strip(), "standard")
+        self.assertEqual(json.loads((profile / "permissions.json").read_text())["local_fonts"], "standard")
         native_lock.unlink()
         self.assertIn(SWITCH, self.browser_args("one", "--local-fonts", "restricted"))
 

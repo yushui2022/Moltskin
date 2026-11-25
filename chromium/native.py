@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 CAPABILITY = "moltskin-disable-local-font-access"
+MEDIA_CAPTURE_CAPABILITY = "moltskin-block-media-capture"
 
 
 def default_binary() -> Path:
@@ -18,14 +19,14 @@ def default_binary() -> Path:
         return Path(configured).expanduser()
     out = Path.home() / "chromium-baseline" / "src" / "out"
     executable = "Chromium.app" if sys.platform == "darwin" else "chrome"
-    for directory in ("MoltskinToolbar", "MoltskinPanel"):
+    for directory in ("MoltskinMedia", "MoltskinToolbar", "MoltskinPanel"):
         binary = out / directory / executable
         if binary.exists():
             return binary
     return out / "MoltskinFont" / executable
 
 
-def probe(path: Path, *, capability: str = CAPABILITY) -> tuple[Path, str]:
+def probe_capabilities(path: Path) -> tuple[Path, str, frozenset[str]]:
     path = path.expanduser().resolve()
     if path.suffix == ".app":
         path = path / "Contents" / "MacOS" / "Chromium"
@@ -34,12 +35,18 @@ def probe(path: Path, *, capability: str = CAPABILITY) -> tuple[Path, str]:
         timeout=15, check=True, text=True, errors="replace",
     )
     lines = result.stdout.splitlines()
-    if CAPABILITY not in lines:
+    capabilities = frozenset(lines[1:])
+    if CAPABILITY not in capabilities:
         raise ValueError(f"this binary does not report the Moltskin Local Font Access capability: {path}")
-    if capability not in lines:
-        raise ValueError(f"this binary does not report the {capability} capability: {path}")
     version = re.search(r"\b\d+(?:\.\d+){3}\b", lines[0])
-    return path, version.group() if version else lines[0].strip()
+    return path, version.group() if version else lines[0].strip(), capabilities
+
+
+def probe(path: Path, *, capability: str = CAPABILITY) -> tuple[Path, str]:
+    path, version, capabilities = probe_capabilities(path)
+    if capability not in capabilities:
+        raise ValueError(f"this binary does not report the {capability} capability: {path}")
+    return path, version
 
 
 def chromium_owns_directory(user_data: Path) -> bool:
