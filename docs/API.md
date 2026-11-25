@@ -88,6 +88,12 @@ A fingerprint preset is generated immediately and reused on every launch.
 
 ### Launch / stop
 
+Profiles return `browser_version`, the engine version recorded at their last successful launch.
+Session records carry the version for that particular run. Both can be `null` for historical data.
+Copies and imported configurations start with an empty launch history.
+The launch response and the status of an active session also include its `browser_version`.
+With no active session the status endpoint returns `null` for this field.
+
 ```bash
 curl -X POST .../profiles/pf_.../launch -H "Authorization: Bearer $TOKEN"
 curl -X POST .../profiles/pf_.../stop   -H "Authorization: Bearer $TOKEN"
@@ -278,10 +284,13 @@ curl -X POST .../export/profiles -H "Authorization: Bearer $TOKEN" \
   -d '{"ids":["pf_example"]}' -o selected-profiles.json
 curl -X POST .../import/profiles -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"profiles": [...]}'
+  --data-binary @profiles.json
 ```
 
 GET exports every environment. POST exports only the requested profile IDs in the same file format. A rename preserves the selection. If an ID no longer exists, the server returns HTTP 409 with `PROFILE_SELECTION_CHANGED` and `missing_ids` so the caller can refresh the selection.
+
+Pass the entire export to the importer to preserve its format version. The current version is `1`.
+Legacy unversioned files remain compatible. An unsupported version returns HTTP 422 before any profiles are created.
 
 The file contains configuration such as the browser engine, group, tags, headless setting, Camoufox preset, Chromium font policy and proxy metadata. Proxy passwords and site login data are excluded. Import returns `created`, `renamed` and `skipped`. Each skipped entry identifies its original input row (starting at 1) and the reason.
 

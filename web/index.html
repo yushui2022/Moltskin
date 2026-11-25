@@ -1731,11 +1731,12 @@ const COLUMNS = [
   { key: "tags", label: "标签" },
   { key: "remark", label: "备注" },
   { key: "created", label: "创建时间" },
+  { key: "browser_version", label: "上次启动版本", visible: 0 },
   { key: "last_opened", label: "最近打开时间" },
 ];
 
 function loadColumns() {
-  const defaults = Object.fromEntries(COLUMNS.map(({ key }) => [key, 1]));
+  const defaults = Object.fromEntries(COLUMNS.map(({ key, visible = 1 }) => [key, visible]));
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem("moltskin.columns")) };
   } catch {
@@ -2045,6 +2046,7 @@ function theadHtml() {
     ${c.remark ? `<th style="--column-width:120px">备注</th>` : ""}
     ${c.created ? sortBtn("created_at", "创建时间", 110) : ""}
     <th style="--column-width:190px">配置</th>
+    ${c.browser_version ? '<th style="--column-width:130px" title="上次成功启动的浏览器内核版本">上次启动版本</th>' : ""}
     ${c.last_opened ? sortBtn("last_opened", "最近打开时间", 128) : ""}
     <th class="col-actions" style="--column-width:106px">操作</th>`;
 }
@@ -2127,6 +2129,10 @@ function lastOpenedHtml(value) {
   return `<time class="last-opened" datetime="${esc(value)}" title="${esc(date.toLocaleString("zh-CN"))}">${fmtTime(value)}:${seconds}</time>`;
 }
 
+function lastBrowserVersion(p) {
+  return p.browser_version || (p.open_count ? "暂无版本记录" : "尚未启动");
+}
+
 function rowHtml(p, index) {
   const proxy = proxyLabel(p);
   const c = state.columns;
@@ -2171,6 +2177,7 @@ function rowHtml(p, index) {
         </div>
       </div>
     </td>
+    ${c.browser_version ? `<td class="muted nowrap">${esc(lastBrowserVersion(p))}</td>` : ""}
     ${c.last_opened ? `<td class="muted nowrap">${lastOpenedHtml(p.last_opened_at)}</td>` : ""}
     <td class="col-actions">
       <div class="action-cell">
@@ -2207,6 +2214,7 @@ function cardHtml(p) {
         ? `<div><span class="k">字体访问</span><span class="v">${fontsLabel(p)}</span></div>`
         : `<div><span class="k">指纹预设</span><span class="v">${preview ? esc([preview.os, presetScreenSize(preview)].filter(Boolean).join(" · ") || "—") : "未生成"}</span></div>`}
       <div><span class="k">打开次数</span><span class="v">${p.open_count || 0} 次</span></div>
+      <div><span class="k">上次版本</span><span class="v">${esc(lastBrowserVersion(p))}</span></div>
       <div><span class="k">最近打开</span><span class="v">${lastOpenedHtml(p.last_opened_at)}</span></div>
     </div>
     ${(p.tags || []).length ? `<div class="env-card-tags">${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
@@ -3086,9 +3094,7 @@ $("importFile").addEventListener("change", async (e) => {
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    const profiles = Array.isArray(data) ? data : (data?.profiles ?? data?.data?.profiles);
-    if (!Array.isArray(profiles)) throw new Error("文件格式不正确");
-    const result = await api("/import/profiles", { method: "POST", body: JSON.stringify({ profiles }) });
+    const result = await api("/import/profiles", { method: "POST", body: JSON.stringify(data) });
     const { created, skipped = [], renamed = [] } = result;
     if (skipped.length || renamed.length) {
       $("importReportSummary").textContent = `已导入 ${created} 个环境，跳过 ${skipped.length} 条。`;
@@ -3123,6 +3129,7 @@ function openDetail(id, initialFocus = null) {
   $("detailSub").textContent = [
     p.group?.name || "未分组",
     engineName(p),
+    `上次启动版本 · ${lastBrowserVersion(p)}`,
     ...(p.engine === "chromium" ? [] : [p.os, p.proxy?.exit_ip || "未绑定代理"]),
     `打开 ${p.open_count || 0} 次`,
   ].join(" · ");

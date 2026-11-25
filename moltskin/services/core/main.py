@@ -28,7 +28,7 @@ from camoufox.pkgman import installed_verstr
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from chromium import native as chromium_native
 
@@ -45,6 +45,7 @@ from .security import get_token
 Engine = Literal["camoufox", "chromium"]
 FontPolicy = Literal["standard", "restricted"]
 StartupPage = Literal["default", "dashboard", "blank"]
+PROFILE_FORMAT_VERSION = 1
 
 
 class ProfileCreate(BaseModel):
@@ -123,8 +124,35 @@ class BatchRequest(BaseModel):
 
 
 class ImportRequest(BaseModel):
+    version: int = PROFILE_FORMAT_VERSION
     # Each row is validated separately so one invalid entry can be reported by row number.
     profiles: list[Any] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_file(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return {"profiles": value}
+        if not isinstance(value, dict):
+            raise HTTPException(422, detail={"code": "INVALID_PROFILE_FILE", "message": "配置文件应包含环境列表。"})
+        envelopes = [value]
+        if value.get("profiles") is None and isinstance(value.get("data"), dict):
+            envelopes.append(value["data"])
+        for envelope in envelopes:
+            version = envelope.get("version", PROFILE_FORMAT_VERSION)
+            if type(version) is not int:
+                raise HTTPException(422, detail={
+                    "code": "INVALID_PROFILE_FORMAT_VERSION", "message": "配置文件的 version 必须是整数。",
+                })
+            if version != PROFILE_FORMAT_VERSION:
+                raise HTTPException(422, detail={
+                    "code": "UNSUPPORTED_PROFILE_FORMAT_VERSION",
+                    "message": f"此配置文件的格式版本为 {version}，当前支持版本 {PROFILE_FORMAT_VERSION}。此次未导入任何环境。",
+                })
+        data = envelopes[-1]
+        if "profiles" in data and not isinstance(data["profiles"], list):
+            raise HTTPException(422, detail={"code": "INVALID_PROFILE_FILE", "message": "配置文件中的 profiles 必须是列表。"})
+        return data
 
 
 class ImportedProxy(BaseModel):
@@ -251,6 +279,7 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
         "id": row["id"],
         "name": row["name"],
         "engine": row["engine"],
+        "browser_version": row["browser_version"],
         "local_fonts": row["local_fonts"],
         "startup_page": row["startup_page"],
         "block_images": bool(row["block_images"]),
@@ -532,7 +561,7 @@ def _profile_export(ids: list[str] | None = None):
                 "port": row["port"], "username": row["username"],
             } if row["proxy_name"] is not None else None,
         })
-    payload = {"version": 1, "exported_at": db.now(), "profiles": items}
+    payload = {"version": PROFILE_FORMAT_VERSION, "exported_at": db.now(), "profiles": items}
     body = json.dumps(payload, ensure_ascii=False, indent=2)
     return Response(
         content=body,
@@ -564,6 +593,17 @@ def _read_import_profile(raw: Any) -> ImportedProfile:
     return item
 
 
+def _available_profile_name(conn: sqlite3.Connection, base: str, suffix: str = "") -> str:
+    """Allocate a display name while the caller holds the database write lock."""
+    index = 1
+    while True:
+        ending = suffix if index == 1 else f"{suffix} ({index})"
+        name = base[:120 - len(ending)] + ending
+        if not conn.execute("SELECT 1 FROM profiles WHERE name=?", (name,)).fetchone():
+            return name
+        index += 1
+
+
 def _store_import_profile(item: ImportedProfile) -> str:
     ts = db.now()
     profile_id = new_id("pf")
@@ -572,12 +612,7 @@ def _store_import_profile(item: ImportedProfile) -> str:
         with db.session() as conn:
             # Name allocation, shared references and the profile commit together for each row.
             conn.execute("BEGIN IMMEDIATE")
-            name = item.name
-            suffix = 2
-            while conn.execute("SELECT 1 FROM profiles WHERE name=?", (name,)).fetchone():
-                ending = f" ({suffix})"
-                name = item.name[:120 - len(ending)] + ending
-                suffix += 1
+            name = _available_profile_name(conn, item.name)
 
             group_id = None
             group_name = (item.group or "").strip()
@@ -1044,38 +1079,30 @@ def delete_profile(profile_id: str, delete_data: bool = False):
 
 @app.post("/api/v1/profiles/{profile_id}/duplicate")
 def duplicate_profile(profile_id: str):
-    row = get_profile_row(profile_id)
     new_profile_id = new_id("pf")
     user_data_dir = config.PROFILES_DIR / new_profile_id
-    user_data_dir.mkdir(parents=True, exist_ok=True)
     ts = db.now()
-    source_fp = json.loads(row["fingerprint"] or "{}")
-    source_fp.pop("preset", None)  # 复制必须得到新身份，不能共用指纹
-    duplicated_fp = _fingerprint_with_preset(source_fp, row["os"]) if row["engine"] == "camoufox" else {}
-    with db.session() as conn:
-        conn.execute(
-            "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
-            "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, startup_page, block_images) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
-            (
-                new_profile_id,
-                f"{row['name']} 副本",
-                row["group_id"],
-                row["proxy_id"],
-                row["tags"],
-                row["remark"],
-                row["os"],
-                json.dumps(duplicated_fp, ensure_ascii=False),
-                str(user_data_dir),
-                row["headless"],
-                ts,
-                ts,
-                row["engine"],
-                row["local_fonts"],
-                row["startup_page"],
-                row["block_images"],
-            ),
-        )
+    with ExitStack() as cleanup:
+        with db.session() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
+            if row is None:
+                raise HTTPException(404, detail={"code": "PROFILE_NOT_FOUND", "message": "环境不存在"})
+            name = _available_profile_name(conn, row["name"], " 副本")
+            source_fp = json.loads(row["fingerprint"] or "{}")
+            source_fp.pop("preset", None)  # 复制必须得到新身份，不能共用指纹
+            duplicated_fp = _fingerprint_with_preset(source_fp, row["os"]) if row["engine"] == "camoufox" else {}
+            conn.execute(
+                "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
+                "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, startup_page, block_images) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
+                (new_profile_id, name, row["group_id"], row["proxy_id"], row["tags"], row["remark"], row["os"],
+                 json.dumps(duplicated_fp, ensure_ascii=False), str(user_data_dir), row["headless"], ts, ts,
+                 row["engine"], row["local_fonts"], row["startup_page"], row["block_images"]),
+            )
+            user_data_dir.mkdir(mode=0o700)
+            cleanup.callback(user_data_dir.rmdir)
+        cleanup.pop_all()
     db.log("profile.duplicate", new_profile_id, {"from": profile_id})
     return {"data": serialize_profile(get_profile_row(new_profile_id))}
 

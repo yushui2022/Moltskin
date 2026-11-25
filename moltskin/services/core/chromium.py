@@ -13,18 +13,13 @@ from chromium.native import CAPABILITY, chromium_owns_directory, default_binary,
 from . import config
 
 
-def chrome_binary() -> Path:
+def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
+                   block_images: bool = False, open_dashboard: bool = False) -> tuple[list[str], str]:
     if sys.platform not in ("darwin", "linux"):
         raise ValueError("Chromium 预览版仅支持 macOS 和 Linux")
-    binary, _ = probe(default_binary())
-    return binary
-
-
-def launch_command(profile_dir: Path, local_fonts: str, headless: bool, *,
-                   block_images: bool = False, open_dashboard: bool = False) -> list[str]:
     if local_fonts not in ("standard", "restricted"):
         raise ValueError("未知的字体访问设置")
-    binary = chrome_binary()
+    binary, version = probe(default_binary())
     profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
@@ -40,7 +35,7 @@ def launch_command(profile_dir: Path, local_fonts: str, headless: bool, *,
     if headless:
         args.append("--headless")
     args.append(config.local_dashboard_url() if open_dashboard else "about:blank")
-    return args
+    return args, version
 
 
 def owns_lock(profile_dir: Path, pid: int) -> bool:

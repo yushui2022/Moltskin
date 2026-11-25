@@ -26,7 +26,7 @@ import json, os, signal, socket, sys
 from pathlib import Path
 
 if sys.argv[1:] == ["--version", "--moltskin-capabilities"]:
-    print("Chromium 158.0.0.1")
+    print("Chromium " + os.environ.get("TEST_CHROMIUM_VERSION", "158.0.0.1"))
     print("moltskin-disable-local-font-access")
     sys.exit(0)
 directory = Path(next(a.split("=", 1)[1] for a in sys.argv if a.startswith("--user-data-dir=")))
@@ -57,6 +57,7 @@ def create_chromium(client, name, **options):
     assert response.status_code == 201, response.text
     profile = response.json()["data"]
     assert profile["engine"] == "chromium"
+    assert profile["browser_version"] is None
     assert profile["fingerprint_preview"] is None
     return profile
 
@@ -70,6 +71,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
         conn.execute("ALTER TABLE profiles DROP COLUMN engine")
         conn.execute("ALTER TABLE profiles DROP COLUMN startup_page")
         conn.execute("ALTER TABLE profiles DROP COLUMN block_images")
+        conn.execute("ALTER TABLE sessions DROP COLUMN browser_version")
         conn.execute(
             "INSERT INTO profiles(id,name,user_data_dir,open_count,created_at,updated_at) "
             "VALUES ('old-id','legacy',?,12,?,?)", (str(data_dir / "old-profile"), db.now(), db.now()),
@@ -81,6 +83,9 @@ def test_migrate_existing_camoufox_profile(data_dir):
     assert row["engine"] == "camoufox"
     assert row["user_data_dir"] == str(data_dir / "old-profile")
     assert row["open_count"] == 12
+    assert row["browser_version"] is None
+    with db.session() as conn:
+        assert "browser_version" in {r["name"] for r in conn.execute("PRAGMA table_info(sessions)")}
     assert (row["startup_page"], row["block_images"]) == ("default", 0)
 
 
@@ -125,6 +130,7 @@ def test_missing_binary_never_leaves_a_running_session(client, data_dir, monkeyp
     failure = client.post(url + "/launch")
     assert failure.status_code == 503, failure.text
     assert failure.json()["error"]["code"] == "CHROMIUM_UNAVAILABLE"
+    assert client.get(url).json()["data"]["browser_version"] is None
     status = client.get(url + "/status").json()["data"]
     assert status["status"] != "running"
     assert status["session_id"] is None
@@ -141,10 +147,13 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
     b = create_chromium(client, "b")
     assert a["user_data_dir"] != b["user_data_dir"]
     urls = [f"{PROFILES}/{p['id']}" for p in (a, b)]
+    first_sessions = []
     try:
         for url in urls:
             result = client.post(url + "/launch")
             assert result.is_success, result.text
+            first_sessions.append(result.json()["data"]["session_id"])
+            assert client.get(url).json()["data"]["browser_version"] == "158.0.0.1"
             assert client.get(url + "/status").json()["data"]["state"] == "running"
         assert client.post(urls[0] + "/launch").status_code == 409
         assert client.patch(urls[0], json={"local_fonts": "standard"}).status_code == 409
@@ -166,8 +175,17 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
             time.sleep(0.1)
         assert (Path(a["user_data_dir"]) / "test-exit-signal").read_text() == "SIGINT"
         assert client.get(urls[1] + "/status").json()["data"]["state"] == "running"
+        with monkeypatch.context() as unavailable:
+            unavailable.setenv("MOLTSKIN_CHROMIUM_BINARY", str(Path(a["user_data_dir"]) / "missing-browser"))
+            assert client.post(urls[0] + "/launch").status_code == 503
+            assert client.get(urls[0]).json()["data"]["browser_version"] == "158.0.0.1"
         assert client.patch(urls[0], json={"local_fonts": "standard", "startup_page": "dashboard", "block_images": True}).is_success
+        monkeypatch.setenv("TEST_CHROMIUM_VERSION", "158.0.0.2")
         assert client.post(urls[0] + "/launch").is_success
+        assert client.get(urls[0]).json()["data"]["browser_version"] == "158.0.0.2"
+        assert client.get(urls[1]).json()["data"]["browser_version"] == "158.0.0.1"
+        for session_id in first_sessions:
+            assert client.get(f"/api/v1/sessions/{session_id}").json()["data"]["browser_version"] == "158.0.0.1"
         args = json.loads((Path(a["user_data_dir"]) / "test-args.json").read_text())
         assert args[-1] == "http://127.0.0.1:18765/#/home"
         assert "--blink-settings=imagesEnabled=false" in args

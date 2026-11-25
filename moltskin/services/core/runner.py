@@ -121,7 +121,9 @@ def main() -> int:
     exit_code = 0
     try:
         with Camoufox(**kwargs) as context:
-            write_status(status_path, state="running", pid=os.getpid())
+            version = context.browser.version if context.browser else None
+            write_status(status_path, state="running", pid=os.getpid(),
+                         browser_version=version if isinstance(version, str) else None)
             try:
                 observation.capture(context, plan)
             except Exception as exc:

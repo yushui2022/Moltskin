@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS profile_preset_drafts (
 CREATE TABLE IF NOT EXISTS sessions (
   id            TEXT PRIMARY KEY,
   profile_id    TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  browser_version TEXT,
   pid           INTEGER,
   state         TEXT NOT NULL,
   error_code    TEXT,
@@ -204,6 +205,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     """给旧库补齐后加的列，保持升级不丢数据。"""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(profiles)")}
     additions = {
+        "browser_version": "TEXT",
         "open_count": "INTEGER NOT NULL DEFAULT 0",
         "engine": "TEXT NOT NULL DEFAULT 'camoufox' CHECK (engine IN ('camoufox','chromium'))",
         "local_fonts": "TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted'))",
@@ -213,6 +215,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for name, ddl in additions.items():
         if name not in columns:
             conn.execute(f"ALTER TABLE profiles ADD COLUMN {name} {ddl}")
+
+    session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
+    if "browser_version" not in session_columns:
+        conn.execute("ALTER TABLE sessions ADD COLUMN browser_version TEXT")
 
     schedule_columns = {row["name"] for row in conn.execute("PRAGMA table_info(schedules)")}
     schedule_additions = {

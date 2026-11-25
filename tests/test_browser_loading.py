@@ -63,7 +63,12 @@ def test_image_loading_after_profile_restart(data_dir, monkeypatch, engine):
                     client.patch(url, json={"block_images": blocked}).raise_for_status()
                     image_requests.clear()
                     try:
-                        client.post(url + "/launch").raise_for_status()
+                        started = client.post(url + "/launch")
+                        started.raise_for_status()
+                        session_id = started.json()["data"]["session_id"]
+                        version = client.get(url).json()["data"]["browser_version"]
+                        assert version and version[0].isdigit()
+                        assert client.get(f"/api/v1/sessions/{session_id}").json()["data"]["browser_version"] == version
                         assert widths.get(timeout=25) == (0 if blocked else 12)
                         assert bool(image_requests) == (not blocked)
                     finally:

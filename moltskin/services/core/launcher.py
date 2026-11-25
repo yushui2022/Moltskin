@@ -219,11 +219,12 @@ def launch(profile_id: str, actor: str = "local") -> dict:
     profile_dir = Path(profile["user_data_dir"])
     headless = config.FORCE_HEADLESS or bool(profile["headless"]) or bool(db.get_setting("headless", False))
     is_chromium = profile["engine"] == "chromium"
+    browser_version = None
     if is_chromium:
         if proxy:
             raise LaunchError("ENGINE_OPTIONS", "当前 Chromium 预览版不支持绑定代理", 422)
         try:
-            command = chromium.launch_command(
+            command, browser_version = chromium.prepare_launch(
                 profile_dir, profile["local_fonts"], headless,
                 open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
                 block_images=bool(profile["block_images"]),
@@ -326,9 +327,15 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         raise LaunchError("LAUNCH_TIMEOUT", f"启动超时（{timeout} 秒）", 504)
 
     with db.session() as conn:
+        if not is_chromium and info:
+            browser_version = info.get("browser_version")
         started = conn.execute(
-            "UPDATE sessions SET state='running' WHERE id=? AND state='starting'", (session_id,)
+            "UPDATE sessions SET state='running', browser_version=? WHERE id=? AND state='starting'",
+            (browser_version, session_id),
         ).rowcount
+        if started:
+            conn.execute("UPDATE profiles SET browser_version=? WHERE id=? AND last_session_id=?",
+                         (browser_version, profile_id, session_id))
 
     Thread(
         target=_monitor,
@@ -339,7 +346,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
     if not started:
         raise LaunchError("LAUNCH_CANCELLED", "启动已取消")
     db.log("profile.launch", profile_id, {"session_id": session_id}, actor=actor)
-    return {"session_id": session_id, "profile_id": profile_id, "state": "running"}
+    return {"session_id": session_id, "profile_id": profile_id, "state": "running",
+            "browser_version": browser_version}
 
 
 def stop_profile(profile_id: str, actor: str = "local") -> dict:
@@ -424,6 +432,7 @@ def status(profile_id: str) -> dict:
         "status": profile["status"],
         "session_id": session["id"] if session else None,
         "pid": session["pid"] if session else None,
+        "browser_version": session["browser_version"] if session else None,
         "state": session["state"] if session else None,
     }
 

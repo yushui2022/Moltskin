@@ -360,5 +360,7 @@ class MoltskinClient:
         response.raise_for_status()
         return response.json()
 
-    def import_profiles(self, profiles: list[dict[str, Any]]) -> dict[str, Any]:
-        return self._request("POST", "/import/profiles", json={"profiles": profiles})
+    def import_profiles(self, profiles: list[dict[str, Any]] | dict[str, Any]) -> dict[str, Any]:
+        """Import a complete configuration export or a legacy list of profiles."""
+        payload = {"profiles": profiles} if isinstance(profiles, list) else profiles
+        return self._request("POST", "/import/profiles", json=payload)

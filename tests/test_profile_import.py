@@ -24,6 +24,38 @@ def import_rows(client, rows):
     return result.json()["data"]
 
 
+def test_import_keeps_unversioned_and_current_files_compatible(api):
+    rows = [{"name": "portable", "engine": "chromium"}]
+    for payload in (rows, {"profiles": rows}, {"version": 1, "profiles": rows},
+                    {"data": {"profiles": rows}}, {"version": 1, "data": {"version": 1, "profiles": rows}}):
+        response = api.post("/api/v1/import/profiles", json=payload)
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["created"] == 1
+    exported = api.get("/api/v1/export/profiles").raise_for_status().json()
+    assert exported["version"] == main.PROFILE_FORMAT_VERSION
+    assert api.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]["created"] == 5
+
+
+def test_unsupported_or_invalid_file_version_rejects_whole_import(api):
+    rows = [{"name": "untouched", "group": "team", "proxy": {"host": "proxy.invalid", "port": 80}}]
+    for payload in (
+        {"version": 2, "profiles": rows}, {"version": 2, "data": {"version": 1, "profiles": rows}},
+        {"data": {"version": 2, "profiles": rows}}, {"version": 0, "profiles": rows},
+    ):
+        response = api.post("/api/v1/import/profiles", json=payload)
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "UNSUPPORTED_PROFILE_FORMAT_VERSION"
+    for invalid in (True, None, "1", 1.5):
+        response = api.post("/api/v1/import/profiles", json={"version": invalid, "profiles": rows})
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "INVALID_PROFILE_FORMAT_VERSION"
+    with db.session() as conn:
+        for table in ("profiles", "groups", "proxies"):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM logs WHERE action='profiles.import'").fetchone()[0] == 0
+    assert list(config.PROFILES_DIR.iterdir()) == []
+
+
 def test_portable_import_skips_invalid_rows_without_losing_siblings(api):
     result = import_rows(api, [
         {"name": "work", "headless": "false"},
