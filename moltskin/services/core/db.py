@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   os               TEXT NOT NULL DEFAULT 'windows',
   engine           TEXT NOT NULL DEFAULT 'camoufox' CHECK (engine IN ('camoufox','chromium')),
   local_fonts      TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted')),
+  startup_page     TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank')),
+  block_images     INTEGER NOT NULL DEFAULT 0 CHECK (block_images IN (0,1)),
   browser_version  TEXT,
   fingerprint      TEXT NOT NULL DEFAULT '{}',
   user_data_dir    TEXT NOT NULL,
@@ -197,6 +199,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "open_count": "INTEGER NOT NULL DEFAULT 0",
         "engine": "TEXT NOT NULL DEFAULT 'camoufox' CHECK (engine IN ('camoufox','chromium'))",
         "local_fonts": "TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted'))",
+        "startup_page": "TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank'))",
+        "block_images": "INTEGER NOT NULL DEFAULT 0 CHECK (block_images IN (0,1))",
     }
     for name, ddl in additions.items():
         if name not in columns:

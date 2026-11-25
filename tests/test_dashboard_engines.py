@@ -68,6 +68,8 @@ def test_migrate_existing_camoufox_profile(data_dir):
     with db.session() as conn:
         conn.execute("ALTER TABLE profiles DROP COLUMN local_fonts")
         conn.execute("ALTER TABLE profiles DROP COLUMN engine")
+        conn.execute("ALTER TABLE profiles DROP COLUMN startup_page")
+        conn.execute("ALTER TABLE profiles DROP COLUMN block_images")
         conn.execute(
             "INSERT INTO profiles(id,name,user_data_dir,open_count,created_at,updated_at) "
             "VALUES ('old-id','legacy',?,12,?,?)", (str(data_dir / "old-profile"), db.now(), db.now()),
@@ -79,6 +81,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
     assert row["engine"] == "camoufox"
     assert row["user_data_dir"] == str(data_dir / "old-profile")
     assert row["open_count"] == 12
+    assert (row["startup_page"], row["block_images"]) == ("default", 0)
 
 
 def test_engine_contract_and_portable_settings(client):
@@ -88,7 +91,12 @@ def test_engine_contract_and_portable_settings(client):
     assert immutable.status_code == 409 and immutable.json()["error"]["code"] == "ENGINE_IMMUTABLE"
     assert client.patch(url, json={"local_fonts": "typo"}).is_client_error
     assert client.patch(url, json={"fingerprint": {"locale": "fr-FR"}}).is_client_error
+    assert (original["startup_page"], original["block_images"]) == ("default", False)
+    assert client.patch(url, json={"startup_page": "https://external.invalid"}).status_code == 422
+    assert client.patch(url, json={"startup_page": "dashboard", "block_images": True}).is_success
+    assert client.patch(url, json={"remark": "edited"}).is_success
     duplicate = client.post(url + "/duplicate").json()["data"]
+    assert (duplicate["startup_page"], duplicate["block_images"]) == ("dashboard", True)
     assert (duplicate["engine"], duplicate["local_fonts"]) == ("chromium", "restricted")
     assert duplicate["user_data_dir"] != original["user_data_dir"]
     exported = client.get("/api/v1/export/profiles").json()
@@ -99,6 +107,7 @@ def test_engine_contract_and_portable_settings(client):
     restored = next(p for p in client.get(PROFILES).json()["data"]["items"] if p["name"] == "restored")
     assert (restored["engine"], restored["local_fonts"]) == ("chromium", "restricted")
     assert restored["user_data_dir"] != original["user_data_dir"]
+    assert (restored["startup_page"], restored["block_images"]) == ("dashboard", True)
 
 
 @pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="Chromium preview targets macOS and Linux")
@@ -157,11 +166,51 @@ def test_two_native_sessions_and_restart(client, monkeypatch):
             time.sleep(0.1)
         assert (Path(a["user_data_dir"]) / "test-exit-signal").read_text() == "SIGINT"
         assert client.get(urls[1] + "/status").json()["data"]["state"] == "running"
-        assert client.patch(urls[0], json={"local_fonts": "standard"}).is_success
+        assert client.patch(urls[0], json={"local_fonts": "standard", "startup_page": "dashboard", "block_images": True}).is_success
         assert client.post(urls[0] + "/launch").is_success
         args = json.loads((Path(a["user_data_dir"]) / "test-args.json").read_text())
+        assert args[-1] == "http://127.0.0.1:18765/#/home"
+        assert "--blink-settings=imagesEnabled=false" in args
         assert RESTRICT_FONTS not in args
         assert marker.read_text() == "profile A"
     finally:
         for url in urls:
             client.post(url + "/stop")
+
+
+@pytest.mark.parametrize(("startup", "host_allows", "global_manager", "target"), [
+    ("default", True, True, "http://configured.invalid"),
+    ("default", True, False, None),
+    ("blank", True, True, "about:blank"),
+    ("dashboard", True, False, "http://127.0.0.1:18765/#/home"),
+    ("dashboard", False, True, "about:blank"),
+])
+def test_camoufox_startup_tab(client, monkeypatch, data_dir, startup, host_allows, global_manager, target):
+    from unittest.mock import MagicMock
+
+    from moltskin.services.core import config, db, launcher, runner
+
+    monkeypatch.setattr(config, "PORT", 18765)
+    monkeypatch.setattr(config, "MANAGER_URL", "http://configured.invalid")
+    monkeypatch.setattr(config, "OPEN_MANAGER", host_allows)
+    db.set_setting("open_manager_on_launch", global_manager)
+    assert client.get("/api/v1/engine").json()["data"]["dashboard_startup_available"] is host_allows
+    saved = client.post(PROFILES, json={"name": "portable", "startup_page": startup, "block_images": True})
+    assert saved.status_code == 201, saved.text
+    with db.session() as conn:
+        profile = conn.execute("SELECT * FROM profiles WHERE id=?", (saved.json()["data"]["id"],)).fetchone()
+    cmd = launcher._camoufox_command(profile, None, "ss_test", True, data_dir / "status.json")
+    context = MagicMock()
+    page = context.pages[0]
+    browser = MagicMock()
+    browser.return_value.__enter__.return_value = context
+    monkeypatch.setattr(runner, "Camoufox", browser)
+    monkeypatch.setattr(runner.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(runner.observation, "capture", lambda *_: None)
+    monkeypatch.setattr(sys, "argv", ["runner", *cmd[-2:]])
+    assert runner.main() == 0
+    assert browser.call_args.kwargs["block_images"] is True
+    if target:
+        page.goto.assert_called_once_with(target, wait_until="domcontentloaded", timeout=15000)
+    else:
+        page.goto.assert_not_called()

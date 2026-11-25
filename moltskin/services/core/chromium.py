@@ -20,7 +20,8 @@ def chrome_binary() -> Path:
     return binary
 
 
-def launch_command(profile_dir: Path, local_fonts: str, headless: bool) -> list[str]:
+def launch_command(profile_dir: Path, local_fonts: str, headless: bool, *,
+                   block_images: bool = False, open_dashboard: bool = False) -> list[str]:
     if local_fonts not in ("standard", "restricted"):
         raise ValueError("未知的字体访问设置")
     binary = chrome_binary()
@@ -34,10 +35,11 @@ def launch_command(profile_dir: Path, local_fonts: str, headless: bool) -> list[
         args.append(f"--moltskin-panel-port={config.PORT}")
     if local_fonts == "restricted":
         args.append("--" + CAPABILITY)
+    if block_images:
+        args.append("--blink-settings=imagesEnabled=false")
     if headless:
         args.append("--headless")
-    # The management window owns the dashboard. Managed profile windows open on a blank tab.
-    args.append("about:blank")
+    args.append(config.local_dashboard_url() if open_dashboard else "about:blank")
     return args
 
 

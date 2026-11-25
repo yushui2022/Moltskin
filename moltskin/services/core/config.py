@@ -42,6 +42,10 @@ DEFAULTS = {
 }
 
 
+def local_dashboard_url() -> str:
+    return f"http://127.0.0.1:{PORT}/#/home"
+
+
 def ensure_dirs() -> None:
     for path in (DATA_DIR, PROFILES_DIR, RUN_DIR, LOG_DIR, SELFTEST_DIR):
         path.mkdir(parents=True, exist_ok=True)

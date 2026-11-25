@@ -131,7 +131,7 @@ def _monitor(session_id: str, profile_id: str, proc: subprocess.Popen,
                         f"进程退出码 {code}" if state == "crashed" else None, observed_exit=True)
 
 
-def _camoufox_command(profile, proxy, session_id, headless, manager_url, status_path):
+def _camoufox_command(profile, proxy, session_id, headless, status_path):
     profile_id = profile["id"]
     fingerprint = json.loads(profile["fingerprint"] or "{}")
     if not fingerprint.get("preset"):
@@ -153,7 +153,14 @@ def _camoufox_command(profile, proxy, session_id, headless, manager_url, status_
         ]
     addon_paths = extensions.paths_for(ext_ids)
     first_open = not (profile["open_count"] or 0)
-    builtin = extensions.builtin_manager_button(open_sidebar=first_open)
+    startup_page = profile["startup_page"]
+    manager_url = None
+    if config.OPEN_MANAGER:
+        if startup_page == "dashboard":
+            manager_url = config.local_dashboard_url()
+        elif startup_page == "default" and db.get_setting("open_manager_on_launch", True):
+            manager_url = config.MANAGER_URL
+    builtin = extensions.builtin_manager_button(open_sidebar=first_open and startup_page == "default")
     if builtin:
         addon_paths.append(builtin)
 
@@ -168,6 +175,8 @@ def _camoufox_command(profile, proxy, session_id, headless, manager_url, status_
         "addons": addon_paths,
         "proxy": proxy,
         "manager_url": manager_url,
+        "startup_page": startup_page,
+        "block_images": bool(profile["block_images"]),
         "status_file": str(status_path),
     }
     plan_path = config.RUN_DIR / f"{session_id}.plan.json"
@@ -214,15 +223,18 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         if proxy:
             raise LaunchError("ENGINE_OPTIONS", "当前 Chromium 预览版不支持绑定代理", 422)
         try:
-            command = chromium.launch_command(profile_dir, profile["local_fonts"], headless)
+            command = chromium.launch_command(
+                profile_dir, profile["local_fonts"], headless,
+                open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
+                block_images=bool(profile["block_images"]),
+            )
         except BlockingIOError as exc:
             raise LaunchError("PROFILE_LOCKED", str(exc)) from exc
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
             raise LaunchError("CHROMIUM_UNAVAILABLE", f"无法启动 Moltskin Chromium：{exc}", 503) from exc
         status_path = None
     else:
-        manager_url = config.MANAGER_URL if config.OPEN_MANAGER and db.get_setting("open_manager_on_launch", True) else None
-        command = _camoufox_command(profile, proxy, session_id, headless, manager_url, status_path)
+        command = _camoufox_command(profile, proxy, session_id, headless, status_path)
 
     # Serialize reservation and PID publication across API, batch, and scheduled launches.
     with db.session() as conn:
@@ -232,7 +244,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
         if _active_session(conn, profile_id):
             raise LaunchError("PROFILE_LOCKED", "该环境正在启动或运行")
-        if is_chromium and any(current[k] != profile[k] for k in ("engine", "local_fonts", "headless", "proxy_id")):
+        launch_fields = ("engine", "local_fonts", "headless", "proxy_id", "startup_page", "block_images")
+        if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
 
         active_count = conn.execute(

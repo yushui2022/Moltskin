@@ -43,11 +43,14 @@ from .security import get_token
 
 Engine = Literal["camoufox", "chromium"]
 FontPolicy = Literal["standard", "restricted"]
+StartupPage = Literal["default", "dashboard", "blank"]
 
 
 class ProfileCreate(BaseModel):
     engine: Engine = "camoufox"
     local_fonts: FontPolicy = "standard"
+    startup_page: StartupPage = "default"
+    block_images: bool = False
     name: str = Field(min_length=1, max_length=120)
     group_id: str | None = None
     proxy_id: str | None = None
@@ -61,6 +64,8 @@ class ProfileCreate(BaseModel):
 class ProfileUpdate(BaseModel):
     engine: Engine | None = None
     local_fonts: FontPolicy | None = None
+    startup_page: StartupPage = "default"
+    block_images: bool = False
     name: str | None = None
     group_id: str | None = None
     proxy_id: str | None = None
@@ -237,6 +242,8 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
         "name": row["name"],
         "engine": row["engine"],
         "local_fonts": row["local_fonts"],
+        "startup_page": row["startup_page"],
+        "block_images": bool(row["block_images"]),
         "group": {"id": row["group_id"], "name": row["group_name"]} if row["group_id"] else None,
         "tags": json.loads(row["tags"] or "[]"),
         "remark": row["remark"],
@@ -502,6 +509,8 @@ def _profile_export(ids: list[str] | None = None):
             "name": row["name"],
             "engine": row["engine"],
             "local_fonts": row["local_fonts"],
+            "startup_page": row["startup_page"],
+            "block_images": bool(row["block_images"]),
             "group": row["group_name"],
             "tags": json.loads(row["tags"] or "[]"),
             "remark": row["remark"],
@@ -593,11 +602,11 @@ def _store_import_profile(item: ImportedProfile) -> str:
 
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
-                "user_data_dir, headless, status, created_at, updated_at, engine, local_fonts) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
+                "user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, startup_page, block_images) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
                 (profile_id, name, group_id, proxy_id, json.dumps(item.tags, ensure_ascii=False), item.remark,
                  item.os, json.dumps(item.fingerprint, ensure_ascii=False), str(user_data_dir),
-                 int(item.headless), ts, ts, item.engine, item.local_fonts),
+                 int(item.headless), ts, ts, item.engine, item.local_fonts, item.startup_page, int(item.block_images)),
             )
             user_data_dir.mkdir(mode=0o700)
             cleanup.callback(user_data_dir.rmdir)
@@ -718,6 +727,7 @@ def engine():
             "camoufox": pkg_version("camoufox"),
             "playwright": pkg_version("playwright"),
             "browsers": browsers,
+            "dashboard_startup_available": config.OPEN_MANAGER,
             "chromium": {"available": problem is None, "version": chromium_version, "message": problem},
         }
     }
@@ -873,8 +883,8 @@ def create_profile(payload: ProfileCreate):
         with db.session() as conn:
             conn.execute(
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
-                "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
+                "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, startup_page, block_images) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
                 (
                     profile_id,
                     payload.name.strip(),
@@ -890,6 +900,8 @@ def create_profile(payload: ProfileCreate):
                     ts,
                     payload.engine,
                     payload.local_fonts,
+                    payload.startup_page,
+                    int(payload.block_images),
                 ),
             )
     except sqlite3.IntegrityError:
@@ -918,7 +930,7 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     fields: dict[str, Any] = {}
     if "local_fonts" in provided and payload.local_fonts != row["local_fonts"]:
         fields["local_fonts"] = payload.local_fonts
-    for key in ("name", "group_id", "proxy_id", "remark", "os", "headless"):
+    for key in ("name", "group_id", "proxy_id", "remark", "os", "headless", "startup_page", "block_images"):
         if key in provided:
             value = provided[key]
             if key in ("group_id", "proxy_id") and value == "":
@@ -1008,8 +1020,8 @@ def duplicate_profile(profile_id: str):
     with db.session() as conn:
         conn.execute(
             "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
-            "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?)",
+            "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, local_fonts, startup_page, block_images) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?)",
             (
                 new_profile_id,
                 f"{row['name']} 副本",
@@ -1025,6 +1037,8 @@ def duplicate_profile(profile_id: str):
                 ts,
                 row["engine"],
                 row["local_fonts"],
+                row["startup_page"],
+                row["block_images"],
             ),
         )
     db.log("profile.duplicate", new_profile_id, {"from": profile_id})

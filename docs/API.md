@@ -61,6 +61,16 @@ curl -G .../profiles -H "Authorization: Bearer $TOKEN" \
 
 Omitting `engine` selects Camoufox, including for profiles saved before dual-engine support. To create a Chromium profile, send `{"name":"local-preview","engine":"chromium","local_fonts":"restricted"}`. Supported font policies are `standard` (default, follows site permissions) and `restricted` (empty local font list). Each profile keeps its engine for its lifetime. Close a Chromium profile before updating its font policy. The usual launch, stop and status endpoints apply.
 
+Profiles accept `startup_page` and `block_images` on creation and update. Changes take effect at the next launch. `startup_page` accepts the following values.
+
+| Value | First tab |
+|-------|-----------|
+| `default` | Camoufox follows the global manager setting. Chromium opens a blank tab. |
+| `dashboard` | Open the local dashboard home on the configured service port. Hosts with `MOLTSKIN_OPEN_MANAGER=0` open a blank tab. |
+| `blank` | Open a blank tab in either engine. |
+
+`block_images` defaults to `false`. Set it to `true` to disable page image loading. Existing profiles keep `default` and continue loading images. Both preferences travel with configuration exports and duplicates.
+
 ```bash
 curl -X POST http://127.0.0.1:8765/api/v1/profiles \
   -H "Authorization: Bearer $TOKEN" \
@@ -285,7 +295,7 @@ The file contains configuration such as the browser engine, group, tags, headles
 | `profile_limit` | 200 | Environment quota shown in the UI |
 | `daily_open_limit` | 20000 | Daily launch quota shown in the UI |
 | `headless` | false | Default headless mode for new environments |
-| `open_manager_on_launch` | true | Open the manager as the first tab |
+| `open_manager_on_launch` | true | Open the manager as the first tab for Camoufox profiles using the default startup page |
 | `proxy_check_url` | `https://ipinfo.io/json` | Proxy check endpoint |
 | `proxy_health_check_minutes` | 30 | Background proxy re-check interval, `0` = off |
 | `require_proxy_ok` | false | Refuse to launch when the proxy is not healthy |

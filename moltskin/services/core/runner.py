@@ -79,6 +79,7 @@ def main() -> int:
 
     kwargs = {
         "headless": bool(plan.get("headless", False)),
+        "block_images": bool(plan.get("block_images", False)),
         "persistent_context": True,
         "user_data_dir": str(profile_dir),
         "humanize": True,
@@ -127,15 +128,17 @@ def main() -> int:
                 # Diagnostic failures must leave the user's browser running.
                 print(f"启动读数不可用 ({type(exc).__name__})", flush=True)
 
-            manager_url = plan.get("manager_url")
-            if manager_url:
+            start_url = plan.get("manager_url")
+            if not start_url and plan.get("startup_page", "default") != "default":
+                start_url = "about:blank"
+            if start_url:
                 try:
                     page = context.pages[0] if context.pages else context.new_page()
-                    page.goto(manager_url, wait_until="domcontentloaded", timeout=15000)
+                    page.goto(start_url, wait_until="domcontentloaded", timeout=15000)
                     page.bring_to_front()
-                    print(f"manager page: {page.title()}", flush=True)
+                    print(f"startup page: {page.title()}", flush=True)
                 except Exception as exc:  # noqa: BLE001 - 管理页打不开不应影响环境本身
-                    print(f"manager page failed: {exc}", flush=True)
+                    print(f"startup page failed: {exc}", flush=True)
 
             while not STOP:
                 try:
