@@ -1,6 +1,6 @@
 # Moltskin Chromium 指纹能力对照
 
-核对版本为 Chromium `158.0.8127.88`，主要实测平台为 macOS arm64。Ubuntu x86-64 已另行验证双环境隔离，以及 Canvas 2D 和 WebGL 读取限制。Chromium 环境可按窗口选择运行平台、架构、屏幕尺寸、像素比和 WebGL 显卡型号，不再固定报告本机操作系统或 GPU。Canvas 2D 与 WebGL 像素噪声可按环境开启，面板还可以分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、音视频采集和网站定位。Camoufox 环境支持自己的指纹预设，两个内核走不同的启动路径。[锁定版本](upstream.json) · [Chromium 启动器](../moltskin/services/core/chromium.py) · [Camoufox 启动器](../moltskin/services/core/runner.py)
+核对版本为 Chromium `158.0.8127.88`，主要实测平台为 macOS arm64。Ubuntu x86-64 已另行验证双环境隔离，以及 Canvas 2D 和 WebGL 读取限制。Chromium 环境可按窗口选择运行平台、架构、屏幕尺寸、像素比和 WebGL 显卡型号，不再固定报告本机操作系统或 GPU。Canvas 2D 与 WebGL 像素噪声、AudioContext 指纹噪声可按环境开启，面板还可以分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、音视频采集和网站定位。Camoufox 环境支持自己的指纹预设，两个内核走不同的启动路径。[锁定版本](upstream.json) · [Chromium 启动器](../moltskin/services/core/chromium.py) · [Camoufox 启动器](../moltskin/services/core/runner.py)
 
 ## 面板预览与正常窗口
 
@@ -20,7 +20,7 @@
 | 窗口内外尺寸 | 启动外框尺寸和屏幕预设可选 | 可选择启动时的实际窗口宽高，启动后仍能手动调整。网页内部可用的高度受工具栏影响。虚拟屏幕尺寸、色深和像素比由「屏幕分辨率与像素比」单独设置。[屏幕回归](../tests/test_chromium_screen.py) |
 | Canvas 2D 像素读取与导出 | 可选择像素噪声或限制读取 | 开启噪声后，`getImageData`、`toDataURL` 和 `toBlob` 得到稳定的 ±1 颜色扰动，Alpha 不变；裁剪读取与整图读取的对应像素一致。限制读取会让 2D 像素读取和画布导出返回权限错误。[像素噪声回归](../tests/test_chromium_canvas_noise.py) · [读取限制回归](../tests/test_chromium_graphics_privacy.py) |
 | WebGL 厂商/型号、扩展、上下文属性、着色精度 | 可选择显卡预设、开启像素噪声，也可限制调试扩展 | 可选择 Apple、Intel、NVIDIA 或 AMD 显卡预设，覆盖 `WEBGL_debug_renderer_info` 返回的未遮蔽厂商和型号；遮蔽值仍为 `WebKit` / `WebKit WebGL`。在 WebGL 1 和 2 中也可关闭该扩展，网页与专用 Worker 均受策略约束。普通 3D 绘图和像素读取仍可用。开启像素噪声后，`readPixels` 返回稳定的 ±1 颜色扰动，Alpha 不变。上下文属性与着色精度仍无环境级预设。[显卡回归](../tests/test_chromium_webgl_info.py) · [像素噪声回归](../tests/test_chromium_canvas_noise.py) · [扩展限制回归](../tests/test_chromium_graphics_privacy.py) |
-| AudioContext 采样率、输出延迟、最大声道数 | 未实现 | 两种环境下，离线音频图输出的 256 个采样值均符合预期。这里的采样率由测试网页指定；实际声卡、扬声器和输出延迟仍待验证。 |
+| AudioContext 样本与指纹 | 可开启音频噪声 | 开启后，`OfflineAudioContext` 渲染结果和 `decodeAudioData` 得到的样本带稳定的 ±0.0001 扰动，听感不可闻；同一环境图案稳定，不同环境不同。采样率、输出延迟和最大声道数仍沿用真实设备，未提供环境级预设。[音频噪声回归](../tests/test_chromium_audio_noise.py) |
 | 语音合成声音列表与播放速率 | 未实现 | 没有按环境提供声音或速率预设，也没有语音播放专项回归。 |
 | 麦克风、摄像头、扬声器数量 | 未实现数量配置 | 已能阻止音视频采集。模拟设备测试验证了受限环境读不到输入设备的名称、设备 ID 和分组 ID。扬声器数量和输出设备列表尚未验收。 |
 | HTTP User-Agent、Accept-Language 与 Navigator 联动 | UA、语言和平台可按窗口设置 | Chromium 将窗口设置的 UA 用于 HTTP `User-Agent` 和 `navigator.userAgent`。留空时，平台预设会生成对应系统的默认 UA。首选语言应用到 HTTP `Accept-Language` 和 Navigator。Client Hints 的平台、版本、架构和位数随平台预设同步。[平台设置回归](../tests/test_chromium_platform_settings.py) |

@@ -257,6 +257,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 chromium_screen=profile["chromium_screen"], chromium_platform=profile["chromium_platform"],
                 chromium_webgl=profile["chromium_webgl"],
                 canvas_noise_seed=chromium.canvas_noise_seed(profile["id"]) if profile["chromium_canvas_noise"] else 0,
+                audio_noise_seed=chromium.audio_noise_seed(profile["id"]) if profile["chromium_audio_noise"] else 0,
             )
         except BlockingIOError as exc:
             raise LaunchError("PROFILE_LOCKED", str(exc)) from exc
@@ -286,7 +287,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                          "chromium_user_agent", "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
                          "hardware_reporting", "canvas_readback", "webgl_debug_info", "proxy_id", "startup_page", "block_images", "browser_language",
                          "browser_timezone", "browser_window_size", "chromium_screen", "chromium_platform", "chromium_webgl",
-                         "chromium_canvas_noise")
+                         "chromium_canvas_noise", "chromium_audio_noise")
         if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
         if is_chromium and proxy:

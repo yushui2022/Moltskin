@@ -1,0 +1,171 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -38,6 +38,9 @@
+ // Adds deterministic per-profile noise to canvas and WebGL pixel readbacks.
+ inline constexpr char kMoltskinCanvasNoise[] = "moltskin-canvas-noise";
+ 
++// Adds deterministic per-profile noise to rendered and decoded audio samples.
++inline constexpr char kMoltskinAudioNoise[] = "moltskin-audio-noise";
++
+ }  // namespace blink::switches
+ 
+ #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+@@ -108,6 +108,7 @@
+                      ExceptionState&);
+ 
+   void Zero();
++  void ApplyMoltskinAudioNoise();
+ 
+   void Trace(Visitor* visitor) const override {
+     visitor->Trace(channels_);
+@@ -123,6 +124,7 @@
+   uint32_t length_;
+ 
+   HeapVector<Member<DOMFloat32Array>> channels_;
++  bool moltskin_noise_applied_ = false;
+ };
+ 
+ // Shared data that audio threads can hold onto.
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -35,6 +35,7 @@
+ #include "base/containers/span.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
+ #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
++#include "third_party/blink/renderer/modules/webaudio/moltskin_audio_noise.h"
+ #include "third_party/blink/renderer/platform/audio/audio_bus.h"
+ #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+@@ -199,6 +200,7 @@
+     channel_data_array->AsSpan().copy_from(bus->Channel(i)->Span());
+     channels_.push_back(channel_data_array);
+   }
++  ApplyMoltskinAudioNoise();
+ }
+ 
+ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
+@@ -310,6 +312,16 @@
+   DCHECK(dst.data());
+ 
+   dst.subspan(buffer_offset, count).copy_from(src.first(count));
++}
++
++void AudioBuffer::ApplyMoltskinAudioNoise() {
++  if (moltskin_noise_applied_ || GetMoltskinAudioNoiseSeed() == 0) {
++    return;
++  }
++  moltskin_noise_applied_ = true;
++  for (unsigned channel = 0; channel < channels_.size(); ++channel) {
++    AddMoltskinAudioNoise(channels_[channel]->AsSpan(), channel);
++  }
+ }
+ 
+ void AudioBuffer::Zero() {
+--- a/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
++++ b/third_party/blink/renderer/modules/webaudio/offline_audio_context.cc
+@@ -38,6 +38,7 @@
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
++#include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_listener.h"
+ #include "third_party/blink/renderer/modules/webaudio/deferred_task_handler.h"
+ #include "third_party/blink/renderer/modules/webaudio/offline_audio_completion_event.h"
+@@ -578,6 +579,7 @@
+   Member<AudioBuffer> rendered_buffer = pending_render_targets_.front();
+ 
+   CHECK(rendered_buffer);
++  rendered_buffer->ApplyMoltskinAudioNoise();
+   // Keep the target queued across `Resolve()` so synchronous thenable getters
+   // can enqueue more chunks without starting a duplicate render.
+   resolver->Resolve(rendered_buffer.Get());
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4034,6 +4034,7 @@
+       blink::switches::kMaxUntiledLayerHeight,
+       blink::switches::kMoltskinBlockCanvasReadback,
+       blink::switches::kMoltskinBlockWebGLDebugInfo,
++      blink::switches::kMoltskinAudioNoise,
+       blink::switches::kMoltskinCanvasNoise,
+       blink::switches::kMoltskinHideWebdriver,
+       blink::switches::kMoltskinLimitHardwareReporting,
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -446,6 +446,7 @@
+       puts("moltskin-block-geolocation");
+       puts("moltskin-block-webgl-debug-info");
+       puts("moltskin-block-canvas-readback");
++      puts("moltskin-audio-noise");
+       puts("moltskin-canvas-noise");
+       puts("moltskin-limit-hardware-reporting");
+       puts("moltskin-hide-webdriver");
+--- /dev/null
++++ b/third_party/blink/renderer/modules/webaudio/moltskin_audio_noise.h
+@@ -0,0 +1,65 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_MOLTSKIN_AUDIO_NOISE_H_
++#define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_MOLTSKIN_AUDIO_NOISE_H_
++
++#include <algorithm>
++#include <cstdint>
++
++#include "base/command_line.h"
++#include "base/containers/span.h"
++#include "base/strings/string_number_conversions.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
++
++namespace blink {
++
++inline uint32_t GetMoltskinAudioNoiseSeed() {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kMoltskinAudioNoise)) {
++    return 0;
++  }
++  uint32_t seed = 0;
++  if (!base::StringToUint(
++          command_line->GetSwitchValueASCII(switches::kMoltskinAudioNoise),
++          &seed)) {
++    return 0;
++  }
++  return seed;
++}
++
++inline uint32_t MoltskinAudioNoiseMix(uint32_t value) {
++  value ^= value >> 16;
++  value *= 0x7feb352dU;
++  value ^= value >> 15;
++  value *= 0x846ca68bU;
++  value ^= value >> 16;
++  return value;
++}
++
++// A -80 dBFS perturbation is inaudible but changes float samples and quantized
++// fingerprint hashes.
++inline float MoltskinAudioNoiseDelta(uint32_t hash) {
++  constexpr float kAmplitude = 1.0e-4f;
++  return static_cast<float>(static_cast<int>(hash % 3U) - 1) * kAmplitude;
++}
++
++inline void AddMoltskinAudioNoise(base::span<float> samples,
++                                  unsigned channel_index) {
++  const uint32_t seed = GetMoltskinAudioNoiseSeed();
++  if (seed == 0) {
++    return;
++  }
++  for (size_t i = 0; i < samples.size(); ++i) {
++    const uint32_t hash = MoltskinAudioNoiseMix(
++        seed ^ (static_cast<uint32_t>(i) * 0x9e3779b1U) ^
++        (channel_index * 0x85ebca77U));
++    samples[i] = std::clamp(samples[i] + MoltskinAudioNoiseDelta(hash), -1.0f,
++                            1.0f);
++  }
++}
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_MOLTSKIN_AUDIO_NOISE_H_

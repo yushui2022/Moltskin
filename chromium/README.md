@@ -1,6 +1,6 @@
 # Moltskin Chromium 开发预览
 
-本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录，可单独设置 Canvas 2D 读取、WebGL 显卡调试信息、Canvas/WebGL 像素噪声、本机字体、摄像头与麦克风采集及定位权限。各项指纹面的支持状态、实测范围与平台差异见[指纹能力对照](fingerprint-coverage.md)。
+本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录，可单独设置 Canvas 2D 读取、WebGL 显卡调试信息、Canvas/WebGL 像素噪声、AudioContext 指纹噪声、本机字体、摄像头与麦克风采集及定位权限。各项指纹面的支持状态、实测范围与平台差异见[指纹能力对照](fingerprint-coverage.md)。
 
 ## 打开桌面管理窗口
 
@@ -69,6 +69,15 @@ Chromium 窗口可在「WebGL 显卡型号」选择 Apple、Intel、NVIDIA 或 A
 颜色通道加入确定性的 `-1`、`0` 或 `+1` 扰动，Alpha 通道保持不变。同一环境每次启动得到相同图案；复制或重新导入的环境会获得新的环境 ID，因此噪声图案不同。裁剪读取使用画布绝对坐标，和整图读取的对应像素一致。
 
 噪声只在读取时应用，不改写画布内部像素，所以页面上的绘制结果和后续 `drawImage()` 不会累积误差。开启后 `toBlob()` 会跳过渐进式编码，以统一应用噪声。选择「限制 Canvas 像素读取」时，读取本身会被拒绝，噪声设置不会绕过限制。[实机回归](../tests/test_chromium_canvas_noise.py)
+
+### AudioContext 指纹噪声
+
+在「指纹设置」中开启「AudioContext 指纹噪声」后，启动器从环境 ID 派生独立的种子，并传入 `--moltskin-audio-noise=<seed>`。内核在以下位置加入确定性的微小样本扰动：
+
+- `OfflineAudioContext.startRendering()` 返回的渲染结果
+- `decodeAudioData()` 返回的 `AudioBuffer`
+
+扰动幅度为 `±0.0001`，约 -80 dBFS，听感不可闻，但会改变浮点样本和量化后的指纹哈希。同一环境每次启动得到相同图案；不同环境以及同一环境的 Canvas 噪声使用不同种子。直播 AnalyserNode 输出、采样率、输出延迟和声道数仍来自真实音频设备。[实机回归](../tests/test_chromium_audio_noise.py)
 
 ### 自动化标记与 WebRTC
 
