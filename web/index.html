@@ -1812,6 +1812,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <select class="select" id="fWebglDebugInfo" aria-describedby="fWebglHint"><option value="standard">标准</option><option value="blocked">限制读取</option></select>
               <span class="hint" id="fWebglHint"></span>
             </div>
+            <label class="editor-switch"><span>Canvas 与 WebGL 像素噪声</span><input type="checkbox" id="fCanvasNoise" role="switch" aria-describedby="fCanvasNoiseHint"></label>
+            <div class="field full hint" id="fCanvasNoiseHint"></div>
             <div class="field"><label for="fMediaCapture">摄像头和麦克风</label>
               <select class="select" id="fMediaCapture" aria-describedby="fMediaHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
               <span class="hint" id="fMediaHint"></span>
@@ -1914,6 +1916,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <select class="select" id="bWebglDebugInfo" aria-describedby="bWebglHint"><option value="standard">标准</option><option value="blocked">限制读取</option></select>
         <span class="hint" id="bWebglHint"></span>
       </div>
+      <label class="editor-switch" data-engine="chromium" hidden><span>Canvas 与 WebGL 像素噪声</span><input type="checkbox" id="bCanvasNoise" role="switch" aria-describedby="bCanvasNoiseHint"></label>
+      <div class="field full hint" id="bCanvasNoiseHint" data-engine="chromium" hidden></div>
       <div class="field" data-engine="chromium" hidden><label for="bMediaCapture">摄像头和麦克风</label>
         <select class="select" id="bMediaCapture" aria-describedby="bMediaHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
         <span class="hint" id="bMediaHint"></span>
@@ -2792,7 +2796,8 @@ function webglLabel(value) {
 function chromiumConfigSummary(p) {
   return [p.browser_language, p.browser_timezone, p.browser_window_size && regionLabel(p.browser_window_size),
     p.chromium_screen && regionLabel(p.chromium_screen), p.chromium_platform && regionLabel(p.chromium_platform),
-    p.chromium_webgl && webglLabel(p.chromium_webgl)].filter(Boolean).join(" · ") || "浏览器默认";
+    p.chromium_webgl && webglLabel(p.chromium_webgl), p.chromium_canvas_noise && "像素噪声"]
+    .filter(Boolean).join(" · ") || "浏览器默认";
 }
 
 function presetScreenSize(preview) {
@@ -2821,7 +2826,7 @@ function rowHtml(p, index) {
     cfg = [p.chromium_version ? "Chromium " + p.chromium_version : "Chromium", chromiumConfigSummary(p),
       "字体" + fontsLabel(p), p.media_capture === "blocked" && "音视频采集已阻止", p.geolocation === "blocked" && "位置已阻止",
       p.canvas_readback === "blocked" && "Canvas 读取受限", p.webgl_debug_info === "blocked" && "WebGL 显卡信息受限",
-      p.hardware_reporting === "limited" && "硬件读数受限", p.chromium_mute_audio && "静音", p.chromium_renderer_limit && p.chromium_renderer_limit + " 个渲染进程"].filter(Boolean).join(" · ");
+      p.chromium_canvas_noise && "像素噪声", p.hardware_reporting === "limited" && "硬件读数受限", p.chromium_mute_audio && "静音", p.chromium_renderer_limit && p.chromium_renderer_limit + " 个渲染进程"].filter(Boolean).join(" · ");
   } else if (preview) {
     const os = { macos: "macOS", linux: "Linux", windows: "Win" }[preview.os];
     const cores = preview.hardware_concurrency;
@@ -3633,6 +3638,7 @@ function renderEditorSettings() {
     browser_language: $("fBrowserLanguage").value, browser_timezone: $("fBrowserTimezone").value,
     browser_window_size: $("fBrowserWindowSize").value, chromium_screen: $("fChromiumScreen").value,
     chromium_platform: $("fChromiumPlatform").value, chromium_webgl: $("fChromiumWebgl").value,
+    chromium_canvas_noise: $("fCanvasNoise").checked,
   });
   $("fNetworkSummary").textContent = $("fProxy").selectedOptions[0]?.text || "";
   const startup = $("fStartupPage");
@@ -3852,6 +3858,13 @@ function setEngineFields(prefix, saved = null) {
   const mute = $(prefix + "MuteAudio");
   if (saved) mute.checked = Boolean(saved.chromium_mute_audio);
   mute.disabled = locked || !info?.chromium_renderer_limits;
+  const canvasNoise = $(prefix + "CanvasNoise");
+  const canvasNoiseSupported = capabilities?.supports_canvas_noise_policy === true;
+  if (saved) canvasNoise.checked = Boolean(saved.chromium_canvas_noise);
+  canvasNoise.disabled = locked || !canvasNoiseSupported;
+  $(prefix + "CanvasNoiseHint").textContent = locked ? "关闭此窗口后可修改像素噪声。" :
+    !state.engine ? "正在读取内核设置…" : !canvasNoiseSupported ? "当前内核不支持像素噪声，请更新内核后使用。" :
+    "开启后，同一环境每次读取的 Canvas 和 WebGL 像素会带稳定的 ±1 噪声；不同环境互不相同。";
   for (const field of chromiumProfileFields) {
     const choices = state.engine?.chromium?.[field.options] || [];
     const control = $(prefix + field.control);
@@ -3908,6 +3921,8 @@ function engineSettings(prefix, creating) {
     }
     const mute = $(prefix + "MuteAudio");
     if (!mute.disabled) values.chromium_mute_audio = mute.checked;
+    const canvasNoise = $(prefix + "CanvasNoise");
+    if (!canvasNoise.disabled) values.chromium_canvas_noise = canvasNoise.checked;
     for (const field of chromiumProfileFields) {
       const control = $(prefix + field.control);
       if (!control.disabled) values[field.key] = control.value;
@@ -4348,6 +4363,7 @@ function openDetail(id, initialFocus = null) {
       <div class="kv"><div class="k">屏幕分辨率与像素比</div><div class="v">${esc(regionLabel(p.chromium_screen) || "跟随系统")}</div></div>
       <div class="kv"><div class="k">运行平台与架构</div><div class="v">${esc(regionLabel(p.chromium_platform) || "跟随系统")}</div></div>
       <div class="kv"><div class="k">WebGL 显卡型号</div><div class="v">${esc(webglLabel(p.chromium_webgl) || "跟随系统")}</div></div>
+      <div class="kv"><div class="k">Canvas 与 WebGL 像素噪声</div><div class="v">${p.chromium_canvas_noise ? "开启" : "关闭"}</div></div>
       <div class="kv"><div class="k">本机字体访问</div><div class="v">${fontsLabel(p)}</div></div>
       <div class="kv"><div class="k">Canvas 像素读取</div><div class="v">${p.canvas_readback === "blocked" ? "限制读取" : "标准"}</div></div>
       <div class="kv"><div class="k">WebGL 显卡信息</div><div class="v">${p.webgl_debug_info === "blocked" ? "限制读取" : "标准"}</div></div>

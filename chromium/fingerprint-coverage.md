@@ -1,6 +1,6 @@
 # Moltskin Chromium 指纹能力对照
 
-核对版本为 Chromium `158.0.8127.88`，主要实测平台为 macOS arm64。Ubuntu x86-64 已另行验证双环境隔离，以及 Canvas 2D 和 WebGL 读取限制。Chromium 环境可按窗口选择运行平台、架构、屏幕尺寸、像素比和 WebGL 显卡型号，不再固定报告本机操作系统或 GPU。面板还可以分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、音视频采集和网站定位。Camoufox 环境支持自己的指纹预设，两个内核走不同的启动路径。[锁定版本](upstream.json) · [Chromium 启动器](../moltskin/services/core/chromium.py) · [Camoufox 启动器](../moltskin/services/core/runner.py)
+核对版本为 Chromium `158.0.8127.88`，主要实测平台为 macOS arm64。Ubuntu x86-64 已另行验证双环境隔离，以及 Canvas 2D 和 WebGL 读取限制。Chromium 环境可按窗口选择运行平台、架构、屏幕尺寸、像素比和 WebGL 显卡型号，不再固定报告本机操作系统或 GPU。Canvas 2D 与 WebGL 像素噪声可按环境开启，面板还可以分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、音视频采集和网站定位。Camoufox 环境支持自己的指纹预设，两个内核走不同的启动路径。[锁定版本](upstream.json) · [Chromium 启动器](../moltskin/services/core/chromium.py) · [Camoufox 启动器](../moltskin/services/core/runner.py)
 
 ## 面板预览与正常窗口
 
@@ -18,7 +18,8 @@
 | CPU 并发数和设备内存 | 可选择标准值或限制报告上限 | 限制时，逻辑处理器数最多报告 4，设备内存档位最多报告 4 GiB。Mac 上同一环境标准模式实测为 18 / 32 GiB，受限模式为 4 / 4 GiB。恢复默认后读数复原。导航和子资源请求收到的两种内存提示头均同步从 32 变为 4。Linux 已加入同一验收脚本，仍待实机复测。[测试范围](../tests/test_chromium_hardware_reporting.py) |
 | 屏幕尺寸、分辨率、像素比 | 可选择屏幕预设 | 每个窗口可选 `WIDTHxHEIGHTxDEPTH@DPR` 预设；`screen.width/height/availWidth/availHeight/colorDepth`、`devicePixelRatio`、`device-width`/`device-height`/`resolution` 媒体查询同步。窗口外框尺寸仍由「启动窗口大小」单独控制。[实机回归](../tests/test_chromium_screen.py) |
 | 窗口内外尺寸 | 启动外框尺寸和屏幕预设可选 | 可选择启动时的实际窗口宽高，启动后仍能手动调整。网页内部可用的高度受工具栏影响。虚拟屏幕尺寸、色深和像素比由「屏幕分辨率与像素比」单独设置。[屏幕回归](../tests/test_chromium_screen.py) |
-| WebGL 厂商/型号、扩展、上下文属性、着色精度 | 可选择显卡预设，也可限制调试扩展 | 可选择 Apple、Intel、NVIDIA 或 AMD 显卡预设，覆盖 `WEBGL_debug_renderer_info` 返回的未遮蔽厂商和型号；遮蔽值仍为 `WebKit` / `WebKit WebGL`。在 WebGL 1 和 2 中也可关闭该扩展，网页与专用 Worker 均受策略约束。普通 3D 绘图和像素读取仍可用。上下文属性与着色精度仍无环境级预设。[显卡回归](../tests/test_chromium_webgl_info.py) · [扩展限制回归](../tests/test_chromium_graphics_privacy.py) |
+| Canvas 2D 像素读取与导出 | 可选择像素噪声或限制读取 | 开启噪声后，`getImageData`、`toDataURL` 和 `toBlob` 得到稳定的 ±1 颜色扰动，Alpha 不变；裁剪读取与整图读取的对应像素一致。限制读取会让 2D 像素读取和画布导出返回权限错误。[像素噪声回归](../tests/test_chromium_canvas_noise.py) · [读取限制回归](../tests/test_chromium_graphics_privacy.py) |
+| WebGL 厂商/型号、扩展、上下文属性、着色精度 | 可选择显卡预设、开启像素噪声，也可限制调试扩展 | 可选择 Apple、Intel、NVIDIA 或 AMD 显卡预设，覆盖 `WEBGL_debug_renderer_info` 返回的未遮蔽厂商和型号；遮蔽值仍为 `WebKit` / `WebKit WebGL`。在 WebGL 1 和 2 中也可关闭该扩展，网页与专用 Worker 均受策略约束。普通 3D 绘图和像素读取仍可用。开启像素噪声后，`readPixels` 返回稳定的 ±1 颜色扰动，Alpha 不变。上下文属性与着色精度仍无环境级预设。[显卡回归](../tests/test_chromium_webgl_info.py) · [像素噪声回归](../tests/test_chromium_canvas_noise.py) · [扩展限制回归](../tests/test_chromium_graphics_privacy.py) |
 | AudioContext 采样率、输出延迟、最大声道数 | 未实现 | 两种环境下，离线音频图输出的 256 个采样值均符合预期。这里的采样率由测试网页指定；实际声卡、扬声器和输出延迟仍待验证。 |
 | 语音合成声音列表与播放速率 | 未实现 | 没有按环境提供声音或速率预设，也没有语音播放专项回归。 |
 | 麦克风、摄像头、扬声器数量 | 未实现数量配置 | 已能阻止音视频采集。模拟设备测试验证了受限环境读不到输入设备的名称、设备 ID 和分组 ID。扬声器数量和输出设备列表尚未验收。 |
@@ -26,7 +27,7 @@
 | WebRTC 协议层地址 | 固定代理时禁用非代理 UDP | 普通网页请求可以按环境指定固定代理；有代理时启动参数加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 绕过代理。完整 STUN/UDP 地址替换和媒体链路仍需独立验收。[窗口代理](README.md#窗口代理) |
 | 定位坐标、时区和区域语言 | 时区、网站首选语言可选 | 时区应用于该窗口页面与 Worker 的日期计算和 Intl 时区。浏览器菜单语言及 Intl 默认格式语言由系统和浏览器决定。定位权限可以单独阻止，面板不配置定位坐标。 |
 | Battery API | 未实现 | 没有电量、充电状态等环境级配置，也没有针对该接口的专项回归。 |
-| 其他常见表面 | 部分权限可用 | 可按窗口限制 Canvas 2D 像素读取和图像导出。已验证本机字体枚举限制、拉丁字体回退及网页图标字体。ClientRects 无环境级预设。[图形隐私说明](README.md#图形隐私) |
+| 其他常见表面 | 部分权限可用 | 可按窗口限制 Canvas 2D 像素读取和图像导出，或开启稳定像素噪声。已验证本机字体枚举限制、拉丁字体回退及网页图标字体。ClientRects 无环境级预设。[像素噪声回归](../tests/test_chromium_canvas_noise.py) · [图形隐私说明](README.md#图形隐私) |
 
 实机回归分别覆盖了[字体与排版](../tests/test_chromium_font_rendering.py)、[图形与离线音频](../tests/test_chromium_graphics_audio.py)、[媒体采集](../tests/test_chromium_media_capture.py)和[定位](../tests/test_chromium_geolocation.py)。
 

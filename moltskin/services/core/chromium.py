@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import socket
@@ -12,8 +13,8 @@ from pathlib import Path
 
 from chromium.native import (
     CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
-    HARDWARE_REPORTING_CAPABILITY, PLATFORM_CAPABILITY, SCREEN_METRICS_CAPABILITY, WEBDRIVER_CAPABILITY,
-    WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY,
+    CANVAS_NOISE_CAPABILITY, HARDWARE_REPORTING_CAPABILITY, PLATFORM_CAPABILITY, SCREEN_METRICS_CAPABILITY,
+    WEBDRIVER_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY,
     check_access_policies, chromium_owns_directory, resolve_build,
 )
 
@@ -31,7 +32,7 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    canvas_readback: str = "standard", webgl_debug_info: str = "standard",
                    browser_language: str = "", browser_window_size: str = "",
                    chromium_screen: str = "", chromium_platform: str = "",
-                   chromium_webgl: str = "") -> tuple[list[str], str]:
+                   chromium_webgl: str = "", canvas_noise_seed: int = 0) -> tuple[list[str], str]:
     if sys.platform not in ("darwin", "linux"):
         raise ValueError("Chromium 预览版仅支持 macOS 和 Linux")
     if local_fonts not in ("standard", "restricted"):
@@ -58,6 +59,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("未知的平台预设")
     if chromium_webgl and chromium_webgl not in config.CHROMIUM_WEBGL_PRESETS:
         raise ValueError("未知的显卡预设")
+    if canvas_noise_seed and not 0 < canvas_noise_seed <= 0xFFFFFFFF:
+        raise ValueError("Canvas 噪声种子无效")
     config.validate_chromium_user_agent(chromium_user_agent)
     binary, version, capabilities = resolve_build(chromium_version)
     check_access_policies(capabilities, media_capture, geolocation, webgl_debug_info, canvas_readback, hardware_reporting)
@@ -67,6 +70,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("当前内核缺少 moltskin-platform 补丁，请更新内核以使用平台预设")
     if chromium_webgl and WEBGL_INFO_CAPABILITY not in capabilities:
         raise ValueError("当前内核缺少 moltskin-webgl-info 补丁，请更新内核以使用显卡预设")
+    if canvas_noise_seed and CANVAS_NOISE_CAPABILITY not in capabilities:
+        raise ValueError("当前内核缺少 moltskin-canvas-noise 补丁，请更新内核以使用像素噪声")
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
     args = [str(binary), f"--user-data-dir={profile_dir.absolute()}", "--no-first-run", "--no-default-browser-check"]
@@ -114,6 +119,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         _, vendor, renderer = chromium_webgl.split("|", 2)
         args.append("--moltskin-webgl-vendor=" + vendor)
         args.append("--moltskin-webgl-renderer=" + renderer)
+    if canvas_noise_seed:
+        args.append(f"--{CANVAS_NOISE_CAPABILITY}={canvas_noise_seed}")
     if headless:
         args.append("--headless")
     if workbench_session:
@@ -122,6 +129,12 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
     else:
         args.append(config.local_dashboard_url() if open_dashboard else "about:blank")
     return args, version
+
+
+def canvas_noise_seed(profile_id: str) -> int:
+    """Stable per-profile seed; a new profile id produces a new noise pattern."""
+    digest = hashlib.sha256(("moltskin-canvas-noise:" + profile_id).encode()).digest()
+    return int.from_bytes(digest[:4], "big") or 1
 
 
 def check_profile_version(profile_dir: Path, version: str, last_launched: str | None) -> None:

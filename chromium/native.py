@@ -20,11 +20,12 @@ WEBDRIVER_CAPABILITY = "moltskin-hide-webdriver"
 SCREEN_METRICS_CAPABILITY = "moltskin-screen-metrics"
 PLATFORM_CAPABILITY = "moltskin-platform"
 WEBGL_INFO_CAPABILITY = "moltskin-webgl-info"
+CANVAS_NOISE_CAPABILITY = "moltskin-canvas-noise"
 CANVAS_READBACK_SWITCH = CANVAS_READBACK_CAPABILITY
 DESKTOP_CAPABILITIES = frozenset({CAPABILITY, MEDIA_CAPTURE_CAPABILITY, GEOLOCATION_CAPABILITY,
                                   WEBGL_DEBUG_INFO_CAPABILITY, CANVAS_READBACK_CAPABILITY, HARDWARE_REPORTING_CAPABILITY,
                                   WEBDRIVER_CAPABILITY, SCREEN_METRICS_CAPABILITY, PLATFORM_CAPABILITY,
-                                  WEBGL_INFO_CAPABILITY, "moltskin-panel", "moltskin-toolbar"})
+                                  WEBGL_INFO_CAPABILITY, CANVAS_NOISE_CAPABILITY, "moltskin-panel", "moltskin-toolbar"})
 
 
 def default_binary() -> Path:

@@ -10,7 +10,7 @@ Moltskin 是可自行部署的多环境指纹浏览器。每个环境有独立�
 
 双击 Mac 上的 Moltskin，先进入独立的管理窗口。在「浏览器窗口」中点击某个环境的「打开」，面板显示启动状态，随后可在该环境自己的浏览器中使用标签页和地址栏。默认设置下，Chromium 的首个标签页显示该窗口的工作台。
 
-创建环境时可以选择 Camoufox 或 Chromium，并在 Chromium 环境中分别限制 Canvas 2D 读取、WebGL 显卡调试信息、网站可见的 CPU 并发数与设备内存、本机字体枚举、摄像头与麦克风采集以及网站定位。在该窗口打开「查看当前浏览器实测值」可以核对图形隐私设置的效果。重启后沿用该环境的内核和数据目录。Chromium 已在 Apple Silicon 和 Ubuntu x86-64 上运行。在专用 Ubuntu 主机上，单个 SSH 用户可从自己电脑的浏览器打开和操作 Linux Chromium 窗口，断线后可重连仍在运行的会话。[部署 Linux 网页远程窗口](chromium/remote/README.md) · [构建与使用 Chromium 预览版](chromium/README.md) · [逐项指纹能力对照](chromium/fingerprint-coverage.md)
+创建环境时可以选择 Camoufox 或 Chromium，并在 Chromium 环境中分别限制 Canvas 2D 读取、WebGL 显卡调试信息、网站可见的 CPU 并发数与设备内存、本机字体枚举、摄像头与麦克风采集以及网站定位；还可按窗口设置屏幕、平台、WebGL 显卡和 Canvas/WebGL 像素噪声。在该窗口打开「查看当前浏览器实测值」可以核对图形隐私设置的效果。重启后沿用该环境的内核和数据目录。Chromium 已在 Apple Silicon 和 Ubuntu x86-64 上运行。在专用 Ubuntu 主机上，单个 SSH 用户可从自己电脑的浏览器打开和操作 Linux Chromium 窗口，断线后可重连仍在运行的会话。[部署 Linux 网页远程窗口](chromium/remote/README.md) · [构建与使用 Chromium 预览版](chromium/README.md) · [逐项指纹能力对照](chromium/fingerprint-coverage.md)
 
 | 里程碑 | 交付时怎样验证 |
 |---|---|
@@ -75,7 +75,7 @@ Camoufox 环境使用以下公开组件来启动浏览器、生成指纹和处�
 - 一键关闭，状态自动回收
 - 在「代理 IP → 批量导入」粘贴列表或选择 TXT、CSV 文件。预览按行标出重复项和错误，每次可导入最多 500 条有效代理。代理池支持检测出口 IP、国家、时区和延迟。
 - Chromium 窗口可选系统网络，也可绑定代理库中未设置凭据的 HTTP、HTTPS 或 SOCKS5 代理。重启保留绑定。变更窗口的网络配置前需先关闭窗口。固定代理时禁用非代理 WebRTC UDP。[网络设置与适用范围](chromium/README.md#窗口代理)
-- Chromium 内核补丁隐藏 `navigator.webdriver`，即使通过 Playwright/CDP 启动也返回 `false`；屏幕尺寸/像素比预设同步 `screen`、`devicePixelRatio` 和媒体查询；平台预设同步 `navigator.platform`、UA 和 Client Hints；WebGL 显卡预设覆盖调试扩展读取的厂商和型号。[实机回归](tests/test_chromium_webdriver.py) · [屏幕回归](tests/test_chromium_screen.py) · [平台回归](tests/test_chromium_platform_settings.py) · [显卡回归](tests/test_chromium_webgl_info.py)
+- Chromium 内核补丁隐藏 `navigator.webdriver`，即使通过 Playwright/CDP 启动也返回 `false`；屏幕尺寸/像素比预设同步 `screen`、`devicePixelRatio` 和媒体查询；平台预设同步 `navigator.platform`、UA 和 Client Hints；WebGL 显卡预设覆盖调试扩展读取的厂商和型号；Canvas 与 WebGL 像素噪声为每个环境生成稳定且互不相同的微小颜色扰动。[实机回归](tests/test_chromium_webdriver.py) · [屏幕回归](tests/test_chromium_screen.py) · [平台回归](tests/test_chromium_platform_settings.py) · [显卡回归](tests/test_chromium_webgl_info.py) · [像素噪声回归](tests/test_chromium_canvas_noise.py)
 - 环境列表、搜索、状态筛选
 - 单个或批量创建时可选「管理首页（全部环境）」「空白页」或「沿用默认设置」，也可禁止加载网页图片。两个内核均支持，修改在下次启动时生效，配置可随环境导出。
 - 并发上限、无头模式

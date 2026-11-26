@@ -1,6 +1,6 @@
 # Moltskin Chromium 开发预览
 
-本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录，可单独设置 Canvas 2D 读取、WebGL 显卡调试信息、本机字体、摄像头与麦克风采集及定位权限。各项指纹面的支持状态、实测范围与平台差异见[指纹能力对照](fingerprint-coverage.md)。
+本地控制面板和命令行都可以启动 Chromium 开发包。每个环境都有独立的数据目录，可单独设置 Canvas 2D 读取、WebGL 显卡调试信息、Canvas/WebGL 像素噪声、本机字体、摄像头与麦克风采集及定位权限。各项指纹面的支持状态、实测范围与平台差异见[指纹能力对照](fingerprint-coverage.md)。
 
 ## 打开桌面管理窗口
 
@@ -58,6 +58,17 @@ Chromium 窗口可在「运行平台与架构」选择 Windows、macOS 或 Linux
 Chromium 窗口可在「WebGL 显卡型号」选择 Apple、Intel、NVIDIA 或 AMD 显卡预设。启动器把预设拆成 `--moltskin-webgl-vendor` 和 `--moltskin-webgl-renderer` 两个参数，内核只覆盖 `WEBGL_debug_renderer_info` 扩展返回的 `UNMASKED_VENDOR_WEBGL` 和 `UNMASKED_RENDERER_WEBGL`。遮蔽的 `VENDOR` 与 `RENDERER` 仍返回 `WebKit` 和 `WebKit WebGL`，与标准 Chromium 一致。
 
 显卡预设只改变网页读到的厂商和型号字符串，不改变实际 GPU、驱动、渲染结果或性能。选择「限制 WebGL 显卡调试信息」时，该扩展不可用，显卡预设也不会暴露。[实机回归](../tests/test_chromium_webgl_info.py)
+
+### Canvas 与 WebGL 像素噪声
+
+在「指纹设置」中开启「Canvas 与 WebGL 像素噪声」后，启动器从环境 ID 派生一个稳定种子，并传入 `--moltskin-canvas-noise=<seed>`。内核覆盖以下读取路径：
+
+- Canvas 2D `getImageData()`、`toDataURL()` 和 `toBlob()`
+- WebGL `readPixels()` 和 WebGL 画布导出
+
+颜色通道加入确定性的 `-1`、`0` 或 `+1` 扰动，Alpha 通道保持不变。同一环境每次启动得到相同图案；复制或重新导入的环境会获得新的环境 ID，因此噪声图案不同。裁剪读取使用画布绝对坐标，和整图读取的对应像素一致。
+
+噪声只在读取时应用，不改写画布内部像素，所以页面上的绘制结果和后续 `drawImage()` 不会累积误差。开启后 `toBlob()` 会跳过渐进式编码，以统一应用噪声。选择「限制 Canvas 像素读取」时，读取本身会被拒绝，噪声设置不会绕过限制。[实机回归](../tests/test_chromium_canvas_noise.py)
 
 ### 自动化标记与 WebRTC
 
