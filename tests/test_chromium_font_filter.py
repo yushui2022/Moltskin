@@ -66,6 +66,28 @@ def test_launcher_enables_font_filter_for_windows(tmp_path, monkeypatch):
     assert "--moltskin-font-filter=windows" in args
 
 
+def test_same_os_windows_keeps_host_fonts(tmp_path, monkeypatch):
+    monkeypatch.setattr(chromium, "_host_platform_family", lambda: "windows")
+    monkeypatch.setattr(
+        chromium,
+        "resolve_build",
+        lambda version: (
+            tmp_path / "Chromium",
+            "158.0.0.0",
+            frozenset({FONT_FILTER_CAPABILITY, PLATFORM_CAPABILITY}),
+        ),
+    )
+    monkeypatch.setattr(chromium, "check_access_policies", lambda *args: None)
+    monkeypatch.setattr(chromium, "chromium_owns_directory", lambda path: False)
+    args, _ = chromium.prepare_launch(
+        tmp_path,
+        "standard",
+        True,
+        chromium_platform="windows:10.0.0:x86_64",
+    )
+    assert "--moltskin-font-filter=windows" not in args
+
+
 def test_launcher_keeps_host_fonts_for_macos(tmp_path, monkeypatch):
     monkeypatch.setattr(
         chromium,

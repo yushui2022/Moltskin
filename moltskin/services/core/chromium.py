@@ -24,14 +24,20 @@ from . import config
 from .security import workbench_signature
 
 
-def _platform_family(chromium_platform: str) -> str:
-    if chromium_platform:
-        return chromium_platform.split(":", 1)[0]
+def _host_platform_family() -> str:
     if sys.platform == "darwin":
         return "macos"
     if sys.platform.startswith("linux"):
         return "linux"
-    return "windows"
+    if sys.platform == "win32":
+        return "windows"
+    return "unknown"
+
+
+def _platform_family(chromium_platform: str) -> str:
+    if chromium_platform:
+        return chromium_platform.split(":", 1)[0]
+    return _host_platform_family()
 
 
 def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
@@ -122,11 +128,13 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append(f"--renderer-process-limit={chromium_renderer_limit}")
     if block_images:
         args.append("--blink-settings=imagesEnabled=false")
+    target_family = _platform_family(chromium_platform)
+    cross_os = target_family != _host_platform_family()
     if browser_language:
         args.append(f"--accept-lang={browser_language}")
         if LOCALE_CAPABILITY in capabilities:
             args.append(f"--{LOCALE_CAPABILITY}={browser_language}")
-        if (chromium_platform.startswith("windows:") and
+        if (cross_os and target_family == "windows" and
                 SPEECH_VOICES_CAPABILITY in capabilities):
             args.append(f"--{SPEECH_VOICES_CAPABILITY}={browser_language}")
     if chromium_user_agent:
@@ -146,14 +154,14 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--" + SCREEN_METRICS_CAPABILITY + "=" + screen_value)
     if chromium_platform:
         args.append("--" + PLATFORM_CAPABILITY + "=" + chromium_platform)
-        if (chromium_platform.startswith("windows:") and
-                FONT_FILTER_CAPABILITY in capabilities):
+    if cross_os and target_family == "windows":
+        if FONT_FILTER_CAPABILITY in capabilities:
             args.append("--" + FONT_FILTER_CAPABILITY + "=windows")
     if chromium_webgl:
         _, vendor, renderer = chromium_webgl.split("|", 2)
         args.append("--moltskin-webgl-vendor=" + vendor)
         args.append("--moltskin-webgl-renderer=" + renderer)
-        if (chromium_platform.startswith("windows:") and
+        if (cross_os and target_family == "windows" and
                 WEBGL_PARAMS_CAPABILITY in capabilities):
             args.append("--moltskin-webgl-profile=windows")
     if canvas_noise_seed:

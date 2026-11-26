@@ -15,7 +15,7 @@ Chromium 也已接入独立的 Canvas 2D 读取控制和 WebGL 显卡调试扩�
 | 用户操作 | 当前行为 | 下一步与验收方法 |
 |---|---|---|
 | 给某个窗口选代理 | 代理库支持 TXT、CSV 批量导入、校验和检测。Camoufox 可以绑定代理。Chromium 使用系统网络，API 和启动器均会拒绝绑定。 | 优先让使用者在列表和批量操作预览中看见每个窗口的网络模式。为 Chromium 接入按环境绑定后，用两个环境访问自有测试端点，各自核对出口。指定代理不可用时应提示失败，禁止静默改走系统网络。[代理导入测试](../tests/test_proxy_bulk_import.py) · [启动约束](../moltskin/services/core/launcher.py) |
-| 改系统、处理器或其他环境参数 | Chromium 可按窗口设置 UA、网站首选语言、时区、启动窗口尺寸、屏幕尺寸/像素比、运行平台与架构，以及部分网站权限。社媒与电商场景建议保持与宿主相同的系统画像，跨系统会与字体、Emoji 和语音冲突。普通页面读取所选平台和显卡预设；Canvas 与 WebGL 像素噪声、AudioContext 指纹噪声可按环境开启；WebGL 上下文属性与真实音频设备参数仍无环境级预设。 | 拉齐创建页、环境详情、工作台的表述，让用户能分别看到配置值、该窗口的实测值和仅预览项。保存平台与屏幕预设后重启，访问自有测试页核对 JS 读数、Client Hints 和请求头，三处都应与配置一致。未采样的项目显示「未验证」。[内核能力对照](../chromium/fingerprint-coverage.md) · [平台设置回归](../tests/test_chromium_platform_settings.py) |
+| 改系统、处理器或其他环境参数 | Chromium 可按窗口设置 UA、网站首选语言、时区、启动窗口尺寸、屏幕尺寸/像素比、运行平台与架构，以及部分网站权限。社媒与电商场景建议保持与宿主相同的系统画像；只有跨系统 Windows 画像才启用字体白名单、Windows 语音和 WebGL 参数画像。普通页面读取所选平台和显卡预设；Canvas 与 WebGL 像素噪声、AudioContext 指纹噪声可按环境开启；WebGL 上下文属性与真实音频设备参数仍无环境级预设。 | 拉齐创建页、环境详情、工作台的表述，让用户能分别看到配置值、该窗口的实测值和仅预览项。保存平台与屏幕预设后重启，访问自有测试页核对 JS 读数、Client Hints 和请求头，三处都应与配置一致。未采样的项目显示「未验证」。[内核能力对照](../chromium/fingerprint-coverage.md) · [平台设置回归](../tests/test_chromium_platform_settings.py) |
 
 ## 团队上云的验收顺序
 
