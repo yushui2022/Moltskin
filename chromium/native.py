@@ -18,16 +18,19 @@ CANVAS_READBACK_CAPABILITY = "moltskin-block-canvas-readback"
 HARDWARE_REPORTING_CAPABILITY = "moltskin-limit-hardware-reporting"
 WEBDRIVER_CAPABILITY = "moltskin-hide-webdriver"
 SCREEN_METRICS_CAPABILITY = "moltskin-screen-metrics"
+SCREEN_AVAIL_CAPABILITY = "moltskin-screen-avail"
 PLATFORM_CAPABILITY = "moltskin-platform"
 WEBGL_INFO_CAPABILITY = "moltskin-webgl-info"
 CANVAS_NOISE_CAPABILITY = "moltskin-canvas-noise"
 AUDIO_NOISE_CAPABILITY = "moltskin-audio-noise"
 LOCALE_CAPABILITY = "moltskin-locale"
+SPEECH_VOICES_CAPABILITY = "moltskin-speech-voices"
 CANVAS_READBACK_SWITCH = CANVAS_READBACK_CAPABILITY
 DESKTOP_CAPABILITIES = frozenset({CAPABILITY, MEDIA_CAPTURE_CAPABILITY, GEOLOCATION_CAPABILITY,
                                   WEBGL_DEBUG_INFO_CAPABILITY, CANVAS_READBACK_CAPABILITY, HARDWARE_REPORTING_CAPABILITY,
-                                  WEBDRIVER_CAPABILITY, SCREEN_METRICS_CAPABILITY, PLATFORM_CAPABILITY,
+                                  WEBDRIVER_CAPABILITY, SCREEN_METRICS_CAPABILITY, SCREEN_AVAIL_CAPABILITY, PLATFORM_CAPABILITY,
                                   WEBGL_INFO_CAPABILITY, CANVAS_NOISE_CAPABILITY, AUDIO_NOISE_CAPABILITY, LOCALE_CAPABILITY,
+                                  SPEECH_VOICES_CAPABILITY,
                                   "moltskin-panel", "moltskin-toolbar"})
 
 

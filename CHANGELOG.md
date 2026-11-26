@@ -12,6 +12,8 @@
 - Chromium 内核补丁 `0014-audio-noise`：窗口可开启 AudioContext 指纹噪声，对 OfflineAudioContext 渲染结果和解码音频加入稳定、听感不可闻的样本扰动。
 - Chromium 内核补丁 `0015-analyser-noise`：同一音频开关也覆盖 `AnalyserNode` 的浮点/字节频域和时域读数。
 - Chromium 内核补丁 `0016-locale`：网站首选语言同时设置渲染进程的 ICU 默认区域，`Intl` 格式化与 `navigator.language` 保持一致。
+- Chromium 内核补丁 `0017-speech-voices`：按网站首选语言生成稳定的 Windows 风格语音列表，替换宿主机的 macOS 语音。
+- Chromium 内核补丁 `0018-screen-avail`：屏幕预设支持单独设置 `availWidth/availHeight`，产品默认模拟 Windows 任务栏占用。
 - Chromium 窗口绑定固定代理时加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 绕过代理使用非代理 UDP。
 
 ## 0.4.1 — 2026-11-07

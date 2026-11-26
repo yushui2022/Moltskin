@@ -41,6 +41,18 @@ CHROMIUM_SCREEN_PRESETS = (
     "2560x1440x24@1.25",
     "3840x2160x24@1.5",
 )
+# Windows-style taskbar leaves the desktop work area smaller than the screen.
+CHROMIUM_SCREEN_AVAIL = {
+    "1280x720x24@1": "1280x680",
+    "1366x768x24@1": "1366x728",
+    "1440x900x24@1": "1440x860",
+    "1536x864x24@1.25": "1536x824",
+    "1920x1080x24@1": "1920x1040",
+    "1920x1080x24@1.25": "1920x1040",
+    "2560x1440x24@1": "2560x1400",
+    "2560x1440x24@1.25": "2560x1400",
+    "3840x2160x24@1.5": "3840x2120",
+}
 CHROMIUM_PLATFORM_PRESETS = (
     "windows:10.0.0:x86_64",
     "windows:10.0.0:arm64",

@@ -1,0 +1,65 @@
+--- a/third_party/blink/renderer/core/frame/moltskin_screen_metrics.h
++++ b/third_party/blink/renderer/core/frame/moltskin_screen_metrics.h
+@@ -23,6 +23,8 @@
+   int height = 0;
+   int depth = 24;
+   double device_scale_factor = 1.0;
++  int avail_width = 0;
++  int avail_height = 0;
+ };
+ 
+ inline std::optional<MoltskinScreenMetrics> GetMoltskinScreenMetrics() {
+@@ -41,14 +43,30 @@
+   if (parts.size() != 3) {
+     return std::nullopt;
+   }
++  const size_t pipe = value.find('|', at + 1);
++  const std::string scale_text =
++      value.substr(at + 1, pipe == std::string::npos ? std::string::npos
++                                                     : pipe - at - 1);
+   MoltskinScreenMetrics metrics;
+   if (!base::StringToInt(parts[0], &metrics.width) ||
+       !base::StringToInt(parts[1], &metrics.height) ||
+       !base::StringToInt(parts[2], &metrics.depth) ||
+-      !base::StringToDouble(value.substr(at + 1),
+-                            &metrics.device_scale_factor)) {
++      !base::StringToDouble(scale_text, &metrics.device_scale_factor)) {
+     return std::nullopt;
+   }
++  if (pipe != std::string::npos) {
++    const std::vector<std::string> avail_parts = base::SplitString(
++        value.substr(pipe + 1), "x", base::TRIM_WHITESPACE,
++        base::SPLIT_WANT_ALL);
++    if (avail_parts.size() != 2 ||
++        !base::StringToInt(avail_parts[0], &metrics.avail_width) ||
++        !base::StringToInt(avail_parts[1], &metrics.avail_height) ||
++        metrics.avail_width < 320 ||
++        metrics.avail_width > metrics.width || metrics.avail_height < 240 ||
++        metrics.avail_height > metrics.height) {
++      return std::nullopt;
++    }
++  }
+   if (metrics.width < 320 || metrics.width > 10000 || metrics.height < 240 ||
+       metrics.height > 10000 || metrics.depth < 16 || metrics.depth > 32 ||
+       metrics.device_scale_factor < 0.5 ||
+@@ -65,7 +83,9 @@
+     return;
+   }
+   screen_info->rect = gfx::Rect(0, 0, metrics->width, metrics->height);
+-  screen_info->available_rect = screen_info->rect;
++  screen_info->available_rect = gfx::Rect(
++      0, 0, metrics->avail_width ? metrics->avail_width : metrics->width,
++      metrics->avail_height ? metrics->avail_height : metrics->height);
+   screen_info->depth = metrics->depth;
+   screen_info->depth_per_component = 8;
+   screen_info->is_monochrome = false;
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -453,6 +453,7 @@
+       puts("moltskin-hide-webdriver");
+       puts("moltskin-platform");
+       puts("moltskin-screen-metrics");
++      puts("moltskin-screen-avail");
+       puts("moltskin-speech-voices");
+       puts("moltskin-webgl-info");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)

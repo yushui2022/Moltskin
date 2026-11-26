@@ -1,0 +1,155 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -44,6 +44,9 @@
+ // Sets the renderer ICU default locale for Intl and locale-aware formatting.
+ inline constexpr char kMoltskinLocale[] = "moltskin-locale";
+ 
++// Replaces the platform speech-synthesis voice list with a stable set.
++inline constexpr char kMoltskinSpeechVoices[] = "moltskin-speech-voices";
++
+ }  // namespace blink::switches
+ 
+ #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+@@ -25,9 +25,13 @@
+ 
+ #include "third_party/blink/renderer/modules/speech/speech_synthesis.h"
+ 
++#include <optional>
++#include <string>
+ #include <tuple>
+ 
++#include "base/command_line.h"
+ #include "build/build_config.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/platform/platform.h"
+@@ -47,6 +51,92 @@
+ 
+ namespace blink {
+ 
++namespace {
++
++struct MoltskinVoiceSpec {
++  const char* name;
++};
++
++constexpr MoltskinVoiceSpec kEnglishUsVoices[] = {
++    {"Microsoft David - English (United States)"},
++    {"Microsoft Zira - English (United States)"},
++    {"Microsoft Mark - English (United States)"},
++};
++constexpr MoltskinVoiceSpec kEnglishGbVoices[] = {
++    {"Microsoft George - English (United Kingdom)"},
++    {"Microsoft Hazel - English (United Kingdom)"},
++};
++constexpr MoltskinVoiceSpec kJapaneseVoices[] = {
++    {"Microsoft Haruka - Japanese (Japan)"},
++    {"Microsoft Ichiro - Japanese (Japan)"},
++};
++constexpr MoltskinVoiceSpec kGermanVoices[] = {
++    {"Microsoft Hedda - German (Germany)"},
++    {"Microsoft Stefan - German (Germany)"},
++};
++constexpr MoltskinVoiceSpec kFrenchVoices[] = {
++    {"Microsoft Hortense - French (France)"},
++    {"Microsoft Paul - French (France)"},
++};
++constexpr MoltskinVoiceSpec kChineseVoices[] = {
++    {"Microsoft Huihui - Chinese (Simplified, PRC)"},
++    {"Microsoft Yaoyao - Chinese (Simplified, PRC)"},
++};
++
++std::optional<std::string> GetMoltskinSpeechLanguage() {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  std::string language;
++  if (command_line->HasSwitch(switches::kMoltskinSpeechVoices)) {
++    language =
++        command_line->GetSwitchValueASCII(switches::kMoltskinSpeechVoices);
++  } else if (command_line->HasSwitch(switches::kMoltskinLocale)) {
++    language = command_line->GetSwitchValueASCII(switches::kMoltskinLocale);
++  }
++  if (language.empty()) {
++    return std::nullopt;
++  }
++  return language;
++}
++
++template <size_t N>
++void AppendMoltskinSpeechVoices(
++    const MoltskinVoiceSpec (&specs)[N],
++    const std::string& language,
++    Vector<mojom::blink::SpeechSynthesisVoicePtr>* result) {
++  size_t index = 0;
++  for (const MoltskinVoiceSpec& spec : specs) {
++    auto voice = mojom::blink::SpeechSynthesisVoice::New();
++    voice->name = String::FromUtf8(spec.name);
++    voice->voice_uri = voice->name;
++    voice->lang = String::FromUtf8(language);
++    voice->is_local_service = true;
++    voice->is_default = index == 0;
++    result->push_back(std::move(voice));
++    ++index;
++  }
++}
++
++Vector<mojom::blink::SpeechSynthesisVoicePtr> BuildMoltskinSpeechVoices(
++    const std::string& language) {
++  Vector<mojom::blink::SpeechSynthesisVoicePtr> result;
++  if (language == "en-US") {
++    AppendMoltskinSpeechVoices(kEnglishUsVoices, language, &result);
++  } else if (language == "en-GB") {
++    AppendMoltskinSpeechVoices(kEnglishGbVoices, language, &result);
++  } else if (language == "ja-JP") {
++    AppendMoltskinSpeechVoices(kJapaneseVoices, language, &result);
++  } else if (language == "de-DE") {
++    AppendMoltskinSpeechVoices(kGermanVoices, language, &result);
++  } else if (language == "fr-FR") {
++    AppendMoltskinSpeechVoices(kFrenchVoices, language, &result);
++  } else if (language == "zh-CN") {
++    AppendMoltskinSpeechVoices(kChineseVoices, language, &result);
++  }
++  return result;
++}
++
++}  // namespace
++
+ const char SpeechSynthesis::kSupplementName[] = "SpeechSynthesis";
+ 
+ 
+@@ -84,6 +174,13 @@
+ 
+ void SpeechSynthesis::OnSetVoiceList(
+     Vector<mojom::blink::SpeechSynthesisVoicePtr> mojom_voices) {
++  if (const std::optional<std::string> language = GetMoltskinSpeechLanguage()) {
++    Vector<mojom::blink::SpeechSynthesisVoicePtr> replacement =
++        BuildMoltskinSpeechVoices(*language);
++    if (!replacement.empty()) {
++      mojom_voices = std::move(replacement);
++    }
++  }
+   voice_list_.clear();
+   for (auto& mojom_voice : mojom_voices) {
+     voice_list_.push_back(
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4041,6 +4041,7 @@
+       blink::switches::kMoltskinLocale,
+       blink::switches::kMoltskinPlatform,
+       blink::switches::kMoltskinScreenMetrics,
++      blink::switches::kMoltskinSpeechVoices,
+       blink::switches::kMoltskinWebglRenderer,
+       blink::switches::kMoltskinWebglVendor,
+       blink::switches::kNetworkQuietTimeout,
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -453,6 +453,7 @@
+       puts("moltskin-hide-webdriver");
+       puts("moltskin-platform");
+       puts("moltskin-screen-metrics");
++      puts("moltskin-speech-voices");
+       puts("moltskin-webgl-info");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");

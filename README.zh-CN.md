@@ -75,7 +75,7 @@ Camoufox 环境使用以下公开组件来启动浏览器、生成指纹和处�
 - 一键关闭，状态自动回收
 - 在「代理 IP → 批量导入」粘贴列表或选择 TXT、CSV 文件。预览按行标出重复项和错误，每次可导入最多 500 条有效代理。代理池支持检测出口 IP、国家、时区和延迟。
 - Chromium 窗口可选系统网络，也可绑定代理库中未设置凭据的 HTTP、HTTPS 或 SOCKS5 代理。重启保留绑定。变更窗口的网络配置前需先关闭窗口。固定代理时禁用非代理 WebRTC UDP。[网络设置与适用范围](chromium/README.md#窗口代理)
-- Chromium 内核补丁隐藏 `navigator.webdriver`，即使通过 Playwright/CDP 启动也返回 `false`；屏幕尺寸/像素比预设同步 `screen`、`devicePixelRatio` 和媒体查询；平台预设同步 `navigator.platform`、UA 和 Client Hints；网站首选语言同时同步 `Intl` 默认区域；WebGL 显卡预设覆盖调试扩展读取的厂商和型号；Canvas 与 WebGL 像素噪声为每个环境生成稳定且互不相同的微小颜色扰动；AudioContext 指纹噪声对离线渲染、解码音频和 AnalyserNode 读数加入听感不可闻的稳定扰动。[实机回归](tests/test_chromium_webdriver.py) · [屏幕回归](tests/test_chromium_screen.py) · [平台回归](tests/test_chromium_platform_settings.py) · [显卡回归](tests/test_chromium_webgl_info.py) · [像素噪声回归](tests/test_chromium_canvas_noise.py) · [音频噪声回归](tests/test_chromium_audio_noise.py)
+- Chromium 内核补丁隐藏 `navigator.webdriver`，即使通过 Playwright/CDP 启动也返回 `false`；屏幕尺寸/像素比预设同步 `screen`、`devicePixelRatio` 和媒体查询；平台预设同步 `navigator.platform`、UA 和 Client Hints；网站首选语言同时同步 `Intl` 默认区域和语音列表；WebGL 显卡预设覆盖调试扩展读取的厂商和型号；Canvas 与 WebGL 像素噪声为每个环境生成稳定且互不相同的微小颜色扰动；AudioContext 指纹噪声对离线渲染、解码音频和 AnalyserNode 读数加入听感不可闻的稳定扰动。[实机回归](tests/test_chromium_webdriver.py) · [屏幕回归](tests/test_chromium_screen.py) · [平台回归](tests/test_chromium_platform_settings.py) · [显卡回归](tests/test_chromium_webgl_info.py) · [像素噪声回归](tests/test_chromium_canvas_noise.py) · [音频噪声回归](tests/test_chromium_audio_noise.py)
 - 环境列表、搜索、状态筛选
 - 单个或批量创建时可选「管理首页（全部环境）」「空白页」或「沿用默认设置」，也可禁止加载网页图片。两个内核均支持，修改在下次启动时生效，配置可随环境导出。
 - 并发上限、无头模式

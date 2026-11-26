@@ -14,8 +14,8 @@ from pathlib import Path
 from chromium.native import (
     CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
     AUDIO_NOISE_CAPABILITY, CANVAS_NOISE_CAPABILITY, HARDWARE_REPORTING_CAPABILITY, LOCALE_CAPABILITY,
-    PLATFORM_CAPABILITY,
-    SCREEN_METRICS_CAPABILITY,
+    PLATFORM_CAPABILITY, SPEECH_VOICES_CAPABILITY,
+    SCREEN_METRICS_CAPABILITY, SCREEN_AVAIL_CAPABILITY,
     WEBDRIVER_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY,
     check_access_policies, chromium_owns_directory, resolve_build,
 )
@@ -116,12 +116,19 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append(f"--accept-lang={browser_language}")
         if LOCALE_CAPABILITY in capabilities:
             args.append(f"--{LOCALE_CAPABILITY}={browser_language}")
+        if SPEECH_VOICES_CAPABILITY in capabilities:
+            args.append(f"--{SPEECH_VOICES_CAPABILITY}={browser_language}")
     if chromium_user_agent:
         args.append(f"--user-agent={chromium_user_agent}")
     if browser_window_size:
         args.append("--window-size=" + browser_window_size.replace("x", ","))
     if chromium_screen:
-        args.append("--" + SCREEN_METRICS_CAPABILITY + "=" + chromium_screen)
+        screen_value = chromium_screen
+        if "|" not in screen_value and SCREEN_AVAIL_CAPABILITY in capabilities:
+            avail = config.CHROMIUM_SCREEN_AVAIL.get(screen_value)
+            if avail:
+                screen_value += "|" + avail
+        args.append("--" + SCREEN_METRICS_CAPABILITY + "=" + screen_value)
     if chromium_platform:
         args.append("--" + PLATFORM_CAPABILITY + "=" + chromium_platform)
     if chromium_webgl:
