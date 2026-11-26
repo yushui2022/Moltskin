@@ -32,6 +32,7 @@ def test_acceptance_rejects_wrong_target_and_propagates_failed_checks(tmp_path, 
     def run(cmd, *, cwd, env):
         assert cmd[0] == "xvfb-run" and "-nolisten tcp" in cmd[3]
         assert "tests/test_chromium_graphics_privacy.py" in cmd and "tests/test_chromium_worker_canvas_policy.py" in cmd
+        assert "tests/test_chromium_hardware_reporting.py" in cmd
         assert env["MOLTSKIN_TEST_X11_INPUT"] == "1" and env["MOLTSKIN_HEADLESS"] == "0"
         assert env["MOLTSKIN_CHROMIUM_BINARY"] == str(binary)
         assert cwd == check_linux.ROOT

@@ -22,6 +22,12 @@
 
 Chromium 环境可在浏览器中登录并保留本机数据。面板里的 Cookie 文件管理、跨环境状态同步和备份中的登录态目前仅支持 Camoufox。Chromium 环境的名称和权限设置随面板数据库一起备份。
 
+### 硬件信息隐私
+
+Chromium 窗口可以沿用浏览器的标准报告，或将网站能读取的逻辑处理器数限制到最多 4 个、设备内存档位限制到最多 4 GiB。两项都取 Chromium 默认报告值与上限中的较小者。内存档位本身是估算值。这项设置只影响对网站公开的数值，操作系统照常分配 CPU 和内存。
+
+限制覆盖页面、iframe 和 Worker 的 `navigator.hardwareConcurrency` 与 `navigator.deviceMemory`，以及网站请求的 `Sec-CH-Device-Memory` 和 `Device-Memory`。可在当前窗口的实测页查看两个 JavaScript 读数。已有窗口默认使用标准模式，选择限制需要内核声明 `moltskin-limit-hardware-reporting`。[实机回归](../tests/test_chromium_hardware_reporting.py)
+
 ### 图形隐私
 
 新建或编辑 Chromium 窗口时，在「指纹设置」中可以分别设置以下两项。已有环境和新窗口默认使用「标准」。
@@ -58,7 +64,7 @@ python3 chromium/launch_preview.py b --local-fonts restricted --media-capture bl
 
 macOS 命名环境使用登录钥匙串保护 Cookie。如果系统询问当前开发版是否可访问「Chromium Safe Storage」，确认是自己启动的版本后，在系统弹窗输入登录钥匙串密码，选择「始终允许」可记住此次授权。重新编译的开发版可能需要重新授权。[Apple 钥匙串说明](https://support.apple.com/guide/mac-help/kychn002/mac)
 
-启动器优先查找 `out/MoltskinGraphicsPrivacy` 开发包，也能打开早期开发包。选择了图形、采集或定位限制的环境，需要使用包含对应补丁的构建。命令行预览可用 `--binary` 指定其他开发包。启动前会向内核确认它支持所需功能。
+启动器优先查找 `out/MoltskinHardwarePrivacy` 开发包，也能打开早期开发包。选择了图形、采集或定位限制的环境，需要使用包含对应补丁的构建。命令行预览可用 `--binary` 指定其他开发包。启动前会向内核确认它支持所需功能。
 
 ## 检查上游版本
 
@@ -149,7 +155,7 @@ pin="$(python3 "$module/verify_upstream.py")" &&
     git apply "$patch"
   done
   out=out/MoltskinLocation
-  if [ "$(uname -s)" = Darwin ]; then out=out/MoltskinGraphicsPrivacy; fi
+  if [ "$(uname -s)" = Darwin ]; then out=out/MoltskinHardwarePrivacy; fi
   mkdir -p "$out"
   cp "$module/args.gn" "$out/args.gn"
   gn gen "$out"
@@ -164,7 +170,7 @@ pin="$(python3 "$module/verify_upstream.py")" &&
 ```sh
 browser="$checkout/src/out/MoltskinLocation/chrome"
 if [ "$(uname -s)" = Darwin ]; then
-  browser="$checkout/src/out/MoltskinGraphicsPrivacy/Chromium.app/Contents/MacOS/Chromium"
+  browser="$checkout/src/out/MoltskinHardwarePrivacy/Chromium.app/Contents/MacOS/Chromium"
 fi
 "$browser" --version --moltskin-capabilities
 python3 chromium/check_local_fonts.py "$browser"
@@ -172,7 +178,7 @@ MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m p
   tests/test_chromium_font_rendering.py tests/test_chromium_storage_isolation.py \
   tests/test_chromium_media_capture.py tests/test_chromium_geolocation.py \
   tests/test_chromium_graphics_audio.py tests/test_chromium_graphics_privacy.py \
-  tests/test_chromium_worker_canvas_policy.py tests/test_chromium_platform.py
+  tests/test_chromium_worker_canvas_policy.py tests/test_chromium_hardware_reporting.py tests/test_chromium_platform.py
 ```
 
 测试在本机启动临时网页和两个独立的浏览器，给相同站点授予字体权限。通过条件为标准环境读到至少一种字体，限制环境读到零种。关闭后交换两边的策略，使用原数据目录重启，再次检查字体数量和各自的站点存储标记。测试只记录数量。

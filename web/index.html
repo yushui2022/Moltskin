@@ -1822,8 +1822,12 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <details class="editor-section" id="profileHardware" data-engine="chromium" name="profile-sections" hidden>
           <summary><strong>硬件与高级</strong><span class="editor-summary" id="fHardwareSummary"></span><svg class="i"><use href="#i-chev"/></svg></summary>
           <div class="editor-fields">
+            <div class="field full"><label for="fHardwareReporting">网页可读取的硬件信息</label>
+              <select class="select" id="fHardwareReporting" aria-describedby="fHardwareReportingHint"><option value="standard">Chromium 默认</option><option value="limited">限制读数上限</option></select>
+              <span class="hint" id="fHardwareReportingHint"></span>
+            </div>
             <div class="field"><label for="fRendererLimit">渲染进程上限</label><select class="select" id="fRendererLimit" aria-describedby="fRendererHint"><option value="0">由 Chromium 分配</option></select><span class="hint" id="fRendererHint">限制用于渲染网页的进程数。站点隔离可能需要额外进程。</span></div>
-            <div class="field"><label for="fHeapLimit">JS 老生代堆上限</label><select class="select" id="fHeapLimit" aria-describedby="fHeapHint"><option value="0">由 Chromium 分配</option></select><span class="hint" id="fHeapHint">限制长期存活的 JavaScript 对象占用的堆空间。网页报告的设备内存由浏览器决定。</span></div>
+            <div class="field"><label for="fHeapLimit">JS 老生代堆上限</label><select class="select" id="fHeapLimit" aria-describedby="fHeapHint"><option value="0">由 Chromium 分配</option></select><span class="hint" id="fHeapHint">限制长期存活的 JavaScript 对象占用的堆空间。</span></div>
             <p class="editor-note runtime-inspection"><a class="runtime-link" href="/runtime.html" target="_blank" rel="noopener">查看当前浏览器实测值</a><span>在目标窗口中打开，可读取该窗口的 UA、硬件并发数和设备内存。</span></p>
           </div>
         </details>
@@ -1886,6 +1890,10 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserTimezone">时区</label><select class="select" id="bBrowserTimezone"><option value="">跟随系统</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserWindowSize">启动窗口大小</label><select class="select" id="bBrowserWindowSize"><option value="">浏览器默认</option></select></div>
+      <div class="field full" data-engine="chromium" hidden><label for="bHardwareReporting">网页可读取的硬件信息</label>
+        <select class="select" id="bHardwareReporting" aria-describedby="bHardwareReportingHint"><option value="standard">Chromium 默认</option><option value="limited">限制读数上限</option></select>
+        <span class="hint" id="bHardwareReportingHint"></span>
+      </div>
       <div class="field" data-engine="chromium" hidden><label for="bRendererLimit">渲染进程上限</label><select class="select" id="bRendererLimit"><option value="0">由 Chromium 分配</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bHeapLimit">JS 老生代堆上限</label><select class="select" id="bHeapLimit"><option value="0">由 Chromium 分配</option></select></div>
       <label class="editor-switch" data-engine="chromium" hidden><span>静音播放</span><input type="checkbox" id="bMuteAudio" role="switch"></label>
@@ -2738,10 +2746,12 @@ const chromiumProfileFields = [
   {control: "BrowserTimezone", key: "browser_timezone", options: "browser_timezones", fallback: "跟随系统"},
   {control: "BrowserWindowSize", key: "browser_window_size", options: "browser_window_sizes", fallback: "浏览器默认"},
 ];
-const chromiumGraphicsFields = [
-  { key: "canvas_readback", control: "CanvasReadback", hint: "CanvasHint",
+const chromiumPrivacyFields = [
+  { key: "hardware_reporting", control: "HardwareReporting", hint: "HardwareReportingHint", restricted: "limited",
+    description: "限制后，网页最多读到 4 个逻辑处理器和 4 GiB 近似设备内存。低于上限时沿用原读数。" },
+  { key: "canvas_readback", control: "CanvasReadback", hint: "CanvasHint", restricted: "blocked",
     description: "限制后，网页无法读取 2D 画布像素，部分图片编辑和画布导出功能可能无法使用。" },
-  { key: "webgl_debug_info", control: "WebglDebugInfo", hint: "WebglHint",
+  { key: "webgl_debug_info", control: "WebglDebugInfo", hint: "WebglHint", restricted: "blocked",
     description: "限制网页通过 WebGL 调试扩展读取显卡厂商和型号。3D 绘图仍可使用。" },
 ];
 const chromiumResourceFields = [
@@ -2788,7 +2798,7 @@ function rowHtml(p, index) {
     cfg = [p.chromium_version ? "Chromium " + p.chromium_version : "Chromium", chromiumConfigSummary(p),
       "字体" + fontsLabel(p), p.media_capture === "blocked" && "音视频采集已阻止", p.geolocation === "blocked" && "位置已阻止",
       p.canvas_readback === "blocked" && "Canvas 读取受限", p.webgl_debug_info === "blocked" && "WebGL 显卡信息受限",
-      p.chromium_mute_audio && "静音", p.chromium_renderer_limit && p.chromium_renderer_limit + " 个渲染进程"].filter(Boolean).join(" · ");
+      p.hardware_reporting === "limited" && "硬件读数受限", p.chromium_mute_audio && "静音", p.chromium_renderer_limit && p.chromium_renderer_limit + " 个渲染进程"].filter(Boolean).join(" · ");
   } else if (preview) {
     const os = { macos: "macOS", linux: "Linux", windows: "Win" }[preview.os];
     const cores = preview.hardware_concurrency;
@@ -3605,9 +3615,10 @@ function renderEditorSettings() {
   renderStartupHint("f");
   $("fStartupSummary").textContent = [$("fHeadless").selectedOptions[0].text,
     startup.selectedOptions[0]?.text, $("fBlockImages").checked && "禁止图片", chromium && $("fMuteAudio").checked && "静音"].filter(Boolean).join(" · ");
-  $("fHardwareSummary").textContent = chromiumResourceFields
-    .map(f => $("f" + f.control)).filter(control => Number(control.value)).map(control => control.selectedOptions[0].text)
-    .join(" · ") || "由 Chromium 分配";
+  const hardwareSummary = chromiumResourceFields.map(f => $("f" + f.control))
+    .filter(control => Number(control.value)).map(control => control.selectedOptions[0].text);
+  if ($("fHardwareReporting").value === "limited") hardwareSummary.unshift("硬件读数受限");
+  $("fHardwareSummary").textContent = hardwareSummary.join(" · ") || "由 Chromium 分配";
 }
 function updateEditorName() {
   $("fBasicSummary").textContent = $("fName").value.trim() || "待填写名称";
@@ -3795,12 +3806,12 @@ function setEngineFields(prefix, saved = null) {
     "下次启动生效。最多 512 个可打印 ASCII 字符。Client Hints 由 Chromium 处理。";
   validateUserAgent(prefix);
   const capabilities = setChromiumBuildChoices(prefix, info, saved ? saved.chromium_version || "" : null, locked);
-  for (const field of chromiumGraphicsFields) {
+  for (const field of chromiumPrivacyFields) {
     const control = $(prefix + field.control);
     const supported = capabilities?.["supports_" + field.key + "_policy"] === true;
     if (saved) control.value = saved[field.key] || "standard";
     control.disabled = locked || !state.engine;
-    control.querySelector('[value="blocked"]').disabled = !supported;
+    control.querySelector(`option[value="${field.restricted}"]`).disabled = !supported;
     $(prefix + field.hint).textContent = !state.engine ? "正在读取内核设置…" :
       supported ? field.description : "当前选择的内核不支持此限制，可使用标准设置。";
   }
@@ -3882,7 +3893,7 @@ function engineSettings(prefix, creating) {
     if (!media.disabled) values.media_capture = media.value;
     const location = $(prefix + "Geolocation");
     if (!location.disabled) values.geolocation = location.value;
-    for (const field of chromiumGraphicsFields) {
+    for (const field of chromiumPrivacyFields) {
       const control = $(prefix + field.control);
       if (!control.disabled) values[field.key] = control.value;
     }
@@ -4022,12 +4033,12 @@ function validateProxyChoice(prefix) {
   return false;
 }
 
-function validateGraphicsChoices(prefix) {
+function validatePrivacyChoices(prefix) {
   if ($(prefix + "Engine").value !== "chromium") return true;
-  for (const field of chromiumGraphicsFields) {
+  for (const field of chromiumPrivacyFields) {
     const control = $(prefix + field.control);
     if (!control.disabled && control.selectedOptions[0]?.disabled) {
-      if (prefix === "f") showEditorSection("profileFingerprint");
+      if (prefix === "f") showEditorSection(control.closest(".editor-section").id);
       control.focus();
       toast(`请选择支持「${control.labels[0].textContent}」限制的内核，或将该设置改为标准。`, true);
       return false;
@@ -4054,7 +4065,7 @@ $("confirmProfile").onclick = async () => {
   const name = $("fName").value.trim();
   if (!name) return reportNameError("请填写窗口名称");
   if (Array.from(name).length > 120) return reportNameError("窗口名称最多 120 个字符");
-  if (!validateProxyChoice("f") || !validateGraphicsChoices("f") || !updatePlatformPreviewActions("f", true) || !validateUserAgent("f", true)) return;
+  if (!validateProxyChoice("f") || !validatePrivacyChoices("f") || !updatePlatformPreviewActions("f", true) || !validateUserAgent("f", true)) return;
   const payload = {
     name,
     ...engineSettings("f", !state.editingId),
@@ -4169,7 +4180,7 @@ function fillBatchSelects() {
     `<option value="${g.id}">${esc(g.name)}</option>`).join("");
 }
 $("confirmBatch").onclick = async () => {
-  if (!validateProxyChoice("b") || !validateGraphicsChoices("b") || !updatePlatformPreviewActions("b", true) || !validateUserAgent("b", true)) return;
+  if (!validateProxyChoice("b") || !validatePrivacyChoices("b") || !updatePlatformPreviewActions("b", true) || !validateUserAgent("b", true)) return;
   const count = Math.max(1, Math.min(200, Number($("bCount").value) || 1));
   const prefix = $("bPrefix").value.trim() || "环境";
   const start = Math.max(1, Number($("bStart").value) || 1);
@@ -4315,6 +4326,7 @@ function openDetail(id, initialFocus = null) {
       <div class="kv"><div class="k">摄像头和麦克风</div><div class="v">${p.media_capture === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
       <div class="kv"><div class="k">地理位置</div><div class="v">${p.geolocation === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
       <div class="kv"><div class="k">启动方式</div><div class="v">${p.headless ? "无头（后台）" : "有头（显示窗口）"}</div></div>
+      <div class="kv"><div class="k">网页可读取的硬件信息</div><div class="v">${p.hardware_reporting === "limited" ? "最多 4 个逻辑处理器、4 GiB 近似设备内存" : "Chromium 默认"}</div></div>
       <div class="kv"><div class="k">渲染进程上限</div><div class="v">${p.chromium_renderer_limit ? esc(p.chromium_renderer_limit) + " 个进程" : "由 Chromium 分配"}</div></div>
       <div class="kv"><div class="k">JS 老生代堆上限</div><div class="v">${p.chromium_js_heap_mb ? esc(p.chromium_js_heap_mb) + " MiB" : "由 Chromium 分配"}</div></div>
       <div class="kv"><div class="k">静音播放</div><div class="v">${p.chromium_mute_audio ? "开启" : "关闭"}</div></div>`;

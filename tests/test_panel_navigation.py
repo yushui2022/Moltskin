@@ -198,11 +198,13 @@ def test_chromium_permission_controls_create_edit_and_batch(panel, monkeypatch):
     # Exercise the panel for a capable build even when the installed UI test browser is older.
     probe_capabilities = native.probe_capabilities
 
-    def graphics_capabilities(binary):
+    def privacy_capabilities(binary):
         path, version, capabilities = probe_capabilities(binary)
-        return path, version, capabilities | {native.CANVAS_READBACK_CAPABILITY, native.WEBGL_DEBUG_INFO_CAPABILITY}
+        return path, version, capabilities | {
+            native.CANVAS_READBACK_CAPABILITY, native.WEBGL_DEBUG_INFO_CAPABILITY, native.HARDWARE_REPORTING_CAPABILITY,
+        }
 
-    monkeypatch.setattr(native, "probe_capabilities", graphics_capabilities)
+    monkeypatch.setattr(native, "probe_capabilities", privacy_capabilities)
     panel.reload()
     panel.locator("#windowEmptyCreate").click()
     panel.locator("#fName").fill("Media A")
@@ -214,7 +216,13 @@ def test_chromium_permission_controls_create_edit_and_batch(panel, monkeypatch):
     expect(canvas).to_be_hidden()
     expect(location).to_be_hidden()
     expect(field).to_be_hidden()
+    hardware = panel.locator("#fHardwareReporting")
+    expect(hardware).to_be_hidden()
     panel.locator("#fEngine").select_option("chromium")
+    panel.locator('button[aria-controls="profileHardware"]').click()
+    expect(hardware).to_have_value("standard")
+    hardware.select_option("limited")
+    expect(panel.locator("#fHardwareSummary")).to_have_text("硬件读数受限")
     panel.locator('button[aria-controls="profileFingerprint"]').click()
     expect(field).to_have_value("standard")
     field.select_option("blocked")
@@ -227,6 +235,7 @@ def test_chromium_permission_controls_create_edit_and_batch(panel, monkeypatch):
 
     row = panel.locator("#rows tr").filter(has_text="Media A")
     row.get_by_role("button", name="Media A").click()
+    expect(panel.locator("#fingerprintPreview .kv").filter(has_text="网页可读取的硬件信息")).to_contain_text("最多 4 个逻辑处理器、4 GiB")
     expect(panel.locator("#fingerprintPreview .kv").filter(has_text="摄像头和麦克风")).to_contain_text("始终阻止")
     expect(panel.locator("#fingerprintPreview .kv").filter(has_text="Canvas 像素读取")).to_contain_text("限制读取")
     expect(panel.locator("#fingerprintPreview .kv").filter(has_text="WebGL 显卡信息")).to_contain_text("限制读取")
@@ -242,8 +251,12 @@ def test_chromium_permission_controls_create_edit_and_batch(panel, monkeypatch):
     webgl.select_option("standard")
     field.select_option("standard")
     location.select_option("standard")
+    panel.locator('button[aria-controls="profileHardware"]').click()
+    expect(hardware).to_have_value("limited")
+    hardware.select_option("standard")
     with panel.expect_response(lambda r: r.request.method == "PATCH" and "/profiles/" in r.url) as updated:
         panel.locator("#confirmProfile").click()
+    assert updated.value.json()["data"]["hardware_reporting"] == "standard"
     assert updated.value.json()["data"]["geolocation"] == "standard"
     assert updated.value.json()["data"]["canvas_readback"] == "standard"
     assert updated.value.json()["data"]["webgl_debug_info"] == "standard"
@@ -264,6 +277,7 @@ def test_chromium_permission_controls_create_edit_and_batch(panel, monkeypatch):
     panel.locator("#bBrowserTimezone").select_option("Europe/London")
     panel.locator("#bBrowserWindowSize").select_option("1440x900")
     panel.locator("#bRendererLimit").select_option("2")
+    panel.locator("#bHardwareReporting").select_option("limited")
     panel.locator("#bHeapLimit").select_option("256")
     panel.locator("#bMuteAudio").check()
     panel.locator("#bMediaCapture").select_option("blocked")
@@ -280,6 +294,7 @@ def test_chromium_permission_controls_create_edit_and_batch(panel, monkeypatch):
         expect(panel.locator("#fingerprintPreview")).to_contain_text("1440 × 900")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("2 个进程")
         expect(panel.locator("#fingerprintPreview")).to_contain_text("256 MiB")
+        expect(panel.locator("#fingerprintPreview")).to_contain_text("最多 4 个逻辑处理器、4 GiB")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="静音播放")).to_contain_text("开启")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="摄像头和麦克风")).to_contain_text("始终阻止")
         expect(panel.locator("#fingerprintPreview .kv").filter(has_text="地理位置")).to_contain_text("始终阻止")
@@ -335,7 +350,7 @@ def test_chromium_fingerprint_choices_saved_by_window_and_locked_while_running(p
     expect(language).to_be_disabled()
     expect(timezone).to_be_disabled()
     expect(size).to_be_disabled()
-    for control in ("fCanvasReadback", "fWebglDebugInfo", "fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio", "fUserAgent", "fResetUserAgent",
+    for control in ("fHardwareReporting", "fCanvasReadback", "fWebglDebugInfo", "fChromiumVersion", "fRendererLimit", "fHeapLimit", "fMuteAudio", "fUserAgent", "fResetUserAgent",
                     "fPreviewPlatform", "fPreviewPlatformVersion", "fPreviewArchitecture", "fResetPlatformPreview"):
         expect(panel.locator("#" + control)).to_be_disabled()
     expect(panel.locator("#fRegionHint")).to_contain_text("关闭此窗口后")
@@ -392,7 +407,8 @@ def test_only_installed_build_enables_its_own_permissions(panel):
         "browsers": [], "chromium": {
             "version": None, "available": True, "installed_versions": [
                 {"version": version, "supports_media_capture_policy": True, "supports_geolocation_policy": False,
-                 "supports_canvas_readback_policy": True, "supports_webgl_debug_info_policy": True},
+                 "supports_canvas_readback_policy": True, "supports_webgl_debug_info_policy": True,
+                 "supports_hardware_reporting_policy": True},
                 {"version": older_version, "supports_webgl_debug_info_policy": True}],
             "supports_media_capture_policy": False, "supports_geolocation_policy": False,
             "supports_canvas_readback_policy": False, "supports_webgl_debug_info_policy": False,
@@ -409,6 +425,9 @@ def test_only_installed_build_enables_its_own_permissions(panel):
     expect(hint).to_contain_text("缺少默认内核")
     panel.locator("#fChromiumVersion").select_option(version)
     expect(hint).to_contain_text("2 个版本")
+    panel.locator('button[aria-controls="profileHardware"]').click()
+    hardware = panel.locator("#fHardwareReporting")
+    hardware.select_option("limited")
     panel.locator('button[aria-controls="profileFingerprint"]').click()
     expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_enabled()
     expect(panel.locator('#fGeolocation option[value="blocked"]')).to_be_disabled()
@@ -420,12 +439,18 @@ def test_only_installed_build_enables_its_own_permissions(panel):
     panel.locator("#fChromiumVersion").select_option(older_version)
     expect(canvas.locator('option[value="blocked"]')).to_be_disabled()
     expect(webgl.locator('option[value="blocked"]')).to_be_enabled()
+    expect(hardware.locator('option[value="limited"]')).to_be_disabled()
     panel.locator("#fChromiumVersion").select_option("")
     expect(panel.locator('#fMediaCapture option[value="blocked"]')).to_be_disabled()
     expect(canvas.locator('option[value="blocked"]')).to_be_disabled()
     expect(webgl.locator('option[value="blocked"]')).to_be_disabled()
     panel.locator('button[aria-controls="profileBasics"]').click()
     panel.locator("#fName").fill("GPU permissions")
+    panel.locator("#confirmProfile").click()
+    expect(hardware).to_be_focused()
+    expect(hardware).to_have_value("limited")
+    expect(panel.locator("#fHardwareReportingHint")).to_contain_text("不支持")
+    hardware.select_option("standard")
     panel.locator("#confirmProfile").click()
     expect(canvas).to_be_focused()
     expect(canvas).to_have_value("blocked")

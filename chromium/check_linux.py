@@ -53,6 +53,7 @@ def main():
         "xvfb-run", "-a", "-s", "-screen 0 1440x900x24 -nolisten tcp",
         sys.executable, "-m", "pytest", "-q", "tests/test_chromium_storage_isolation.py",
         "tests/test_chromium_graphics_privacy.py", "tests/test_chromium_worker_canvas_policy.py",
+        "tests/test_chromium_hardware_reporting.py",
     ], cwd=ROOT, env=env).returncode
 
 
