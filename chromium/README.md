@@ -14,7 +14,7 @@
 
 「浏览器与系统」显示运行浏览器的主机系统与架构。内核版本默认跟随本机默认构建，也可为每个窗口固定一个已安装版本。自定义默认构建时，在启动面板前设置 `MOLTSKIN_CHROMIUM_BINARY`，指向 Mac 的 `Chromium.app` 或 Linux 的 `chrome`。要提供更多版本，可设置 `MOLTSKIN_CHROMIUM_BUILDS_DIR`，每个子目录分别放置一个 `Chromium.app` 或 `chrome`。列表使用程序实际报告的版本。使用旧主版本测试时应新建环境，已由更新主版本使用的数据目录有降级保护。
 
-「网站首选语言」会同时设置 `navigator.language`、HTTP `Accept-Language`、渲染进程的 ICU 默认区域和语音合成列表。`Intl.DateTimeFormat`、`Intl.NumberFormat`、日期与数字格式化都使用该区域，不再跟随宿主系统。语音列表会替换为对应语言的 Windows 风格本地声音，例如 `en-US` 返回 Microsoft David、Zira 和 Mark。实际播放仍由宿主 TTS 后端合成，未知 voiceURI 可能回退到默认声音；该功能用于统一网页可见的环境画像。
+「网站首选语言」会同时设置 `navigator.language`、HTTP `Accept-Language`、渲染进程的 ICU 默认区域和语音合成列表。`Intl.DateTimeFormat`、`Intl.NumberFormat`、日期与数字格式化都使用该区域，不再跟随宿主系统。选择 Windows 平台预设时，语音列表会替换为对应语言的 Windows 风格本地声音，例如 `en-US` 返回 Microsoft David、Zira 和 Mark；macOS、Linux 或未选择平台时保留宿主语音，避免与 Emoji、字体和系统音色冲突。实际播放仍由宿主 TTS 后端合成，未知 voiceURI 可能回退到默认声音；该功能用于统一网页可见的环境画像。
 
 在「浏览器与系统」可以为单个 Chromium 窗口填写 User-Agent。留空使用所选内核的默认 UA。要修改已创建的窗口，先关闭窗口，保存后重新打开。要核对结果，在该环境打开本机 `/runtime.html`，页面会分别显示本机服务收到的 HTTP 请求头和网页通过 `navigator.userAgent` 读到的值，以及此窗口实际公开的平台版本、处理器架构和位数。
 
@@ -47,7 +47,7 @@ Chromium 窗口可以沿用浏览器的标准报告，或将网站能读取的�
 
 ### 屏幕与像素比
 
-Chromium 窗口可在「屏幕分辨率与像素比」选择预设，例如 `1920 × 1080 · 1.25x`。启动器传给内核 `--moltskin-screen-metrics=1920x1080x24@1.25|1920x1040`，其中后半段模拟 Windows 任务栏占用，内核同步覆盖网页读取的 `screen.width/height/availWidth/availHeight/colorDepth`、`devicePixelRatio`，以及 `device-width`、`device-height`、`resolution` 媒体查询。启动窗口外框尺寸仍由「启动窗口大小」独立控制，因此窗口可以小于虚拟屏幕。[实机回归](../tests/test_chromium_screen.py)
+Chromium 窗口可在「屏幕分辨率与像素比」选择预设，例如 `1920 × 1080 · 1.25x`。启动器按平台传入可用工作区：Windows/Linux 使用任务栏占用（例如 `1920x1040`），macOS 使用菜单栏和 Dock 占用（例如 `1920x1000`），未选择平台时按宿主系统选择。启动器传给内核 `--moltskin-screen-metrics=1920x1080x24@1.25|1920x1040`，内核同步覆盖网页读取的 `screen.width/height/availWidth/availHeight/colorDepth`、`devicePixelRatio`，以及 `device-width`、`device-height`、`resolution` 媒体查询。启动窗口外框尺寸仍由「启动窗口大小」独立控制，因此窗口可以小于虚拟屏幕。[实机回归](../tests/test_chromium_screen.py)
 
 ### 平台与 Client Hints
 

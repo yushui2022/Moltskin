@@ -24,6 +24,16 @@ from . import config
 from .security import workbench_signature
 
 
+def _platform_family(chromium_platform: str) -> str:
+    if chromium_platform:
+        return chromium_platform.split(":", 1)[0]
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return "windows"
+
+
 def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    chromium_version: str = "", chromium_user_agent: str = "",
                    proxy_server: str | None = None,
@@ -116,7 +126,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append(f"--accept-lang={browser_language}")
         if LOCALE_CAPABILITY in capabilities:
             args.append(f"--{LOCALE_CAPABILITY}={browser_language}")
-        if SPEECH_VOICES_CAPABILITY in capabilities:
+        if (chromium_platform.startswith("windows:") and
+                SPEECH_VOICES_CAPABILITY in capabilities):
             args.append(f"--{SPEECH_VOICES_CAPABILITY}={browser_language}")
     if chromium_user_agent:
         args.append(f"--user-agent={chromium_user_agent}")
@@ -125,7 +136,11 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
     if chromium_screen:
         screen_value = chromium_screen
         if "|" not in screen_value and SCREEN_AVAIL_CAPABILITY in capabilities:
-            avail = config.CHROMIUM_SCREEN_AVAIL.get(screen_value)
+            avail_map = config.CHROMIUM_SCREEN_AVAIL.get(
+                _platform_family(chromium_platform),
+                config.CHROMIUM_SCREEN_AVAIL["windows"],
+            )
+            avail = avail_map.get(screen_value)
             if avail:
                 screen_value += "|" + avail
         args.append("--" + SCREEN_METRICS_CAPABILITY + "=" + screen_value)

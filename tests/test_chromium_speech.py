@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
-from chromium.native import SPEECH_VOICES_CAPABILITY, default_binary, probe_capabilities
+from chromium.native import PLATFORM_CAPABILITY, SPEECH_VOICES_CAPABILITY, default_binary, probe_capabilities
 from moltskin.services.core import chromium
 
 
@@ -17,7 +17,7 @@ def test_launcher_passes_speech_language(tmp_path, monkeypatch):
         lambda version: (
             tmp_path / "Chromium",
             "158.0.0.0",
-            frozenset({SPEECH_VOICES_CAPABILITY}),
+            frozenset({SPEECH_VOICES_CAPABILITY, PLATFORM_CAPABILITY}),
         ),
     )
     monkeypatch.setattr(chromium, "check_access_policies", lambda *args: None)
@@ -27,9 +27,33 @@ def test_launcher_passes_speech_language(tmp_path, monkeypatch):
         "standard",
         True,
         browser_language="en-US",
+        chromium_platform="windows:10.0.0:x86_64",
     )
     assert "--accept-lang=en-US" in args
     assert "--moltskin-speech-voices=en-US" in args
+
+
+def test_macos_profile_keeps_host_voices(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        chromium,
+        "resolve_build",
+        lambda version: (
+            tmp_path / "Chromium",
+            "158.0.0.0",
+            frozenset({SPEECH_VOICES_CAPABILITY, PLATFORM_CAPABILITY}),
+        ),
+    )
+    monkeypatch.setattr(chromium, "check_access_policies", lambda *args: None)
+    monkeypatch.setattr(chromium, "chromium_owns_directory", lambda path: False)
+    args, _ = chromium.prepare_launch(
+        tmp_path,
+        "standard",
+        True,
+        browser_language="en-US",
+        chromium_platform="macos:14.6.0:arm64",
+    )
+    assert "--accept-lang=en-US" in args
+    assert "--moltskin-speech-voices=en-US" not in args
 
 
 def test_editor_has_no_speech_field():
