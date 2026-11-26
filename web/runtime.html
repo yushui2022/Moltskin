@@ -98,7 +98,7 @@
       const ext = gl?.getExtension("WEBGL_debug_renderer_info");
       if (!gl) show("webglDebugInfo", "WebGL 不可用");
       else if (!ext) show("webglDebugInfo", "调试扩展不可用");
-      else show("webglDebugInfo", gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || "扩展未提供型号");
+      else show("webglDebugInfo", [gl.getParameter(ext.UNMASKED_VENDOR_WEBGL), gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)].filter(Boolean).join(" · ") || "扩展未提供型号");
       gl?.getExtension("WEBGL_lose_context")?.loseContext();
     }
     checkGraphics();

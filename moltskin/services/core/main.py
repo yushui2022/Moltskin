@@ -52,7 +52,7 @@ Engine = Literal["camoufox", "chromium"]
 FontPolicy = Literal["standard", "restricted"]
 AccessPolicy = Literal["standard", "blocked"]
 StartupPage = Literal["default", "dashboard", "blank"]
-PROFILE_FORMAT_VERSION = 10
+PROFILE_FORMAT_VERSION = 13
 
 
 class PlatformPreviewSettings(BaseModel):
@@ -75,6 +75,9 @@ class ChromiumWindowSettings(PlatformPreviewSettings):
     browser_language: str = ""
     browser_timezone: str = ""
     browser_window_size: str = ""
+    chromium_screen: str = ""
+    chromium_platform: str = ""
+    chromium_webgl: str = ""
 
 
 class ProfileCreate(ChromiumWindowSettings):
@@ -327,6 +330,9 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
         "browser_language": row["browser_language"],
         "browser_timezone": row["browser_timezone"],
         "browser_window_size": row["browser_window_size"],
+        "chromium_screen": row["chromium_screen"],
+        "chromium_platform": row["chromium_platform"],
+        "chromium_webgl": row["chromium_webgl"],
         "startup_page": row["startup_page"],
         "block_images": bool(row["block_images"]),
         "group": {"id": row["group_id"], "name": row["group_name"]} if row["group_id"] else None,
@@ -444,14 +450,21 @@ def _check_engine_options(engine: str, local_fonts: str, fingerprint: Any, windo
         message = "不支持的 JavaScript 堆内存设置"
     elif window.chromium_renderer_limit and window.chromium_renderer_limit not in config.CHROMIUM_RENDERER_LIMITS:
         message = "不支持的渲染进程数量"
-    elif engine == "camoufox" and (window.browser_language or window.browser_timezone or window.browser_window_size):
-        message = "这些语言、时区和启动窗口大小选项仅支持 Chromium 环境"
+    elif engine == "camoufox" and (window.browser_language or window.browser_timezone or window.browser_window_size
+                                   or window.chromium_screen or window.chromium_platform or window.chromium_webgl):
+        message = "这些语言、时区、启动窗口大小、屏幕、平台和显卡选项仅支持 Chromium 环境"
     elif window.browser_language and window.browser_language not in config.CHROMIUM_BROWSER_LANGUAGES:
         message = "不支持的 Chromium 语言"
     elif window.browser_timezone and window.browser_timezone not in config.CHROMIUM_BROWSER_TIMEZONES:
         message = "不支持的 Chromium 时区"
     elif window.browser_window_size and window.browser_window_size not in config.CHROMIUM_BROWSER_WINDOW_SIZES:
         message = "不支持的 Chromium 启动窗口大小"
+    elif window.chromium_screen and window.chromium_screen not in config.CHROMIUM_SCREEN_PRESETS:
+        message = "不支持的 Chromium 屏幕预设"
+    elif window.chromium_platform and window.chromium_platform not in config.CHROMIUM_PLATFORM_PRESETS:
+        message = "不支持的 Chromium 平台预设"
+    elif window.chromium_webgl and window.chromium_webgl not in config.CHROMIUM_WEBGL_PRESETS:
+        message = "不支持的 Chromium 显卡预设"
     elif engine == "chromium" and fingerprint:
         message = "Chromium 环境不支持 Camoufox 指纹预设"
     elif window.chromium_version:
@@ -461,6 +474,12 @@ def _check_engine_options(engine: str, local_fonts: str, fingerprint: Any, windo
                 build.capabilities, window.media_capture, window.geolocation, window.webgl_debug_info, window.canvas_readback,
                 window.hardware_reporting,
             )
+            if window.chromium_screen and chromium_native.SCREEN_METRICS_CAPABILITY not in build.capabilities:
+                raise ValueError("当前内核缺少 moltskin-screen-metrics 补丁，请更新内核以使用屏幕预设")
+            if window.chromium_platform and chromium_native.PLATFORM_CAPABILITY not in build.capabilities:
+                raise ValueError("当前内核缺少 moltskin-platform 补丁，请更新内核以使用平台预设")
+            if window.chromium_webgl and chromium_native.WEBGL_INFO_CAPABILITY not in build.capabilities:
+                raise ValueError("当前内核缺少 moltskin-webgl-info 补丁，请更新内核以使用显卡预设")
         except ValueError as exc:
             message = str(exc)
         else:
@@ -761,6 +780,9 @@ def _profile_export(ids: list[str] | None = None):
             "browser_language": row["browser_language"],
             "browser_timezone": row["browser_timezone"],
             "browser_window_size": row["browser_window_size"],
+            "chromium_screen": row["chromium_screen"],
+            "chromium_platform": row["chromium_platform"],
+            "chromium_webgl": row["chromium_webgl"],
             "startup_page": row["startup_page"],
             "block_images": bool(row["block_images"]),
             "group": row["group_name"],
@@ -776,7 +798,13 @@ def _profile_export(ids: list[str] | None = None):
         })
     # Older importers ignore unknown fields; require a reader that preserves the selected settings.
     version = 1
-    if any(item["hardware_reporting"] == "limited" for item in items):
+    if any(item["chromium_webgl"] for item in items):
+        version = 13
+    elif any(item["chromium_platform"] for item in items):
+        version = 12
+    elif any(item["chromium_screen"] for item in items):
+        version = 11
+    elif any(item["hardware_reporting"] == "limited" for item in items):
         version = 10
     elif any(item["canvas_readback"] == "blocked" or item["webgl_debug_info"] == "blocked" for item in items):
         version = 9
@@ -878,15 +906,15 @@ def _store_import_profile(item: ImportedProfile) -> str:
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
                 "user_data_dir, headless, status, created_at, updated_at, engine, chromium_version, local_fonts, media_capture, "
                 "geolocation, startup_page, block_images, chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
-                "browser_language, browser_timezone, browser_window_size, chromium_user_agent, "
+                "browser_language, browser_timezone, browser_window_size, chromium_screen, chromium_platform, chromium_webgl, chromium_user_agent, "
                 "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info, hardware_reporting) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (profile_id, name, group_id, proxy_id, json.dumps(item.tags, ensure_ascii=False), item.remark,
                  item.os, json.dumps(item.fingerprint, ensure_ascii=False), str(user_data_dir),
                  int(item.headless), ts, ts, item.engine, item.chromium_version, item.local_fonts, item.media_capture, item.geolocation,
                  item.startup_page, int(item.block_images), item.chromium_js_heap_mb, int(item.chromium_mute_audio),
                  item.chromium_renderer_limit, item.browser_language, item.browser_timezone, item.browser_window_size,
-                 item.chromium_user_agent, item.preview_platform, item.preview_platform_version, item.preview_architecture,
+                 item.chromium_screen, item.chromium_platform, item.chromium_webgl, item.chromium_user_agent, item.preview_platform, item.preview_platform_version, item.preview_architecture,
                  item.canvas_readback, item.webgl_debug_info, item.hardware_reporting),
             )
             user_data_dir.mkdir(mode=0o700)
@@ -1031,6 +1059,9 @@ def engine():
                          "host_os": _host_os_label(), "host_arch": platform.machine(),
                          "browser_timezones": config.CHROMIUM_BROWSER_TIMEZONES,
                          "browser_window_sizes": config.CHROMIUM_BROWSER_WINDOW_SIZES,
+                         "chromium_screen_presets": config.CHROMIUM_SCREEN_PRESETS,
+                         "chromium_platform_presets": config.CHROMIUM_PLATFORM_PRESETS,
+                         "chromium_webgl_presets": config.CHROMIUM_WEBGL_PRESETS,
                          **_chromium_policy_support(default_capabilities)},
         }
     }
@@ -1226,9 +1257,9 @@ def create_profile(payload: NewProfile):
                     "fingerprint, user_data_dir, headless, status, created_at, updated_at, "
                     "engine, chromium_version, local_fonts, media_capture, geolocation, startup_page, block_images, "
                     "chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
-                    "browser_language, browser_timezone, browser_window_size, chromium_user_agent, "
+                    "browser_language, browser_timezone, browser_window_size, chromium_screen, chromium_platform, chromium_webgl, chromium_user_agent, "
                     "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info, hardware_reporting) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (profile_id, payload.name.strip(), payload.group_id or None, payload.proxy_id or None,
                      json.dumps(payload.tags, ensure_ascii=False), payload.remark,
                      "native" if payload.engine == "chromium" else payload.os,
@@ -1236,7 +1267,7 @@ def create_profile(payload: NewProfile):
                      ts, ts, payload.engine, payload.chromium_version, payload.local_fonts, payload.media_capture, payload.geolocation,
                      payload.startup_page, int(payload.block_images), payload.chromium_js_heap_mb,
                      int(payload.chromium_mute_audio), payload.chromium_renderer_limit, payload.browser_language,
-                     payload.browser_timezone, payload.browser_window_size, payload.chromium_user_agent,
+                     payload.browser_timezone, payload.browser_window_size, payload.chromium_screen, payload.chromium_platform, payload.chromium_webgl, payload.chromium_user_agent,
                      payload.preview_platform, payload.preview_platform_version, payload.preview_architecture,
                      payload.canvas_readback, payload.webgl_debug_info, payload.hardware_reporting),
                 )
@@ -1272,7 +1303,7 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
     fields: dict[str, Any] = {}
     runtime_fields = ("chromium_version", "chromium_user_agent", "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
                       "local_fonts", "media_capture", "geolocation", "canvas_readback", "webgl_debug_info", "hardware_reporting",
-                      "browser_language", "browser_timezone", "browser_window_size",
+                      "browser_language", "browser_timezone", "browser_window_size", "chromium_screen", "chromium_platform", "chromium_webgl",
                       "preview_platform", "preview_platform_version", "preview_architecture")
     for key in runtime_fields:
         if key in provided and provided[key] != row[key]:
@@ -1402,15 +1433,15 @@ def duplicate_profile(profile_id: str):
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
                 "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, chromium_version, local_fonts, media_capture, "
                 "geolocation, startup_page, block_images, chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
-                "browser_language, browser_timezone, browser_window_size, chromium_user_agent, "
+                "browser_language, browser_timezone, browser_window_size, chromium_screen, chromium_platform, chromium_webgl, chromium_user_agent, "
                 "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info, hardware_reporting) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (new_profile_id, name, row["group_id"], row["proxy_id"], row["tags"], row["remark"], row["os"],
                  json.dumps(duplicated_fp, ensure_ascii=False), str(user_data_dir), row["headless"], ts, ts,
                  row["engine"], row["chromium_version"], row["local_fonts"], row["media_capture"], row["geolocation"],
                  row["startup_page"], row["block_images"], row["chromium_js_heap_mb"], row["chromium_mute_audio"],
                  row["chromium_renderer_limit"], row["browser_language"], row["browser_timezone"], row["browser_window_size"],
-                 row["chromium_user_agent"], row["preview_platform"], row["preview_platform_version"], row["preview_architecture"],
+                 row["chromium_screen"], row["chromium_platform"], row["chromium_webgl"], row["chromium_user_agent"], row["preview_platform"], row["preview_platform_version"], row["preview_architecture"],
                  row["canvas_readback"], row["webgl_debug_info"], row["hardware_reporting"]),
             )
             user_data_dir.mkdir(mode=0o700)

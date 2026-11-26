@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Chromium 内核补丁 `0009-hide-webdriver`：即使通过 Playwright/CDP 启动，`navigator.webdriver` 仍返回 `false`。启动器默认传入 `--moltskin-hide-webdriver`，并登记内核能力。
+- Chromium 内核补丁 `0010-screen-metrics`：窗口可选择屏幕尺寸/色深/像素比预设，同步 `screen`、`devicePixelRatio` 和相关媒体查询。
+- Chromium 内核补丁 `0011-platform`：窗口可选择运行平台与架构预设，同步 `navigator.platform`、默认 User-Agent、User-Agent Client Hints 高熵值和 HTTP `Sec-CH-UA-*` 请求头。
+- Chromium 内核补丁 `0012-webgl-info`：窗口可选择 WebGL 显卡预设，覆盖 `WEBGL_debug_renderer_info` 读取的厂商和型号。
+- Chromium 窗口绑定固定代理时加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 绕过代理使用非代理 UDP。
+
 ## 0.4.1 — 2026-11-07
 
 Hardening pass driven by end-to-end testing. 90 checks across four suites

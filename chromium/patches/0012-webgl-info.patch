@@ -1,0 +1,113 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -31,6 +31,10 @@
+ // Overrides the web-visible platform: windows|macos|linux:version:x86_64|arm64.
+ inline constexpr char kMoltskinPlatform[] = "moltskin-platform";
+ 
++// Overrides the unmasked WebGL vendor and renderer strings.
++inline constexpr char kMoltskinWebglVendor[] = "moltskin-webgl-vendor";
++inline constexpr char kMoltskinWebglRenderer[] = "moltskin-webgl-renderer";
++
+ }  // namespace blink::switches
+ 
+ #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -64,6 +64,7 @@
+ #include "media/gfx/paint_canvas_video_renderer.h"
+ #include "media/gfx/video_frame_shared_image_cache.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_webgl_info.h"
+ #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/mojom/gpu/gpu.mojom-blink.h"
+ #include "third_party/blink/public/platform/platform.h"
+@@ -4295,6 +4296,10 @@
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        if (const std::optional<std::string> renderer =
++                GetMoltskinWebglRenderer()) {
++          return WebGLAny(script_state, String::FromUtf8(*renderer));
++        }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_RENDERER)));
+       }
+@@ -4304,6 +4309,10 @@
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        if (const std::optional<std::string> vendor =
++                GetMoltskinWebglVendor()) {
++          return WebGLAny(script_state, String::FromUtf8(*vendor));
++        }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_VENDOR)));
+       }
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4038,6 +4038,8 @@
+       blink::switches::kMoltskinLimitHardwareReporting,
+       blink::switches::kMoltskinPlatform,
+       blink::switches::kMoltskinScreenMetrics,
++      blink::switches::kMoltskinWebglRenderer,
++      blink::switches::kMoltskinWebglVendor,
+       blink::switches::kNetworkQuietTimeout,
+       blink::switches::kShowContentfulPaintRects,
+       blink::switches::kShowLayoutShiftRegions,
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -450,6 +450,7 @@
+       puts("moltskin-hide-webdriver");
+       puts("moltskin-platform");
+       puts("moltskin-screen-metrics");
++      puts("moltskin-webgl-info");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+--- /dev/null
++++ b/third_party/blink/public/common/moltskin_webgl_info.h
+@@ -0,0 +1,44 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_WEBGL_INFO_H_
++#define THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_WEBGL_INFO_H_
++
++#include <optional>
++#include <string>
++
++#include "base/command_line.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
++
++namespace blink {
++
++inline std::optional<std::string> GetMoltskinWebglVendor() {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kMoltskinWebglVendor)) {
++    return std::nullopt;
++  }
++  std::string value =
++      command_line->GetSwitchValueASCII(switches::kMoltskinWebglVendor);
++  if (value.empty() || value.size() > 256) {
++    return std::nullopt;
++  }
++  return value;
++}
++
++inline std::optional<std::string> GetMoltskinWebglRenderer() {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kMoltskinWebglRenderer)) {
++    return std::nullopt;
++  }
++  std::string value =
++      command_line->GetSwitchValueASCII(switches::kMoltskinWebglRenderer);
++  if (value.empty() || value.size() > 512) {
++    return std::nullopt;
++  }
++  return value;
++}
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_WEBGL_INFO_H_

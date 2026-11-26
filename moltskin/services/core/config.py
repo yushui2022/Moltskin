@@ -30,6 +30,36 @@ PREVIEW_PLATFORMS = get_args(PreviewPlatform)
 PREVIEW_ARCHITECTURES = get_args(PreviewArchitecture)
 CHROMIUM_BROWSER_LANGUAGES = ("zh-CN", "en-US", "en-GB", "ja-JP", "de-DE", "fr-FR")
 CHROMIUM_BROWSER_WINDOW_SIZES = ("1024x768", "1280x800", "1440x900", "1920x1080")
+CHROMIUM_SCREEN_PRESETS = (
+    "1280x720x24@1",
+    "1366x768x24@1",
+    "1440x900x24@1",
+    "1536x864x24@1.25",
+    "1920x1080x24@1",
+    "1920x1080x24@1.25",
+    "2560x1440x24@1",
+    "2560x1440x24@1.25",
+    "3840x2160x24@1.5",
+)
+CHROMIUM_PLATFORM_PRESETS = (
+    "windows:10.0.0:x86_64",
+    "windows:10.0.0:arm64",
+    "macos:14.6.0:arm64",
+    "macos:14.6.0:x86_64",
+    "linux:6.8.0:x86_64",
+    "linux:6.8.0:arm64",
+)
+# label|unmasked vendor|unmasked renderer
+CHROMIUM_WEBGL_PRESETS = (
+    "Apple M1|Google Inc. (Apple)|ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
+    "Apple M1 Pro|Google Inc. (Apple)|ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)",
+    "Apple M2|Google Inc. (Apple)|ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+    "Apple M3|Google Inc. (Apple)|ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)",
+    "Intel UHD 630|Google Inc. (Intel)|ANGLE (Intel, Intel(R) UHD Graphics 630 (0x00003E9B) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "Intel Iris Xe|Google Inc. (Intel)|ANGLE (Intel, Intel(R) Iris(R) Xe Graphics (0x00009A49) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "NVIDIA GeForce RTX 3060|Google Inc. (NVIDIA)|ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 (0x00002503) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "AMD Radeon RX 6600|Google Inc. (AMD)|ANGLE (AMD, AMD Radeon RX 6600 (0x00000073) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+)
 CHROMIUM_BROWSER_TIMEZONES = (
     "Asia/Shanghai", "Asia/Tokyo", "Europe/London", "Europe/Berlin", "Europe/Paris",
     "America/New_York", "America/Los_Angeles", "UTC",

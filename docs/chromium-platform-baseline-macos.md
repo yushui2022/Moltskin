@@ -58,3 +58,15 @@
   }
 }
 ```
+
+## 后续结果：0011-platform
+
+上文保留 2026-11-26 修复前的正常窗口基线。随后加入 `0011-platform.patch`，按窗口传入 `--moltskin-platform=platform:version:architecture`。用同一自编 Chromium 分别启动三个预设，通过本地 HTTP 页面读取 JavaScript 值和请求头，结果如下。
+
+| 预设 | `navigator.platform` | UA 中的系统标识 | `Sec-CH-UA-Platform` | `architecture` / `bitness` | `platformVersion` |
+|---|---|---|---|---|---|
+| `windows:10.0.0:x86_64` | `Win32` | `Windows NT 10.0.0; Win64; x64` | `Windows` | `x86` / `64` | `10.0.0` |
+| `macos:14.6.0:arm64` | `MacIntel` | `Macintosh; Intel Mac OS X 10_15_7` | `macOS` | `arm` / `64` | `14.6.0` |
+| `linux:6.8.0:x86_64` | `Linux x86_64` | `X11; Linux x86_64` | `Linux` | `x86` / `64` | `6.8.0` |
+
+高熵 Client Hints 需要网站先通过 `Accept-CH` 请求；首轮请求只发送低熵的 `Sec-CH-UA-Platform`，后续请求包含上表四项。回归脚本在 `tests/test_chromium_platform_settings.py`。本轮验证使用本地测试页，未重复 BrowserLeaks 人工核对；历史日志中的网站读数仍是修复前的值。

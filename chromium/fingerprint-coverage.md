@@ -1,10 +1,10 @@
 # Moltskin Chromium 指纹能力对照
 
-核对版本为 Chromium `158.0.8127.88`，主要实测平台为 macOS arm64。Ubuntu x86-64 已另行验证双环境隔离，以及 Canvas 2D 和 WebGL 读取限制。当前 Chromium 环境使用本机操作系统。面板可以分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、音视频采集和网站定位。Camoufox 环境支持自己的指纹预设，两个内核走不同的启动路径。[锁定版本](upstream.json) · [Chromium 启动器](../moltskin/services/core/chromium.py) · [Camoufox 启动器](../moltskin/services/core/runner.py)
+核对版本为 Chromium `158.0.8127.88`，主要实测平台为 macOS arm64。Ubuntu x86-64 已另行验证双环境隔离，以及 Canvas 2D 和 WebGL 读取限制。Chromium 环境可按窗口选择运行平台、架构、屏幕尺寸、像素比和 WebGL 显卡型号，不再固定报告本机操作系统或 GPU。面板还可以分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、音视频采集和网站定位。Camoufox 环境支持自己的指纹预设，两个内核走不同的启动路径。[锁定版本](upstream.json) · [Chromium 启动器](../moltskin/services/core/chromium.py) · [Camoufox 启动器](../moltskin/services/core/runner.py)
 
 ## 面板预览与正常窗口
 
-面板的「本地兼容性预览」在临时离线页面读取所选系统、平台版本和处理器架构。「打开」会启动该环境自己的 Chromium 进程。2026-11-26 在同一个 Mac 测试环境中，预览读到 `Windows / x86 / 64`，正常有头窗口访问 BrowserLeaks 后，网站的 Client Hints 表格显示 `macOS / arm / 64`。按环境向普通网站报告 Windows 平台与 x86-64 架构的功能尚未实现。[本次实测记录](../docs/chromium-platform-baseline-macos.md) · [离线预览](../moltskin/services/core/platform_preview.py) · [正常窗口启动器](../moltskin/services/core/launcher.py)
+面板的「本地兼容性预览」在临时离线页面读取所选系统、平台版本和处理器架构。「打开」会启动该环境自己的 Chromium 进程。正常窗口现在也可以选择「运行平台与架构」，内核通过 `--moltskin-platform=windows:10.0.0:x86_64` 同步 `navigator.platform`、User-Agent、`navigator.userAgentData` 的高熵值，以及 HTTP `Sec-CH-UA-Platform`、`Sec-CH-UA-Platform-Version`、`Sec-CH-UA-Arch`、`Sec-CH-UA-Bitness` 请求头。实测 Windows、macOS 和 Linux 三种预设的 JS 读数与请求头一致。[平台设置回归](../tests/test_chromium_platform_settings.py) · [离线预览](../moltskin/services/core/platform_preview.py) · [正常窗口启动器](../moltskin/services/core/launcher.py)
 
 下表按正常窗口填写。`chromium/launch_preview.py` 是额外的原生命令行启动工具，面板的两个按钮均有各自的服务端入口。[命令行启动工具](launch_preview.py)
 
@@ -14,16 +14,16 @@
 
 | 项目 | 按环境修改指纹值 | 已验证的行为与剩余缺口 |
 |---|---|---|
-| Navigator 的设备、平台、浏览器版本、语言等属性 | 网站语言、UA 和已安装内核可选 | 页面与 Worker 使用窗口的网站首选语言。窗口可以设置 UA，也可以固定到某个已安装的 Moltskin Chromium 完整版本。平台取自实际运行环境，可在该环境打开本机 `/runtime.html` 核对。 |
+| Navigator 的设备、平台、浏览器版本、语言等属性 | 网站语言、UA、平台与已安装内核可选 | 页面与 Worker 使用窗口的网站首选语言。窗口可以设置 UA，也可以固定到某个已安装的 Moltskin Chromium 完整版本。平台预设同步 `navigator.platform`、UA 中的系统标识、Client Hints 高熵值和 HTTP 请求头。[平台设置回归](../tests/test_chromium_platform_settings.py) |
 | CPU 并发数和设备内存 | 可选择标准值或限制报告上限 | 限制时，逻辑处理器数最多报告 4，设备内存档位最多报告 4 GiB。Mac 上同一环境标准模式实测为 18 / 32 GiB，受限模式为 4 / 4 GiB。恢复默认后读数复原。导航和子资源请求收到的两种内存提示头均同步从 32 变为 4。Linux 已加入同一验收脚本，仍待实机复测。[测试范围](../tests/test_chromium_hardware_reporting.py) |
-| 屏幕尺寸、分辨率、像素比 | 未实现 | 没有 Chromium 环境级屏幕预设。 |
-| 窗口内外尺寸 | 启动外框尺寸可选 | 可选择启动时的实际窗口宽高，启动后仍能手动调整。网页内部可用的高度受工具栏影响。显示器尺寸和像素比沿用本机。 |
-| WebGL 参数、扩展、上下文属性、着色精度 | 可限制显卡调试扩展 | 在 WebGL 1 和 2 中可关闭读取未遮蔽厂商与型号的扩展，网页与专用 Worker 均受该策略约束。普通 3D 绘图和像素读取仍可用。上下文属性、显卡型号替换和着色精度均无环境级预设。[实机回归](../tests/test_chromium_graphics_privacy.py) |
+| 屏幕尺寸、分辨率、像素比 | 可选择屏幕预设 | 每个窗口可选 `WIDTHxHEIGHTxDEPTH@DPR` 预设；`screen.width/height/availWidth/availHeight/colorDepth`、`devicePixelRatio`、`device-width`/`device-height`/`resolution` 媒体查询同步。窗口外框尺寸仍由「启动窗口大小」单独控制。[实机回归](../tests/test_chromium_screen.py) |
+| 窗口内外尺寸 | 启动外框尺寸和屏幕预设可选 | 可选择启动时的实际窗口宽高，启动后仍能手动调整。网页内部可用的高度受工具栏影响。虚拟屏幕尺寸、色深和像素比由「屏幕分辨率与像素比」单独设置。[屏幕回归](../tests/test_chromium_screen.py) |
+| WebGL 厂商/型号、扩展、上下文属性、着色精度 | 可选择显卡预设，也可限制调试扩展 | 可选择 Apple、Intel、NVIDIA 或 AMD 显卡预设，覆盖 `WEBGL_debug_renderer_info` 返回的未遮蔽厂商和型号；遮蔽值仍为 `WebKit` / `WebKit WebGL`。在 WebGL 1 和 2 中也可关闭该扩展，网页与专用 Worker 均受策略约束。普通 3D 绘图和像素读取仍可用。上下文属性与着色精度仍无环境级预设。[显卡回归](../tests/test_chromium_webgl_info.py) · [扩展限制回归](../tests/test_chromium_graphics_privacy.py) |
 | AudioContext 采样率、输出延迟、最大声道数 | 未实现 | 两种环境下，离线音频图输出的 256 个采样值均符合预期。这里的采样率由测试网页指定；实际声卡、扬声器和输出延迟仍待验证。 |
 | 语音合成声音列表与播放速率 | 未实现 | 没有按环境提供声音或速率预设，也没有语音播放专项回归。 |
 | 麦克风、摄像头、扬声器数量 | 未实现数量配置 | 已能阻止音视频采集。模拟设备测试验证了受限环境读不到输入设备的名称、设备 ID 和分组 ID。扬声器数量和输出设备列表尚未验收。 |
-| HTTP User-Agent、Accept-Language 与 Navigator 联动 | UA 和网站首选语言可按窗口设置 | Chromium 将窗口设置的 UA 用于 HTTP `User-Agent` 和 `navigator.userAgent`。留空使用内核默认 UA。首选语言应用到 HTTP `Accept-Language` 和 Navigator。Client Hints 遵循当前 Chromium 的内置行为。 |
-| WebRTC 协议层地址 | 未实现 | 普通网页请求可以按环境指定固定代理。WebRTC 的媒体传输和 UDP 地址仍需独立验收。[窗口代理](README.md#窗口代理) |
+| HTTP User-Agent、Accept-Language 与 Navigator 联动 | UA、语言和平台可按窗口设置 | Chromium 将窗口设置的 UA 用于 HTTP `User-Agent` 和 `navigator.userAgent`。留空时，平台预设会生成对应系统的默认 UA。首选语言应用到 HTTP `Accept-Language` 和 Navigator。Client Hints 的平台、版本、架构和位数随平台预设同步。[平台设置回归](../tests/test_chromium_platform_settings.py) |
+| WebRTC 协议层地址 | 固定代理时禁用非代理 UDP | 普通网页请求可以按环境指定固定代理；有代理时启动参数加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 绕过代理。完整 STUN/UDP 地址替换和媒体链路仍需独立验收。[窗口代理](README.md#窗口代理) |
 | 定位坐标、时区和区域语言 | 时区、网站首选语言可选 | 时区应用于该窗口页面与 Worker 的日期计算和 Intl 时区。浏览器菜单语言及 Intl 默认格式语言由系统和浏览器决定。定位权限可以单独阻止，面板不配置定位坐标。 |
 | Battery API | 未实现 | 没有电量、充电状态等环境级配置，也没有针对该接口的专项回归。 |
 | 其他常见表面 | 部分权限可用 | 可按窗口限制 Canvas 2D 像素读取和图像导出。已验证本机字体枚举限制、拉丁字体回退及网页图标字体。ClientRects 无环境级预设。[图形隐私说明](README.md#图形隐私) |
@@ -35,13 +35,13 @@
 | 清单项 | 自编 Chromium 的情况 |
 |---|---|
 | Page Agent 主世界隔离、frame 执行上下文泄漏 | 常规面板直接启动 Chromium 进程。仓库没有这两项专门补丁或验收。跨站 iframe 的渲染进程隔离另见下文。 |
-| `navigator.webdriver` | 没有 Moltskin 专门补丁或验收。 |
+| `navigator.webdriver` | 已加入 Moltskin 内核补丁和启动参数 `--moltskin-hide-webdriver`。即使通过 Playwright/CDP 启动，页面读取仍为 `false`。[实机回归](../tests/test_chromium_webdriver.py) |
 | Firefox 无头模式的指针类型修复 | 原条目针对 Camoufox 的 Firefox 问题。Moltskin Chromium 尚无有头与无头指针行为的专项对照。[原始 Issue](https://github.com/daijro/camoufox/issues/26) |
 | 撤销 anti-zoom / meta viewport 补丁 | 原条目涉及 Camoufox 历史补丁。当前 Chromium 补丁集没有对应变更，缩放与视口兼容性未单独验收。 |
-| 非默认屏幕与窗口尺寸 | 两个环境可分别选择启动时的窗口外框尺寸，见[双窗口实机回归](../tests/test_chromium_region.py)。实际屏幕分辨率沿用本机。 |
+| 非默认屏幕与窗口尺寸 | 两个环境可分别选择启动时的窗口外框尺寸，见[双窗口实机回归](../tests/test_chromium_region.py)；Chromium 窗口还可单独设置虚拟屏幕尺寸、色深和像素比，见[屏幕回归](../tests/test_chromium_screen.py)。 |
 | 重新启用 Firefox Fission | Chromium 使用 Site Isolation。Mac 测试中，同源 iframe 与父页面共用渲染目标，跨站 iframe 出现独立的渲染目标。该结果覆盖本次两个本地站点的测试场景。[Chromium Site Isolation](https://www.chromium.org/Home/chromium-security/site-isolation/) · [渲染目标说明](https://developer.chrome.com/docs/extensions/reference/api/debugger#frames) |
 | 重新启用 PDF.js | Chromium 内置查看器使用 PDFium。Mac 实测可打开本地双页 PDF，查看器正确显示总页数 2。[Chromium PDF 组件](https://raw.githubusercontent.com/chromium/chromium/main/pdf/README.md) |
 | 其他可能暴露信息的配置属性 | 原条目没有列出属性名及预期行为，无法逐项判定。 |
 | 拟人鼠标移动 | Chromium 启动路径没有这项功能。Camoufox 启动器会向自己的内核传入 `humanize` 设置。 |
 
-PDF 与跨站 iframe 验收使用正常启用沙箱的本机无头 Chromium。Linux 产物、有头模式以及不同 GPU 或音频硬件仍需分别验收。[平台回归测试](../tests/test_chromium_platform.py)
+PDF 与跨站 iframe 验收使用正常启用沙箱的本机无头 Chromium。Linux 产物、有头模式以及不同 GPU 或音频硬件仍需分别验收。[PDF 与站点隔离回归](../tests/test_chromium_platform.py) · [平台设置回归](../tests/test_chromium_platform_settings.py)

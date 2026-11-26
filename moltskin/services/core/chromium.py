@@ -12,7 +12,8 @@ from pathlib import Path
 
 from chromium.native import (
     CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
-    HARDWARE_REPORTING_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY,
+    HARDWARE_REPORTING_CAPABILITY, PLATFORM_CAPABILITY, SCREEN_METRICS_CAPABILITY, WEBDRIVER_CAPABILITY,
+    WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY,
     check_access_policies, chromium_owns_directory, resolve_build,
 )
 
@@ -28,7 +29,9 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    media_capture: str = "standard", geolocation: str = "standard",
                    hardware_reporting: str = "standard",
                    canvas_readback: str = "standard", webgl_debug_info: str = "standard",
-                   browser_language: str = "", browser_window_size: str = "") -> tuple[list[str], str]:
+                   browser_language: str = "", browser_window_size: str = "",
+                   chromium_screen: str = "", chromium_platform: str = "",
+                   chromium_webgl: str = "") -> tuple[list[str], str]:
     if sys.platform not in ("darwin", "linux"):
         raise ValueError("Chromium 预览版仅支持 macOS 和 Linux")
     if local_fonts not in ("standard", "restricted"):
@@ -49,14 +52,28 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("未知的网站首选语言")
     if browser_window_size and browser_window_size not in config.CHROMIUM_BROWSER_WINDOW_SIZES:
         raise ValueError("未知的启动窗口大小")
+    if chromium_screen and chromium_screen not in config.CHROMIUM_SCREEN_PRESETS:
+        raise ValueError("未知的屏幕预设")
+    if chromium_platform and chromium_platform not in config.CHROMIUM_PLATFORM_PRESETS:
+        raise ValueError("未知的平台预设")
+    if chromium_webgl and chromium_webgl not in config.CHROMIUM_WEBGL_PRESETS:
+        raise ValueError("未知的显卡预设")
     config.validate_chromium_user_agent(chromium_user_agent)
     binary, version, capabilities = resolve_build(chromium_version)
     check_access_policies(capabilities, media_capture, geolocation, webgl_debug_info, canvas_readback, hardware_reporting)
+    if chromium_screen and SCREEN_METRICS_CAPABILITY not in capabilities:
+        raise ValueError("当前内核缺少 moltskin-screen-metrics 补丁，请更新内核以使用屏幕预设")
+    if chromium_platform and PLATFORM_CAPABILITY not in capabilities:
+        raise ValueError("当前内核缺少 moltskin-platform 补丁，请更新内核以使用平台预设")
+    if chromium_webgl and WEBGL_INFO_CAPABILITY not in capabilities:
+        raise ValueError("当前内核缺少 moltskin-webgl-info 补丁，请更新内核以使用显卡预设")
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
     args = [str(binary), f"--user-data-dir={profile_dir.absolute()}", "--no-first-run", "--no-default-browser-check"]
     if proxy_server:
         args.append(f"--proxy-server={proxy_server}")
+        # Do not let WebRTC bypass the profile proxy with direct UDP/STUN.
+        args.append("--force-webrtc-ip-handling-policy=disable_non_proxied_udp")
     if not 1 <= config.PORT <= 65535:
         raise ValueError("控制台端口须在 1 到 65535 之间")
     if config.PORT != 8765:
@@ -73,6 +90,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--" + CANVAS_READBACK_SWITCH)
     if webgl_debug_info == "blocked":
         args.append("--" + WEBGL_DEBUG_INFO_CAPABILITY)
+    # Keep navigator.webdriver false even if an automation client enables CDP.
+    args.append("--" + WEBDRIVER_CAPABILITY)
     if chromium_js_heap_mb:
         args.append(f"--js-flags=--max-old-space-size={chromium_js_heap_mb}")
     if chromium_mute_audio:
@@ -87,6 +106,14 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append(f"--user-agent={chromium_user_agent}")
     if browser_window_size:
         args.append("--window-size=" + browser_window_size.replace("x", ","))
+    if chromium_screen:
+        args.append("--" + SCREEN_METRICS_CAPABILITY + "=" + chromium_screen)
+    if chromium_platform:
+        args.append("--" + PLATFORM_CAPABILITY + "=" + chromium_platform)
+    if chromium_webgl:
+        _, vendor, renderer = chromium_webgl.split("|", 2)
+        args.append("--moltskin-webgl-vendor=" + vendor)
+        args.append("--moltskin-webgl-renderer=" + renderer)
     if headless:
         args.append("--headless")
     if workbench_session:

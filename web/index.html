@@ -1797,6 +1797,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
             <div class="field"><label for="fBrowserLanguage">网站首选语言</label><select class="select" id="fBrowserLanguage" aria-describedby="fLanguageHint"><option value="">浏览器默认</option></select><span class="hint" id="fLanguageHint">用于网页读取的语言和 HTTP 请求头。</span></div>
             <div class="field"><label for="fBrowserTimezone">时区</label><select class="select" id="fBrowserTimezone"><option value="">跟随系统</option></select></div>
             <div class="field"><label for="fBrowserWindowSize">启动窗口大小</label><select class="select" id="fBrowserWindowSize" aria-describedby="fWindowSizeHint"><option value="">浏览器默认</option></select><span class="hint" id="fWindowSizeHint">窗口外框尺寸，打开后可拖动调整。</span></div>
+            <div class="field"><label for="fChromiumScreen">屏幕分辨率与像素比</label><select class="select" id="fChromiumScreen" aria-describedby="fChromiumScreenHint"><option value="">跟随系统</option></select><span class="hint" id="fChromiumScreenHint">网页读取的 screen、devicePixelRatio 和 device-width 媒体查询会保持一致。</span></div>
+            <div class="field"><label for="fChromiumPlatform">运行平台与架构</label><select class="select" id="fChromiumPlatform" aria-describedby="fChromiumPlatformHint"><option value="">跟随系统</option></select><span class="hint" id="fChromiumPlatformHint">同步 navigator.platform、User-Agent Client Hints 与 platformVersion。</span></div>
+            <div class="field"><label for="fChromiumWebgl">WebGL 显卡型号</label><select class="select" id="fChromiumWebgl" aria-describedby="fChromiumWebglHint"><option value="">跟随系统</option></select><span class="hint" id="fChromiumWebglHint">覆盖 WEBGL_debug_renderer_info 读取的厂商和型号，普通 WebGL 绘制不受影响。</span></div>
             <p class="editor-note" id="fRegionHint" hidden></p>
             <div class="field"><label for="fLocalFonts">本机字体访问</label>
               <select class="select" id="fLocalFonts"><option value="standard">标准（由站点请求授权）</option><option value="restricted">受限（禁止枚举）</option></select>
@@ -1890,6 +1893,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       </div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserTimezone">时区</label><select class="select" id="bBrowserTimezone"><option value="">跟随系统</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserWindowSize">启动窗口大小</label><select class="select" id="bBrowserWindowSize"><option value="">浏览器默认</option></select></div>
+      <div class="field" data-engine="chromium" hidden><label for="bChromiumScreen">屏幕分辨率与像素比</label><select class="select" id="bChromiumScreen"><option value="">跟随系统</option></select></div>
+      <div class="field" data-engine="chromium" hidden><label for="bChromiumPlatform">运行平台与架构</label><select class="select" id="bChromiumPlatform"><option value="">跟随系统</option></select></div>
+      <div class="field" data-engine="chromium" hidden><label for="bChromiumWebgl">WebGL 显卡型号</label><select class="select" id="bChromiumWebgl"><option value="">跟随系统</option></select></div>
       <div class="field full" data-engine="chromium" hidden><label for="bHardwareReporting">网页可读取的硬件信息</label>
         <select class="select" id="bHardwareReporting" aria-describedby="bHardwareReportingHint"><option value="standard">Chromium 默认</option><option value="limited">限制读数上限</option></select>
         <span class="hint" id="bHardwareReportingHint"></span>
@@ -2745,6 +2751,9 @@ const chromiumProfileFields = [
   {control: "BrowserLanguage", key: "browser_language", options: "browser_languages", fallback: "浏览器默认"},
   {control: "BrowserTimezone", key: "browser_timezone", options: "browser_timezones", fallback: "跟随系统"},
   {control: "BrowserWindowSize", key: "browser_window_size", options: "browser_window_sizes", fallback: "浏览器默认"},
+  {control: "ChromiumScreen", key: "chromium_screen", options: "chromium_screen_presets", fallback: "跟随系统"},
+  {control: "ChromiumPlatform", key: "chromium_platform", options: "chromium_platform_presets", fallback: "跟随系统"},
+  {control: "ChromiumWebgl", key: "chromium_webgl", options: "chromium_webgl_presets", fallback: "跟随系统", label: webglLabel},
 ];
 const chromiumPrivacyFields = [
   { key: "hardware_reporting", control: "HardwareReporting", hint: "HardwareReportingHint", restricted: "limited",
@@ -2766,10 +2775,24 @@ const regionNames = {
 };
 function regionLabel(value) {
   if (/^\d+x\d+$/.test(value)) return value.replace("x", " × ");
+  if (/^\d+x\d+x\d+@[\d.]+$/.test(value)) {
+    const [geometry, scale] = value.split("@");
+    return geometry.split("x").join(" × ") + " · " + scale + "x";
+  }
+  if (/^(windows|macos|linux):/.test(value)) {
+    const [os, version, arch] = value.split(":");
+    const name = {windows: "Windows", macos: "macOS", linux: "Linux"}[os] || os;
+    return `${name} ${version} · ${arch}`;
+  }
   return regionNames[value] ? regionNames[value] + " · " + value : value;
 }
+function webglLabel(value) {
+  return value ? value.split("|")[0] : "";
+}
 function chromiumConfigSummary(p) {
-  return [p.browser_language, p.browser_timezone, p.browser_window_size && regionLabel(p.browser_window_size)].filter(Boolean).join(" · ") || "浏览器默认";
+  return [p.browser_language, p.browser_timezone, p.browser_window_size && regionLabel(p.browser_window_size),
+    p.chromium_screen && regionLabel(p.chromium_screen), p.chromium_platform && regionLabel(p.chromium_platform),
+    p.chromium_webgl && webglLabel(p.chromium_webgl)].filter(Boolean).join(" · ") || "浏览器默认";
 }
 
 function presetScreenSize(preview) {
@@ -3608,7 +3631,8 @@ function renderEditorSettings() {
     : "Camoufox · " + ($("fOs").selectedOptions[0]?.text || "系统未指定");
   $("fFingerprintSummary").textContent = chromiumConfigSummary({
     browser_language: $("fBrowserLanguage").value, browser_timezone: $("fBrowserTimezone").value,
-    browser_window_size: $("fBrowserWindowSize").value,
+    browser_window_size: $("fBrowserWindowSize").value, chromium_screen: $("fChromiumScreen").value,
+    chromium_platform: $("fChromiumPlatform").value, chromium_webgl: $("fChromiumWebgl").value,
   });
   $("fNetworkSummary").textContent = $("fProxy").selectedOptions[0]?.text || "";
   const startup = $("fStartupPage");
@@ -3834,8 +3858,9 @@ function setEngineFields(prefix, saved = null) {
     const value = saved ? saved[field.key] || "" : control.value;
     const values = ["", ...choices];
     if (value && !values.includes(value)) values.push(value);
+    const optionLabel = field.label || regionLabel;
     if (values.length !== control.options.length || values.some((v, i) => control.options[i]?.value !== v)) {
-      control.replaceChildren(...values.map(v => new Option(v ? regionLabel(v) : field.fallback, v)));
+      control.replaceChildren(...values.map(v => new Option(v ? optionLabel(v) : field.fallback, v)));
     }
     if (control.value !== value) control.value = value;
     control.disabled = locked || !choices.length;
@@ -4320,6 +4345,9 @@ function openDetail(id, initialFocus = null) {
       <div class="kv"><div class="k">网站首选语言</div><div class="v">${esc(regionLabel(p.browser_language) || "浏览器默认")}</div></div>
       <div class="kv"><div class="k">时区</div><div class="v">${esc(regionLabel(p.browser_timezone) || "跟随系统")}</div></div>
       <div class="kv"><div class="k">启动窗口大小</div><div class="v">${esc(regionLabel(p.browser_window_size) || "浏览器默认")}</div></div>
+      <div class="kv"><div class="k">屏幕分辨率与像素比</div><div class="v">${esc(regionLabel(p.chromium_screen) || "跟随系统")}</div></div>
+      <div class="kv"><div class="k">运行平台与架构</div><div class="v">${esc(regionLabel(p.chromium_platform) || "跟随系统")}</div></div>
+      <div class="kv"><div class="k">WebGL 显卡型号</div><div class="v">${esc(webglLabel(p.chromium_webgl) || "跟随系统")}</div></div>
       <div class="kv"><div class="k">本机字体访问</div><div class="v">${fontsLabel(p)}</div></div>
       <div class="kv"><div class="k">Canvas 像素读取</div><div class="v">${p.canvas_readback === "blocked" ? "限制读取" : "标准"}</div></div>
       <div class="kv"><div class="k">WebGL 显卡信息</div><div class="v">${p.webgl_debug_info === "blocked" ? "限制读取" : "标准"}</div></div>

@@ -16,7 +16,7 @@
 
 在「浏览器与系统」可以为单个 Chromium 窗口填写 User-Agent。留空使用所选内核的默认 UA。要修改已创建的窗口，先关闭窗口，保存后重新打开。要核对结果，在该环境打开本机 `/runtime.html`，页面会分别显示本机服务收到的 HTTP 请求头和网页通过 `navigator.userAgent` 读到的值，以及此窗口实际公开的平台版本、处理器架构和位数。
 
-「本地兼容性预览」支持选择 Windows、macOS 或 Linux，填写可选的平台版本，并选择 ARM64 或 x86-64。每个窗口可以保存自己的预览设置。点击运行后，面板使用选定内核，在一次性离线测试页实测 Chromium 的 User-Agent Client Hints。读数中的 `x86` 加 `64` 表示 x86-64。预览只作用于该测试页，工作窗口正常访问网站时仍使用自身的平台和架构。
+「本地兼容性预览」支持选择 Windows、macOS 或 Linux，填写可选的平台版本，并选择 ARM64 或 x86-64。每个窗口可以保存自己的预览设置。点击运行后，面板使用选定内核，在一次性离线测试页实测 Chromium 的 User-Agent Client Hints。读数中的 `x86` 加 `64` 表示 x86-64。预览用于快速核对所选内核与预设，不改变工作窗口；要让正常网站读到平台预设，使用下面「平台与 Client Hints」中的窗口设置。
 
 每个窗口可以单独静音、设置渲染进程数量的软上限，或限制 V8 老生代堆大小。老生代堆用于存放存活时间较长的 JavaScript 对象，设备内存和操作系统可用内存是独立的指标。「查看当前浏览器实测值」也会显示窗口的语言、时区、硬件并发数、设备内存档位及尺寸。
 
@@ -36,6 +36,34 @@ Chromium 窗口可以沿用浏览器的标准报告，或将网站能读取的�
 - **WebGL 显卡信息**。限制后，WebGL 1 和 2 不再提供读取未遮蔽厂商和型号的调试扩展。普通 3D 绘制和像素读取仍可用。[扩展规范](https://registry.khronos.org/webgl/extensions/WEBGL_debug_renderer_info/)
 
 关闭窗口后可更改设置，重新打开该环境，在本机 `/runtime.html` 查看「图形隐私实测」。页面会尝试读回一个绿色像素并查询 WebGL 调试扩展。两项限制均需当前内核声明对应能力。
+
+### 屏幕与像素比
+
+Chromium 窗口可在「屏幕分辨率与像素比」选择预设，例如 `1920 × 1080 · 1.25x`。启动器传给内核 `--moltskin-screen-metrics=1920x1080x24@1.25`，内核同步覆盖网页读取的 `screen.width/height/availWidth/availHeight/colorDepth`、`devicePixelRatio`，以及 `device-width`、`device-height`、`resolution` 媒体查询。启动窗口外框尺寸仍由「启动窗口大小」独立控制，因此窗口可以小于虚拟屏幕。[实机回归](../tests/test_chromium_screen.py)
+
+### 平台与 Client Hints
+
+Chromium 窗口可在「运行平台与架构」选择 Windows、macOS 或 Linux，以及 x86-64 或 ARM64。启动器传入 `--moltskin-platform=windows:10.0.0:x86_64`，内核同步覆盖：
+
+- `navigator.platform`
+- 默认 `navigator.userAgent` 中的系统标识
+- `navigator.userAgentData.platform`
+- `getHighEntropyValues()` 返回的 `architecture`、`bitness` 和 `platformVersion`
+- HTTP `Sec-CH-UA-Platform`、`Sec-CH-UA-Platform-Version`、`Sec-CH-UA-Arch` 和 `Sec-CH-UA-Bitness`
+
+手动填写 User-Agent 时，该 UA 优先于平台预设生成的默认值；Client Hints 仍按平台预设返回。平台预设不会改变渲染、字体或 JavaScript 引擎，也不模拟对应系统的 GPU 和音频设备。[实机回归](../tests/test_chromium_platform_settings.py)
+
+### WebGL 显卡型号
+
+Chromium 窗口可在「WebGL 显卡型号」选择 Apple、Intel、NVIDIA 或 AMD 显卡预设。启动器把预设拆成 `--moltskin-webgl-vendor` 和 `--moltskin-webgl-renderer` 两个参数，内核只覆盖 `WEBGL_debug_renderer_info` 扩展返回的 `UNMASKED_VENDOR_WEBGL` 和 `UNMASKED_RENDERER_WEBGL`。遮蔽的 `VENDOR` 与 `RENDERER` 仍返回 `WebKit` 和 `WebKit WebGL`，与标准 Chromium 一致。
+
+显卡预设只改变网页读到的厂商和型号字符串，不改变实际 GPU、驱动、渲染结果或性能。选择「限制 WebGL 显卡调试信息」时，该扩展不可用，显卡预设也不会暴露。[实机回归](../tests/test_chromium_webgl_info.py)
+
+### 自动化标记与 WebRTC
+
+Moltskin Chromium 启动时固定传入 `--moltskin-hide-webdriver`，因此即使窗口被 Playwright、CDP 或其他自动化客户端启动，网页读取的 `navigator.webdriver` 仍为 `false`。这是内核补丁 `0009-hide-webdriver.patch` 的行为，实机回归见 `../tests/test_chromium_webdriver.py`。
+
+窗口绑定固定代理时，启动参数还会加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 通过非代理 UDP 暴露本机出口。未绑定代理的窗口保留 Chromium 默认策略；STUN、媒体传输和 UDP 地址替换仍需按站点单独验收。
 
 ### 窗口代理
 
