@@ -10,7 +10,7 @@ Moltskin 是可自行部署的多环境指纹浏览器。每个环境有独立�
 
 双击 Mac 上的 Moltskin，先进入独立的管理窗口。在「浏览器窗口」中点击某个环境的「打开」，面板显示启动状态，随后可在该环境自己的浏览器中使用标签页和地址栏。默认设置下，Chromium 的首个标签页显示该窗口的工作台。
 
-创建环境时可以选择 Camoufox 或 Chromium，并在 Chromium 环境中分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、摄像头与麦克风采集以及网站定位。在该窗口打开「查看当前浏览器实测值」可以核对图形隐私设置的效果。重启后沿用该环境的内核和数据目录。Chromium 已在 Apple Silicon 上验证，Linux x86-64 版仍待实机验收。[构建与使用 Chromium 预览版](chromium/README.md) · [逐项指纹能力对照](chromium/fingerprint-coverage.md)
+创建环境时可以选择 Camoufox 或 Chromium，并在 Chromium 环境中分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、摄像头与麦克风采集以及网站定位。在该窗口打开「查看当前浏览器实测值」可以核对图形隐私设置的效果。重启后沿用该环境的内核和数据目录。Chromium 已在 Apple Silicon 和 Ubuntu x86-64 上运行。在专用 Ubuntu 主机上，单个 SSH 用户可从自己电脑的浏览器打开和操作 Linux Chromium 窗口，断线后可重连仍在运行的会话。[部署 Linux 网页远程窗口](chromium/remote/README.md)[构建与使用 Chromium 预览版](chromium/README.md) · [逐项指纹能力对照](chromium/fingerprint-coverage.md)
 
 | 里程碑 | 交付时怎样验证 |
 |---|---|

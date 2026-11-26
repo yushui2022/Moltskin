@@ -83,12 +83,16 @@ python3 chromium/build_linux.py "$checkout" --install-deps --jobs 4
 
 输出为 `$checkout/src/out/MoltskinLocation/chrome`。网络传输中断时可重跑原命令。若依赖同步和 hooks 已完成，可用 `python3 chromium/build_linux.py "$checkout" --prepared --jobs 4` 接续编译。遇到本地修改冲突时会报错，已经完整应用的补丁可直接复用。
 
+### 从另一台电脑打开 Linux 窗口
+
+在 Ubuntu 上将上一步的产物安装到固定路径，并用普通 SSH 用户启动远程会话。客户端可以通过 noVNC 查看和操作窗口。部署、重连和停止命令见[Linux 远程窗口](remote/README.md)。
+
 ### Linux 有头双窗口验收
 
-在同一台 Ubuntu 上安装 `xvfb`、`xauth`、`xdotool` 和 `python3-venv`，在项目 Python 虚拟环境中安装 `requirements-dev.txt`。用普通用户运行：
+在同一台 Ubuntu 上安装 `xvfb`、`xauth`、`xdotool` 和 `python3-venv`，在项目 Python 虚拟环境中安装 `requirements-dev.txt`。按上节安装带 AppArmor 规则的内核后，用普通用户运行。
 
 ```sh
-python chromium/check_linux.py "$checkout/src/out/MoltskinLocation/chrome"
+python chromium/check_linux.py /opt/moltskin-preview/chrome
 ```
 
 验收会先检查 x86-64 ELF、版本和补丁能力，再通过面板 API 在私有 X11 显示中同时打开两个环境。测试向两个窗口分别发送鼠标和键盘输入，在同一个本地站点写入不同的 Cookie、localStorage、IndexedDB 和缓存，并在重启及清除一个环境后核对各自的数据。整个过程使用临时环境目录。要让服务器上的管理服务使用通过验收的内核，设置 `MOLTSKIN_CHROMIUM_BINARY` 指向这个 `chrome`，保留同目录的资源和运行库。
@@ -183,4 +187,4 @@ MOLTSKIN_CHROMIUM_BINARY="$browser" MOLTSKIN_TEST_NATIVE_BROWSERS=1 python3 -m p
 
 **网页字体。** 在这台 Mac 上，两个环境交换字体策略前后，测试段落从缺失字体回退到等宽字体时，每一行的宽度、位置和高度均一致。衬线字体对照组的排版存在可测量的差异。测试页从本机 HTTP 服务加载了一款图标字体，并确认 Chromium 实际用它绘制了测试字符。此用例覆盖拉丁段落和一个图标字形。
 
-**同站点存储。** 两个临时环境通过面板的启动和停止 API 各启停三次。同一测试站点在两个环境里用同名键分别写入 A、B 标记，覆盖 `localStorage`、IndexedDB 和 Cache Storage。两边重启后各自读回原值。在 B 保持打开时修改并清除 A 的测试数据，再重启两个环境，A 的三项记录都已清除，B 三项都读回了 B。Linux 实机结果待补。
+**同站点存储。** 两个临时环境通过面板的启动和停止 API 各启停三次。同一测试站点在两个环境里用同名键分别写入 A、B 标记，覆盖 `localStorage`、IndexedDB 和 Cache Storage。两边重启后各自读回原值。在 B 保持打开时修改并清除 A 的测试数据，再重启两个环境，A 的三项记录都已清除，B 三项都读回了 B。Ubuntu x86-64 的已安装内核也通过了这项双环境验收。
