@@ -27,7 +27,7 @@
 | WebRTC 协议层地址 | 固定代理时禁用非代理 UDP | 普通网页请求可以按环境指定固定代理；有代理时启动参数加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 绕过代理。完整 STUN/UDP 地址替换和媒体链路仍需独立验收。[窗口代理](README.md#窗口代理) |
 | 定位坐标、时区和区域语言 | 时区、网站首选语言可选 | 时区应用于该窗口页面与 Worker 的日期计算和 Intl 时区。网站首选语言同步到 `navigator.language`、HTTP `Accept-Language` 和渲染进程 ICU 默认区域，`Intl.DateTimeFormat`、`Intl.NumberFormat` 等使用同一区域。定位权限可以单独阻止，面板不配置定位坐标。 |
 | Battery API | 未实现 | 没有电量、充电状态等环境级配置，也没有针对该接口的专项回归。 |
-| 字体列表与字体度量 | Windows 平台预设可过滤字体族 | 选择 Windows 平台预设时，CSS `font-family` 只保留 Arial、Georgia、Tahoma、Times New Roman、Verdana 等跨平台字体，macOS 专有的 PingFang、Helvetica、Futura、Apple SD Gothic Neo 等会回退到通用字体。字体度量和 ClientRects 仍由实际字体文件决定，系统字形回退仍使用宿主字体；`document.fonts.check()` 仍可能报告被过滤的字体可用。[字体回归](../tests/test_chromium_font_filter.py) |
+| 字体列表与字体度量 | Windows 平台预设可过滤字体族 | 选择 Windows 平台预设时，CSS `font-family` 只保留 Arial、Georgia、Tahoma、Times New Roman、Verdana 等跨平台字体，macOS 专有的 PingFang、Helvetica、Futura、Apple SD Gothic Neo 等会回退到通用字体。字体度量和 ClientRects 仍由实际字体文件决定，系统字形回退仍使用宿主字体；`document.fonts.check()` 和 `FontFace(local(...))` 已同步过滤。[字体回归](../tests/test_chromium_font_filter.py) |
 | 其他常见表面 | 部分权限可用 | 可按窗口限制 Canvas 2D 像素读取和图像导出，或开启稳定像素噪声。已验证本机字体枚举限制、拉丁字体回退及网页图标字体。ClientRects 无环境级预设。[像素噪声回归](../tests/test_chromium_canvas_noise.py) · [图形隐私说明](README.md#图形隐私) |
 
 实机回归分别覆盖了[字体与排版](../tests/test_chromium_font_rendering.py)、[图形与离线音频](../tests/test_chromium_graphics_audio.py)、[媒体采集](../tests/test_chromium_media_capture.py)和[定位](../tests/test_chromium_geolocation.py)。

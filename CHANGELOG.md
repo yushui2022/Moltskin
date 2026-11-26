@@ -16,6 +16,7 @@
 - Chromium 内核补丁 `0018-screen-avail`：屏幕预设支持单独设置 `availWidth/availHeight`，产品默认模拟 Windows 任务栏占用。
 - Chromium 内核补丁 `0019-font-filter`：Windows 平台预设启用 CSS 字体白名单，隐藏 macOS 专有字体族。
 - Chromium 内核补丁 `0020-webgl-params`：Windows 平台预设启用稳定的 WebGL 参数和扩展画像，过滤 ASTC/ETC/PVRTC 等 macOS 常见扩展。
+- Chromium 内核补丁 `0021-font-api-filter`：`document.fonts.check()` 和 `FontFace(local(...))` 也遵循字体白名单，堵住 CreepJS 的字体列表检测路径。
 - Chromium 窗口绑定固定代理时加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 绕过代理使用非代理 UDP。
 
 ## 0.4.1 — 2026-11-07

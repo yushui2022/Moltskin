@@ -1,0 +1,94 @@
+--- a/third_party/blink/renderer/platform/fonts/moltskin_font_filter.h
++++ b/third_party/blink/renderer/platform/fonts/moltskin_font_filter.h
+@@ -17,6 +17,36 @@
+       switches::kMoltskinFontFilter);
+ }
+ 
++inline bool IsMoltskinFontAllowed(const AtomicString& family);
++
++inline bool MoltskinFontStringRequestsOnlyDisallowedFamilies(
++    const String& font_string) {
++  if (!IsMoltskinFontFilterEnabled()) {
++    return false;
++  }
++  bool found_family = false;
++  for (unsigned i = 0; i < font_string.length(); ++i) {
++    const UChar quote = font_string[i];
++    if (quote != '"' && quote != '\'') {
++      continue;
++    }
++    unsigned end = i + 1;
++    while (end < font_string.length() && font_string[end] != quote) {
++      ++end;
++    }
++    if (end >= font_string.length()) {
++      break;
++    }
++    found_family = true;
++    if (IsMoltskinFontAllowed(
++            AtomicString(font_string.subview(i + 1, end - i - 1)))) {
++      return false;
++    }
++    i = end;
++  }
++  return found_family;
++}
++
+ inline bool IsMoltskinFontAllowed(const AtomicString& family) {
+   if (family.empty()) {
+     return true;
+--- a/third_party/blink/renderer/core/css/font_face_set.cc
++++ b/third_party/blink/renderer/core/css/font_face_set.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/core/css/font_face_set.h"
++#include "third_party/blink/renderer/platform/fonts/moltskin_font_filter.h"
+ 
+ #include "base/task/single_thread_task_runner.h"
+ #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+@@ -233,6 +234,9 @@
+                         const String& text,
+                         ExceptionState& exception_state) {
+   if (!InActiveContext()) {
++    return false;
++  }
++  if (MoltskinFontStringRequestsOnlyDisallowedFamilies(font_string)) {
+     return false;
+   }
+ 
+--- a/third_party/blink/renderer/core/css/font_face.cc
++++ b/third_party/blink/renderer/core/css/font_face.cc
+@@ -64,6 +64,7 @@
+ #include "third_party/blink/renderer/core/css_value_keywords.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
++#include "third_party/blink/renderer/platform/fonts/moltskin_font_filter.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+@@ -641,6 +642,11 @@
+ }
+ 
+ ScriptPromise<FontFace> FontFace::load(ScriptState* script_state) {
++  if (IsMoltskinFontFilterEnabled() && !IsMoltskinFontAllowed(family_)) {
++    SetError(MakeGarbageCollected<DOMException>(
++        DOMExceptionCode::kNetworkError, "Font is not available."));
++    return FontStatusPromise(script_state);
++  }
+   if (status_ == kUnloaded) {
+     css_font_face_->Load();
+   }
+@@ -649,6 +655,12 @@
+ }
+ 
+ void FontFace::LoadWithCallback(LoadFontCallback* callback) {
++  if (IsMoltskinFontFilterEnabled() && !IsMoltskinFontAllowed(family_)) {
++    SetError(MakeGarbageCollected<DOMException>(
++        DOMExceptionCode::kNetworkError, "Font is not available."));
++    AddCallback(callback);
++    return;
++  }
+   if (status_ == kUnloaded) {
+     css_font_face_->Load();
+   }

@@ -9,6 +9,23 @@ from playwright.sync_api import sync_playwright
 from chromium.native import FONT_FILTER_CAPABILITY, PLATFORM_CAPABILITY, default_binary, probe_capabilities
 from moltskin.services.core import chromium
 
+FONT_APIS = """async () => {
+  const names = ['PingFang HK', 'Helvetica', 'Apple SD Gothic Neo', 'Futura', 'Arial', 'Georgia'];
+  const checks = {};
+  for (const name of names) checks[name] = document.fonts.check(`0px "${name}"`);
+  const loads = {};
+  for (const name of names) {
+    try {
+      const face = new FontFace(name, `local("${name}")`);
+      await face.load();
+      loads[name] = face.status;
+    } catch {
+      loads[name] = 'error';
+    }
+  }
+  return { checks, loads };
+}"""
+
 FONT_WIDTHS = """() => {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
@@ -78,7 +95,7 @@ def test_native_font_filter_hides_macos_families():
     binary, _, capabilities = probe_capabilities(default_binary())
     assert FONT_FILTER_CAPABILITY in capabilities
 
-    def widths(args):
+    def read(args, script):
         with sync_playwright() as driver:
             browser = driver.chromium.launch(
                 executable_path=str(binary),
@@ -88,12 +105,20 @@ def test_native_font_filter_hides_macos_families():
             try:
                 page = browser.new_page()
                 page.set_content("<html><body>font probe</body></html>")
-                return page.evaluate(FONT_WIDTHS)
+                return page.evaluate(script)
             finally:
                 browser.close()
 
+    def widths(args):
+        return read(args, FONT_WIDTHS)
+
+    def apis(args):
+        return read(args, FONT_APIS)
+
     baseline = widths([])
     filtered = widths(["--moltskin-font-filter=windows"])
+    baseline_apis = apis([])
+    filtered_apis = apis(["--moltskin-font-filter=windows"])
 
     assert baseline["pingfang"] != baseline["monospace"]
     assert baseline["helvetica"] != baseline["monospace"]
@@ -103,3 +128,10 @@ def test_native_font_filter_hides_macos_families():
     assert filtered["futura"] == filtered["monospace"]
     assert filtered["arial"] != filtered["monospace"]
     assert filtered["georgia"] != filtered["monospace"]
+
+    assert baseline_apis["checks"]["PingFang HK"] is True
+    assert filtered_apis["checks"]["PingFang HK"] is False
+    assert filtered_apis["checks"]["Helvetica"] is False
+    assert filtered_apis["checks"]["Arial"] is True
+    assert filtered_apis["loads"]["PingFang HK"] == "error"
+    assert filtered_apis["loads"]["Arial"] == "loaded"
