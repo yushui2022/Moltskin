@@ -14,7 +14,7 @@ from pathlib import Path
 from chromium.native import (
     CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
     AUDIO_NOISE_CAPABILITY, CANVAS_NOISE_CAPABILITY, HARDWARE_REPORTING_CAPABILITY, LOCALE_CAPABILITY,
-    PLATFORM_CAPABILITY, SPEECH_VOICES_CAPABILITY,
+    FONT_FILTER_CAPABILITY, PLATFORM_CAPABILITY, SPEECH_VOICES_CAPABILITY,
     SCREEN_METRICS_CAPABILITY, SCREEN_AVAIL_CAPABILITY,
     WEBDRIVER_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY,
     check_access_policies, chromium_owns_directory, resolve_build,
@@ -131,6 +131,9 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--" + SCREEN_METRICS_CAPABILITY + "=" + screen_value)
     if chromium_platform:
         args.append("--" + PLATFORM_CAPABILITY + "=" + chromium_platform)
+        if (chromium_platform.startswith("windows:") and
+                FONT_FILTER_CAPABILITY in capabilities):
+            args.append("--" + FONT_FILTER_CAPABILITY + "=windows")
     if chromium_webgl:
         _, vendor, renderer = chromium_webgl.split("|", 2)
         args.append("--moltskin-webgl-vendor=" + vendor)

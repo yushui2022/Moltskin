@@ -39,6 +39,12 @@ Chromium 窗口可以沿用浏览器的标准报告，或将网站能读取的�
 
 关闭窗口后可更改设置，重新打开该环境，在本机 `/runtime.html` 查看「图形隐私实测」。页面会尝试读回一个绿色像素并查询 WebGL 调试扩展。两项限制均需当前内核声明对应能力。
 
+### Windows 字体过滤
+
+选择「运行平台与架构」中的 Windows 预设时，启动器会传入 `--moltskin-font-filter=windows`。内核在解析 CSS `font-family` 时只保留跨平台桌面字体族（Arial、Georgia、Tahoma、Times New Roman、Trebuchet MS、Verdana 等），macOS 专有的 PingFang、Helvetica、Futura、Apple SD Gothic Neo、Geneva 等会从字体列表中移除并回退到通用字体。
+
+这能消除 CreepJS 等站点的字体族列表泄漏，但不改变 Arial 等共用字体文件的实际度量；系统字形回退、Web Font 和 ClientRects 仍按宿主渲染。当前 `document.fonts.check()` 仍可能把被过滤的字体报告为可用，因为该 API 会在通用回退上返回结果；字体族匹配和 Canvas 宽度探测已按白名单过滤。[实机回归](../tests/test_chromium_font_filter.py)
+
 ### 屏幕与像素比
 
 Chromium 窗口可在「屏幕分辨率与像素比」选择预设，例如 `1920 × 1080 · 1.25x`。启动器传给内核 `--moltskin-screen-metrics=1920x1080x24@1.25|1920x1040`，其中后半段模拟 Windows 任务栏占用，内核同步覆盖网页读取的 `screen.width/height/availWidth/availHeight/colorDepth`、`devicePixelRatio`，以及 `device-width`、`device-height`、`resolution` 媒体查询。启动窗口外框尺寸仍由「启动窗口大小」独立控制，因此窗口可以小于虚拟屏幕。[实机回归](../tests/test_chromium_screen.py)

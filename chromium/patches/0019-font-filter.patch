@@ -1,0 +1,178 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -47,6 +47,9 @@
+ // Replaces the platform speech-synthesis voice list with a stable set.
+ inline constexpr char kMoltskinSpeechVoices[] = "moltskin-speech-voices";
+ 
++// Restricts locally matched CSS families to a cross-platform allowlist.
++inline constexpr char kMoltskinFontFilter[] = "moltskin-font-filter";
++
+ }  // namespace blink::switches
+ 
+ #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
+--- a/third_party/blink/renderer/platform/fonts/font_description.h
++++ b/third_party/blink/renderer/platform/fonts/font_description.h
+@@ -372,7 +372,7 @@
+   FontCacheKey CacheKey(const FontFaceCreationParams&,
+                         bool is_unique_match) const;
+ 
+-  void SetFamily(const FontFamily& family) { family_list_ = family; }
++  void SetFamily(const FontFamily& family);
+   void SetComputedSize(float s) { computed_size_ = ClampTo<float>(s); }
+   void SetSpecifiedSize(float s) { specified_size_ = ClampTo<float>(s); }
+   void SetAdjustedSize(float s) { adjusted_size_ = ClampTo<float>(s); }
+--- a/third_party/blink/renderer/platform/fonts/font_description.cc
++++ b/third_party/blink/renderer/platform/fonts/font_description.cc
+@@ -36,6 +36,7 @@
+ #include "base/notreached.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/platform/web_font_description.h"
++#include "third_party/blink/renderer/platform/fonts/moltskin_font_filter.h"
+ #include "third_party/blink/renderer/platform/geometry/evaluation_input.h"
+ #include "third_party/blink/renderer/platform/language.h"
+ #include "third_party/blink/renderer/platform/wtf/hash_functions.h"
+@@ -44,12 +45,49 @@
+ #include "third_party/blink/renderer/platform/wtf/text/format.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_hasher.h"
++#include "third_party/blink/renderer/platform/wtf/vector.h"
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+ #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+ #endif
+ 
+ namespace blink {
++
++void FontDescription::SetFamily(const FontFamily& family) {
++  if (!IsMoltskinFontFilterEnabled()) {
++    family_list_ = family;
++    return;
++  }
++
++  Vector<const FontFamily*> allowed;
++  for (const FontFamily* current = &family; current; current = current->Next()) {
++    if (current->FamilyIsGeneric() ||
++        IsMoltskinFontAllowed(current->FamilyName())) {
++      allowed.push_back(current);
++    }
++  }
++
++  if (allowed.empty()) {
++    family_list_ = FontFamily(font_family_names::kSansSerif,
++                              FontFamily::Type::kGenericFamily);
++    return;
++  }
++
++  scoped_refptr<SharedFontFamily> head;
++  for (auto current = allowed.rbegin(); current != allowed.rend(); ++current) {
++    const FontFamily* source = *current;
++    head = SharedFontFamily::Create(
++        source->FamilyName(),
++        source->FamilyIsGeneric() ? FontFamily::Type::kGenericFamily
++                                  : FontFamily::Type::kFamilyName,
++        std::move(head));
++  }
++  family_list_ = FontFamily(
++      head->FamilyName(),
++      head->FamilyIsGeneric() ? FontFamily::Type::kGenericFamily
++                              : FontFamily::Type::kFamilyName,
++      head->ReleaseNext());
++}
+ 
+ struct SameSizeAsFontDescription {
+   DISALLOW_NEW();
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -59,6 +59,7 @@
+ #include "third_party/blink/renderer/platform/fonts/font_global_context.h"
+ #include "third_party/blink/renderer/platform/fonts/font_performance.h"
+ #include "third_party/blink/renderer/platform/fonts/font_platform_data_cache.h"
++#include "third_party/blink/renderer/platform/fonts/moltskin_font_filter.h"
+ #include "third_party/blink/renderer/platform/fonts/font_unique_name_lookup.h"
+ #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
+ #include "third_party/blink/renderer/platform/heap/thread_state.h"
+@@ -199,6 +200,9 @@
+ bool FontCache::IsPlatformFamilyMatchAvailable(
+     const FontDescription& font_description,
+     const AtomicString& family) {
++  if (IsMoltskinFontFilterEnabled() && !IsMoltskinFontAllowed(family)) {
++    return false;
++  }
+   return GetFontPlatformData(
+       font_description,
+       FontFaceCreationParams(AdjustFamilyNameToAvoidUnsupportedFonts(family)),
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4036,6 +4036,7 @@
+       blink::switches::kMoltskinBlockWebGLDebugInfo,
+       blink::switches::kMoltskinAudioNoise,
+       blink::switches::kMoltskinCanvasNoise,
++      blink::switches::kMoltskinFontFilter,
+       blink::switches::kMoltskinHideWebdriver,
+       blink::switches::kMoltskinLimitHardwareReporting,
+       blink::switches::kMoltskinLocale,
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -448,6 +448,7 @@
+       puts("moltskin-block-canvas-readback");
+       puts("moltskin-audio-noise");
+       puts("moltskin-canvas-noise");
++      puts("moltskin-font-filter");
+       puts("moltskin-limit-hardware-reporting");
+       puts("moltskin-locale");
+       puts("moltskin-hide-webdriver");
+--- /dev/null
++++ b/third_party/blink/renderer/platform/fonts/moltskin_font_filter.h
+@@ -0,0 +1,52 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_MOLTSKIN_FONT_FILTER_H_
++#define THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_MOLTSKIN_FONT_FILTER_H_
++
++#include "base/command_line.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
++#include "third_party/blink/renderer/platform/font_family_names.h"
++#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
++
++namespace blink {
++
++inline bool IsMoltskinFontFilterEnabled() {
++  return base::CommandLine::ForCurrentProcess()->HasSwitch(
++      switches::kMoltskinFontFilter);
++}
++
++inline bool IsMoltskinFontAllowed(const AtomicString& family) {
++  if (family.empty()) {
++    return true;
++  }
++  if (family == font_family_names::kSerif ||
++      family == font_family_names::kSansSerif ||
++      family == font_family_names::kMonospace ||
++      family == font_family_names::kCursive ||
++      family == font_family_names::kFantasy ||
++      family == font_family_names::kSystemUi ||
++      family == font_family_names::kBlinkMacSystemFont ||
++      family == font_family_names::kWebkitStandard) {
++    return true;
++  }
++
++  // Cross-platform desktop families. macOS-only families such as Helvetica,
++  // Futura, PingFang, Geneva and Apple SD Gothic Neo remain filtered out.
++  for (const char* allowed :
++       {"Arial", "Arial Black", "Comic Sans MS", "Courier New", "Georgia",
++        "Impact", "Times New Roman", "Trebuchet MS", "Verdana", "Webdings",
++        "Wingdings", "Tahoma", "Microsoft Sans Serif", "Lucida Console",
++        "Palatino Linotype", "emoji", "ui-serif", "ui-sans-serif",
++        "ui-monospace", "ui-rounded"}) {
++    if (EqualIgnoringAsciiCase(family, allowed)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_FONTS_MOLTSKIN_FONT_FILTER_H_
