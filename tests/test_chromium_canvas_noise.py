@@ -100,6 +100,13 @@ NOISE_PROBE = """async () => {
   const blobAgainBytes = new Uint8Array(await blobAgain.arrayBuffer());
   const hash = values => values.reduce((value, current) => ((value * 31 + current) >>> 0), 0);
 
+  const tiny = document.createElement('canvas');
+  tiny.width = tiny.height = 1;
+  const tinyContext = tiny.getContext('2d');
+  tinyContext.fillStyle = '#808080';
+  tinyContext.fillRect(0, 0, 1, 1);
+  const single = Array.from(tinyContext.getImageData(0, 0, 1, 1).data);
+
   const glCanvas = document.createElement('canvas');
   glCanvas.width = 4;
   glCanvas.height = 4;
@@ -113,7 +120,7 @@ NOISE_PROBE = """async () => {
   const glDataUrl = glCanvas.toDataURL('image/png');
   const glDataUrlAgain = glCanvas.toDataURL('image/png');
   return {
-    first, second, crop,
+    first, second, crop, single,
     dataUrl, dataUrlAgain,
     blobHash: hash(blobBytes), blobAgainHash: hash(blobAgainBytes),
     blobSize: blob.size,
@@ -155,6 +162,8 @@ def test_native_canvas_and_webgl_noise_are_stable():
     assert noisy["first"] != baseline["first"]
     assert other["first"] != baseline["first"]
     assert noisy["first"] != other["first"]
+    assert baseline["single"] == [128, 128, 128, 255]
+    assert noisy["single"] == [128, 128, 128, 255]
 
     for index in range(0, len(noisy["first"]), 4):
         assert noisy["first"][index + 3] == 255
