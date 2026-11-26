@@ -2,6 +2,12 @@
 
 核对版本为 Chromium `158.0.8127.88`，主要实测平台为 macOS arm64。Ubuntu x86-64 已另行验证双环境隔离，以及 Canvas 2D 和 WebGL 读取限制。当前 Chromium 环境使用本机操作系统。面板可以分别限制 Canvas 2D 读取、WebGL 显卡调试信息、本机字体枚举、音视频采集和网站定位。Camoufox 环境支持自己的指纹预设，两个内核走不同的启动路径。[锁定版本](upstream.json) · [Chromium 启动器](../moltskin/services/core/chromium.py) · [Camoufox 启动器](../moltskin/services/core/runner.py)
 
+## 面板预览与正常窗口
+
+面板的「本地兼容性预览」在临时离线页面读取所选系统、平台版本和处理器架构。「打开」会启动该环境自己的 Chromium 进程。2026-11-26 在同一个 Mac 测试环境中，预览读到 `Windows / x86 / 64`，正常有头窗口访问 BrowserLeaks 后，网站的 Client Hints 表格显示 `macOS / arm / 64`。按环境向普通网站报告 Windows 平台与 x86-64 架构的功能尚未实现。[本次实测记录](../docs/chromium-platform-baseline-macos.md) · [离线预览](../moltskin/services/core/platform_preview.py) · [正常窗口启动器](../moltskin/services/core/launcher.py)
+
+下表按正常窗口填写。`chromium/launch_preview.py` 是额外的原生命令行启动工具，面板的两个按钮均有各自的服务端入口。[命令行启动工具](launch_preview.py)
+
 ## 网页可读的指纹面
 
 “未实现”指在本分支中找不到把相应预设应用到 Chromium 环境的设置、启动逻辑或补丁。网页仍可能通过上游接口读到来自浏览器或操作系统的值。[内核补丁](patches/) · [面板配置校验](../moltskin/services/core/main.py)
