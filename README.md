@@ -6,6 +6,8 @@
 
 Moltskin is a self-hosted browser for managing isolated profiles. Each profile has its own data directory. The **0.5.0 alpha** uses Camoufox for fingerprint presets and per-profile proxies. This development branch also supports a native Chromium preview with per-profile permissions. [Camoufox](https://github.com/daijro/camoufox) · [Changelog](CHANGELOG.md) · [Quick start](#quick-start)
 
+**Internal beta:** the first macOS Apple Silicon alpha is on [GitHub Releases](https://github.com/yushui2022/Moltskin/releases/tag/v0.5.0-alpha.1). It is the most basic build, not recommended for regular or production use yet; it will keep receiving upgrades and maintenance. [Release notes](docs/release-notes-0.5.0-alpha.1.md)
+
 ## Chromium roadmap
 
 Open Moltskin on macOS to see the window list in a dedicated desktop manager. Click **Open** on a profile to see its launch status and use its browser in a separate window with tabs and an address bar. With the default settings, each Chromium window opens its own workbench in the first tab.

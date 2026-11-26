@@ -6,6 +6,8 @@
 
 Moltskin 是可自行部署的多环境指纹浏览器。每个环境有独立的数据目录。**0.5.0 alpha** 使用 Camoufox（Firefox）提供指纹预设和独立代理。当前开发分支也可启动自编 Chromium 预览版，按环境管理网站权限。[更新记录](CHANGELOG.md) · [快速开始](#快速开始)
 
+**内测版：** 首个 macOS Apple Silicon Alpha 已发布到 [GitHub Releases](https://github.com/yushui2022/Moltskin/releases/tag/v0.5.0-alpha.1)。这是最基础的一版，目前不推荐日常或生产使用，后续会持续升级与维护。[发布说明](docs/release-notes-0.5.0-alpha.1.md)
+
 ## Chromium 开发路线
 
 双击 Mac 上的 Moltskin，先进入独立的管理窗口。在「浏览器窗口」中点击某个环境的「打开」，面板显示启动状态，随后可在该环境自己的浏览器中使用标签页和地址栏。默认设置下，Chromium 的首个标签页显示该窗口的工作台。
