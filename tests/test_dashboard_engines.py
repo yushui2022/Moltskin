@@ -480,15 +480,22 @@ def test_platform_preview_validation_and_legacy_import(client):
 
 
 def test_platform_preview_presets_do_not_change_launch_arguments(client):
-    settings = {"preview_platform": "Windows", "preview_platform_version": "10.0", "preview_architecture": "arm64"}
+    from moltskin.services.core import config
+
+    settings = {"preview_platform": "Windows", "preview_platform_version": "15.0.0", "preview_architecture": "x86_64"}
     profile = create_chromium(client, "preview launch", startup_page="blank")
     url = f"{PROFILES}/{profile['id']}"
     args_file = Path(profile["user_data_dir"]) / "test-args.json"
     launches = []
     for changes in ({}, settings):
         client.patch(url, json=changes).raise_for_status()
-        client.post(url + "/launch").raise_for_status()
+        session = client.post(url + "/launch").raise_for_status().json()["data"]
         try:
+            log = (config.RUN_DIR / f"{session['session_id']}.log").read_text(encoding="utf-8")
+            if changes:
+                assert json.loads(log.splitlines()[0]) == {"saved_local_compatibility_preview": settings}
+            else:
+                assert "saved_local_compatibility_preview" not in log
             launches.append(json.loads(args_file.read_text()))
             for key, value in settings.items():
                 blocked = client.patch(url, json={key: "" if changes else value})

@@ -333,6 +333,11 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             if is_chromium:
                 profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             with log_path.open("w", encoding="utf-8") as log_handle:
+                if is_chromium:
+                    preview = {key: current[key] for key in
+                               ("preview_platform", "preview_platform_version", "preview_architecture")}
+                    if any(preview.values()):
+                        print(json.dumps({"saved_local_compatibility_preview": preview}), file=log_handle, flush=True)
                 proc = subprocess.Popen(command, cwd=config.ROOT, stdout=log_handle,
                                         stderr=subprocess.STDOUT, start_new_session=True, env=process_env)
         except OSError as exc:
