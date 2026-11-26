@@ -52,8 +52,8 @@ def permission_switches(settings: dict[str, str], capabilities: frozenset[str]) 
 
 def run_browser(binary: Path, user_data: Path, switches: list[str], *, disposable: bool = False) -> int:
     args = [str(binary), f"--user-data-dir={user_data}", "--no-first-run", "--no-default-browser-check", *switches]
-    if disposable and sys.platform == "darwin":
-        args.append("--use-mock-keychain")
+    if disposable:
+        args.extend(native.host_platform.disposable_keychain_args())
     with subprocess.Popen(args) as browser:
         try:
             return browser.wait()

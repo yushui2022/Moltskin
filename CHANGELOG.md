@@ -4,6 +4,7 @@
 
 ### Added
 
+- 新增 `platforms/` 平台适配层：macOS/Linux 的路径、进程、时区、单例锁和宿主标签集中管理，Windows 适配器先保留占位。
 - 同系统配置优先：窗口目标系统与宿主一致时，保留宿主字体、语音和 WebGL 参数；只有跨系统选择 Windows 画像时才启用字体白名单、Windows 语音和 WebGL 参数画像。Windows/Linux 任务栏与 macOS 菜单栏/Dock 工作区分别计算。社交运营与电商环境建议直接使用与宿主相同的系统画像，避免字体、Emoji 和语音冲突。
 - Chromium 内核补丁 `0009-hide-webdriver`：即使通过 Playwright/CDP 启动，`navigator.webdriver` 仍返回 `false`。启动器默认传入 `--moltskin-hide-webdriver`，并登记内核能力。
 - Chromium 内核补丁 `0010-screen-metrics`：窗口可选择屏幕尺寸/色深/像素比预设，同步 `screen`、`devicePixelRatio` 和相关媒体查询。

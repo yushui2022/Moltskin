@@ -5,11 +5,10 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import socket
 import stat
-import subprocess
-import sys
 from pathlib import Path
+
+from platforms import current as host_platform
 
 from chromium.native import (
     CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
@@ -25,13 +24,7 @@ from .security import workbench_signature
 
 
 def _host_platform_family() -> str:
-    if sys.platform == "darwin":
-        return "macos"
-    if sys.platform.startswith("linux"):
-        return "linux"
-    if sys.platform == "win32":
-        return "windows"
-    return "unknown"
+    return host_platform.family
 
 
 def _platform_family(chromium_platform: str) -> str:
@@ -52,8 +45,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    chromium_screen: str = "", chromium_platform: str = "",
                    chromium_webgl: str = "", canvas_noise_seed: int = 0,
                    audio_noise_seed: int = 0) -> tuple[list[str], str]:
-    if sys.platform not in ("darwin", "linux"):
-        raise ValueError("Chromium 预览版仅支持 macOS 和 Linux")
+    if not host_platform.supports_chromium:
+        raise ValueError(host_platform.unsupported_chromium_message)
     if local_fonts not in ("standard", "restricted"):
         raise ValueError("未知的字体访问设置")
     if media_capture not in ("standard", "blocked"):
@@ -221,21 +214,13 @@ def launch_environment(browser_timezone: str) -> dict[str, str] | None:
     if browser_timezone not in config.CHROMIUM_BROWSER_TIMEZONES:
         raise ValueError("未知的浏览器时区")
     # Each window owns a Chromium process tree. The manager and other windows retain their TZ.
-    return {**os.environ, "TZ": browser_timezone}
+    return host_platform.launch_environment(browser_timezone)
 
 
 def owns_lock(profile_dir: Path, pid: int) -> bool:
-    try:
-        return os.readlink(profile_dir / "SingletonLock") == f"{socket.gethostname()}-{pid}"
-    except (FileNotFoundError, NotADirectoryError):
-        return False
+    return host_platform.owns_lock(profile_dir, pid)
 
 
 def matches_process(profile_dir: Path, pid: int) -> bool:
     """A persisted PID or a leftover SingletonLock alone cannot identify a browser."""
-    result = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "command="], capture_output=True,
-                            text=True, errors="replace", timeout=3, check=False)
-    # Our first switch identifies the directory. Later user-supplied text may resemble switches.
-    _, marker, options = result.stdout.partition(" --user-data-dir=")
-    expected = f"{profile_dir.resolve()} --no-first-run --no-default-browser-check"
-    return result.returncode == 0 and bool(marker) and options.startswith(expected)
+    return host_platform.matches_process(profile_dir, pid)

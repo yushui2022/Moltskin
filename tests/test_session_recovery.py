@@ -96,17 +96,27 @@ def test_recover_only_the_owned_camoufox_main_with_a_spaced_data_path(session_ro
         "94": f"/opt/Camoufox Browser/camoufox -contentproc -profile {directory} 1",
     }
 
-    def inspect_ps(argv, **kwargs):
-        if "-axo" in argv:
-            return "\n".join(f"{pid} {command}" for pid, command in args.items())
-        pid = argv[argv.index("-p") + 1]
-        if argv[-1] == "comm=":
-            return "/opt/sys/other" if pid == "92" else "/opt/Camoufox Browser/camoufox"
-        return args[pid]
-
+    monkeypatch.setattr(
+        launcher.host_platform,
+        "process_list",
+        lambda: [(int(pid), command) for pid, command in args.items()],
+    )
+    monkeypatch.setattr(
+        launcher.host_platform,
+        "process_executable",
+        lambda pid: "other" if pid == 92 else "camoufox",
+    )
+    monkeypatch.setattr(
+        launcher.host_platform,
+        "process_command",
+        lambda pid: args[str(pid)],
+    )
     signals = []
-    monkeypatch.setattr(launcher.subprocess, "check_output", inspect_ps)
-    monkeypatch.setattr(launcher.os, "kill", lambda pid, sig: signals.append(pid))
+    monkeypatch.setattr(
+        launcher.host_platform,
+        "send_stop",
+        lambda pid, engine: signals.append(pid),
+    )
     assert launcher.cleanup_browser_orphans() == 1
     assert signals == [91]
 

@@ -14,6 +14,8 @@ from threading import Thread
 
 from camoufox.fingerprints import get_random_preset
 
+from platforms import current as host_platform
+
 from . import chromium, config, db, extensions
 from .proxy_settings import chromium_proxy_server
 
@@ -37,13 +39,7 @@ def _read_status(path: Path) -> dict | None:
 
 
 def _pid_alive(pid: int | None) -> bool:
-    if not isinstance(pid, int) or not 0 < pid <= 2**31 - 1:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except (OSError, TypeError):
-        return False
+    return host_platform.pid_alive(pid)
 
 
 SESSION_QUERY = (
@@ -61,11 +57,10 @@ def _session_alive(session) -> bool:
     # is not evidence that the process still belongs to this session.
     expected = f" -m moltskin.services.core.runner --plan {config.RUN_DIR / (session['id'] + '.plan.json')}"
     try:
-        proc = subprocess.run(["ps", "-ww", "-p", str(session["pid"]), "-o", "command="],
-                              capture_output=True, text=True, errors="replace", timeout=3)
-    except (OSError, subprocess.SubprocessError) as exc:
+        command = host_platform.process_command(session["pid"])
+    except OSError as exc:
         raise LaunchError("PROCESS_CHECK_FAILED", "无法确认浏览器进程归属，请稍后重试", 503) from exc
-    return proc.returncode == 0 and proc.stdout.rstrip("\n").endswith(expected)
+    return command is not None and command.endswith(expected)
 
 
 def _active_session(conn, profile_id: str):
@@ -344,7 +339,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                     if any(preview.values()):
                         print(json.dumps({"saved_local_compatibility_preview": preview}), file=log_handle, flush=True)
                 proc = subprocess.Popen(command, cwd=config.ROOT, stdout=log_handle,
-                                        stderr=subprocess.STDOUT, start_new_session=True, env=process_env)
+                                        stderr=subprocess.STDOUT, env=process_env,
+                                        **host_platform.process_start_kwargs())
         except OSError as exc:
             raise LaunchError("LAUNCH_FAILED", f"无法启动浏览器进程：{exc}", 500) from exc
         conn.execute("UPDATE sessions SET pid=? WHERE id=?", (proc.pid, session_id))
@@ -449,24 +445,15 @@ def stop(session_id: str, actor: str = "local") -> dict:
     if not alive:
         _recover_exit(session, "PROCESS_GONE", "进程已退出")
     elif _session_alive(session):
-        try:
-            # Chromium treats SIGTERM as an OS logout and skips some storage writes.
-            # SIGINT uses its normal browser exit path on Linux and macOS.
-            normal_exit = signal.SIGINT if session["engine"] == "chromium" else signal.SIGTERM
-            os.kill(pid, normal_exit)
-        except ProcessLookupError:
-            pass
+        host_platform.send_stop(pid, session["engine"])
         timeout = float(db.get_setting("stop_timeout_sec", 8))
         deadline = time.monotonic() + timeout
         while _session_alive(session) and time.monotonic() < deadline:
             time.sleep(0.1)
         if _session_alive(session):
             if session["engine"] != "chromium" or chromium.owns_lock(Path(session["user_data_dir"]), pid):
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                    forced = True
-                except ProcessLookupError:
-                    pass
+                host_platform.send_kill(pid)
+                forced = True
 
     if alive and not _session_alive(session):
         _finish_session(session_id, session["profile_id"], "killed" if forced else "stopped")
@@ -503,11 +490,9 @@ def cleanup_browser_orphans() -> int:
     Firefox process outlived it. Only processes using Moltskin's own profile
     directory are considered.
     """
-    if os.name == "nt":
-        return 0
     try:
-        output = subprocess.check_output(["ps", "-ww", "-axo", "pid=,command="], text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
+        processes = host_platform.process_list()
+    except OSError:
         return 0
 
     # A Playwright-launched main browser has both flags. Child processes may
@@ -515,15 +500,11 @@ def cleanup_browser_orphans() -> int:
     owned_profile = re.compile(r" -profile (" + re.escape(str(config.PROFILES_DIR)) +
                                r"/[^/\s]+) -juggler-pipe(?: |$)")
     cleaned = 0
-    for line in output.splitlines():
-        match = owned_profile.search(line)
+    for pid, command_line in processes:
+        match = owned_profile.search(command_line)
         if not match:
             continue
         profile_dir = match.group(1)
-        try:
-            pid = int(line.strip().split()[0])
-        except (ValueError, IndexError):
-            continue
         with db.session() as conn:
             conn.execute("BEGIN IMMEDIATE")
             profile = conn.execute("SELECT id FROM profiles WHERE engine='camoufox' AND user_data_dir=?",
@@ -531,16 +512,15 @@ def cleanup_browser_orphans() -> int:
             if not profile or _active_session(conn, profile["id"]):
                 continue
             try:
-                executable = subprocess.check_output(["ps", "-p", str(pid), "-o", "comm="], text=True, timeout=3)
-                if Path(executable.strip()).name not in ("camoufox", "camoufox-bin"):
+                executable = host_platform.process_executable(pid)
+                if executable not in ("camoufox", "camoufox-bin"):
                     continue
-                current = subprocess.check_output(["ps", "-ww", "-p", str(pid), "-o", "command="],
-                                                  text=True, timeout=3)
-                if current.strip() != line.strip().split(None, 1)[1]:
+                current = host_platform.process_command(pid)
+                if current != command_line:
                     continue
-                os.kill(pid, signal.SIGTERM)
+                host_platform.send_stop(pid, "camoufox")
                 cleaned += 1
-            except (OSError, subprocess.SubprocessError):
+            except (OSError, NotImplementedError):
                 continue
     return cleaned
 

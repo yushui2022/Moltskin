@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import os
 import re
-import socket
 import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
+
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from platforms import current as host_platform
 
 CAPABILITY = "moltskin-disable-local-font-access"
 MEDIA_CAPTURE_CAPABILITY = "moltskin-block-media-capture"
@@ -37,24 +43,11 @@ DESKTOP_CAPABILITIES = frozenset({CAPABILITY, MEDIA_CAPTURE_CAPABILITY, GEOLOCAT
 
 
 def default_binary() -> Path:
-    configured = os.environ.get("MOLTSKIN_CHROMIUM_BINARY")
-    if configured:
-        return Path(configured).expanduser()
-    out = Path.home() / "chromium-baseline" / "src" / "out"
-    executable = "Chromium.app" if sys.platform == "darwin" else "chrome"
-    for directory in ("MoltskinHardwarePrivacy", "MoltskinGraphicsPrivacy", "MoltskinLocation", "MoltskinMedia",
-                      "MoltskinToolbar", "MoltskinPanel"):
-        binary = out / directory / executable
-        program = binary / "Contents/MacOS/Chromium" if sys.platform == "darwin" else binary
-        if program.is_file():
-            return binary
-    return out / "MoltskinFont" / executable
+    return host_platform.default_chromium_binary()
 
 
 def probe_capabilities(path: Path) -> tuple[Path, str, frozenset[str]]:
-    path = path.expanduser().resolve()
-    if path.suffix == ".app":
-        path = path / "Contents" / "MacOS" / "Chromium"
+    path = host_platform.resolve_chromium_binary(path.expanduser().resolve())
     result = subprocess.run(
         [path, "--version", "--moltskin-capabilities"], capture_output=True,
         timeout=15, check=True, text=True, errors="replace",
@@ -88,8 +81,8 @@ def build_catalog() -> tuple[dict[str, InstalledBuild], str | None, str | None]:
     builds: dict[str, InstalledBuild] = {}
     default = None
     problem = None
-    if sys.platform not in {"darwin", "linux"}:
-        return builds, default, "Chromium 预览版目前支持 macOS 和 Linux。"
+    if not host_platform.supports_chromium:
+        return builds, default, host_platform.unsupported_chromium_message
     try:
         build = _read_build(default_binary())
         default = build.version
@@ -104,8 +97,7 @@ def build_catalog() -> tuple[dict[str, InstalledBuild], str | None, str | None]:
     directory = os.environ.get("MOLTSKIN_CHROMIUM_BUILDS_DIR")
     if directory:
         root = Path(directory).expanduser().resolve()
-        package = "Chromium.app/Contents/MacOS/Chromium" if sys.platform == "darwin" else "chrome"
-        for candidate in sorted(root.glob("*/" + package)):
+        for candidate in sorted(root.glob(host_platform.chromium_catalog_glob())):
             try:
                 binary = candidate.resolve(strict=True)
                 if not binary.is_relative_to(root) or not binary.is_file():
@@ -149,17 +141,4 @@ def probe(path: Path, *, capability: str = CAPABILITY) -> tuple[Path, str]:
 
 
 def chromium_owns_directory(user_data: Path) -> bool:
-    # Chromium also creates a lock when launched directly, or if our launcher exits first.
-    try:
-        owner = os.readlink(user_data / "SingletonLock")
-    except FileNotFoundError:
-        return False
-    host, _, pid = owner.rpartition("-")
-    if host == socket.gethostname() and pid.isascii() and pid.isdigit() and 0 < int(pid) <= 2**31 - 1:
-        try:
-            os.kill(int(pid), 0)
-        except ProcessLookupError:
-            return False  # Chromium cleans its own stale lock on startup.
-        except PermissionError:
-            pass
-    return True
+    return host_platform.chromium_owns_directory(user_data)

@@ -9,12 +9,10 @@ from __future__ import annotations
 import hmac
 import json
 import os
-import platform
 import re
 import shutil
 import sqlite3
 import subprocess
-import sys
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event, Thread
@@ -25,6 +23,7 @@ from typing import Annotated, Any, Literal
 from urllib.parse import quote
 from uuid import UUID
 
+from platforms import current as host_platform
 from camoufox.fingerprints import get_random_preset
 from camoufox.multiversion import list_installed
 from camoufox.pkgman import installed_verstr
@@ -1018,14 +1017,7 @@ def stats():
 
 
 def _host_os_label() -> str:
-    if sys.platform == "darwin":
-        return ("macOS " + platform.mac_ver()[0]).strip()
-    if sys.platform.startswith("linux"):
-        try:
-            return platform.freedesktop_os_release()["PRETTY_NAME"]
-        except (AttributeError, KeyError, OSError):
-            return "Linux " + platform.release()
-    return platform.system()
+    return host_platform.host_os_label()
 
 
 def _chromium_policy_support(capabilities: frozenset[str]) -> dict[str, bool]:
@@ -1073,7 +1065,7 @@ def engine():
                          "chromium_js_heap_limits": config.CHROMIUM_JS_HEAP_LIMITS,
                          "chromium_renderer_limits": config.CHROMIUM_RENDERER_LIMITS,
                          "browser_languages": config.CHROMIUM_BROWSER_LANGUAGES,
-                         "host_os": _host_os_label(), "host_arch": platform.machine(),
+                         "host_os": _host_os_label(), "host_arch": host_platform.host_arch(),
                          "browser_timezones": config.CHROMIUM_BROWSER_TIMEZONES,
                          "browser_window_sizes": config.CHROMIUM_BROWSER_WINDOW_SIZES,
                          "chromium_screen_presets": config.CHROMIUM_SCREEN_PRESETS,
