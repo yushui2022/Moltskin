@@ -81,6 +81,7 @@ moltskin-webgl-info
 moltskin-webgl-params
 moltskin-panel
 moltskin-toolbar
+moltskin-workbench-button
 ```
 
 关键补丁：
@@ -101,6 +102,7 @@ moltskin-toolbar
 | `0020-webgl-params` | Windows 跨系统 WebGL 参数/扩展画像 |
 | `0021-font-api-filter` | `document.fonts.check` / `FontFace(local)` 过滤 |
 | `0022-canvas-noise-stealth` | 跳过单像素读数探针 |
+| `0023-workbench-toolbar` | 工具栏按钮打开当前会话工作台 |
 
 ### 2.3 平台差异边界
 

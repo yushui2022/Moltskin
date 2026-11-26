@@ -234,6 +234,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             process_env = chromium.launch_environment(profile["browser_timezone"])
             open_workbench = (not headless and config.OPEN_MANAGER and profile["startup_page"] == "default"
                               and db.get_setting("open_manager_on_launch", True))
+            workbench_button_url = chromium.workbench_url(session_id)
             command, browser_version = chromium.prepare_launch(
                 profile_dir, profile["local_fonts"], headless,
                 chromium_version=profile["chromium_version"],
@@ -241,6 +242,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 proxy_server=proxy_server,
                 open_dashboard=config.OPEN_MANAGER and profile["startup_page"] == "dashboard",
                 workbench_session=session_id if open_workbench else None,
+                workbench_button_url=workbench_button_url,
                 block_images=bool(profile["block_images"]),
                 chromium_js_heap_mb=profile["chromium_js_heap_mb"],
                 chromium_mute_audio=bool(profile["chromium_mute_audio"]),

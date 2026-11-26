@@ -11,8 +11,9 @@ The script:
 1. Reads `moltskin.__version__`
 2. Requires a built `Chromium.app`
 3. Copies the product and the complete Chromium bundle into `dist/`
-4. Adds `Setup.command`, `Start Moltskin.command` and `Install Moltskin.command`
-5. Creates a ZIP and SHA-256 file
+4. Replaces the Chromium app icon with the Moltskin chameleon
+5. Adds `Setup.command`, `Start Moltskin.command` and `Install Moltskin.command`
+6. Creates a ZIP and SHA-256 file
 
 Set `MOLTSKIN_CHROMIUM_BINARY` when the build is not in the default location:
 

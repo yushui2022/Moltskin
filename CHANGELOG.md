@@ -20,6 +20,8 @@
 - Chromium 内核补丁 `0020-webgl-params`：Windows 平台预设启用稳定的 WebGL 参数和扩展画像，过滤 ASTC/ETC/PVRTC 等 macOS 常见扩展。
 - Chromium 内核补丁 `0021-font-api-filter`：`document.fonts.check()` 和 `FontFace(local(...))` 也遵循字体白名单，堵住 CreepJS 的字体列表检测路径。
 - Chromium 内核补丁 `0022-canvas-noise-stealth`：跳过单像素读取探针，保留大区域 Canvas 噪声，同时避免被读数噪声检测器直接标记。
+- Chromium 内核补丁 `0023-workbench-toolbar`：工具栏 Moltskin 按钮优先打开当前会话的工作台，已有工作台标签时直接切回；没有会话时回退管理首页。
+- macOS Alpha 包的 Chromium 应用图标替换为 Moltskin 变色龙图标。
 - Chromium 窗口绑定固定代理时加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 绕过代理使用非代理 UDP。
 
 ## 0.4.1 — 2026-11-07

@@ -1,0 +1,93 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -38,6 +38,9 @@
+ // Selects a stable WebGL parameter and extension profile.
+ inline constexpr char kMoltskinWebglProfile[] = "moltskin-webgl-profile";
+ 
++// URL opened by the Moltskin toolbar button for the current session.
++inline constexpr char kMoltskinWorkbenchURL[] = "moltskin-workbench-url";
++
+ // Adds deterministic per-profile noise to canvas and WebGL pixel readbacks.
+ inline constexpr char kMoltskinCanvasNoise[] = "moltskin-canvas-noise";
+ 
+--- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
++++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
+@@ -20,6 +20,7 @@
+ #include "base/notimplemented.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/trace_event/trace_event.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "build/build_config.h"
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/actor/ui/actor_ui_metrics.h"
+@@ -241,26 +242,39 @@
+   return kIcon;
+ }
+ 
+-void OpenMoltskinHome(BrowserWindowInterface* browser) {
+-  GURL panel("chrome://moltskin/");
+-  startup::ResolveMoltskinPanelURL(&panel);
+-  if (!panel.SchemeIs("http")) {
+-    return;
++void OpenMoltskinWorkbench(BrowserWindowInterface* browser) {
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  GURL target(command_line->GetSwitchValueASCII(
++      blink::switches::kMoltskinWorkbenchURL));
++  const bool has_workbench_target =
++      target.is_valid() && target.SchemeIs("http");
++
++  GURL panel;
++  if (!has_workbench_target) {
++    panel = GURL("chrome://moltskin/");
++    startup::ResolveMoltskinPanelURL(&panel);
++    if (!panel.SchemeIs("http")) {
++      return;
++    }
++    target = panel.Resolve("#/home");
+   }
+-  const GURL home = panel.Resolve("#/home");
+-  NavigateParams params(browser, home, ui::PAGE_TRANSITION_AUTO_BOOKMARK);
++
++  NavigateParams params(browser, target, ui::PAGE_TRANSITION_AUTO_BOOKMARK);
+   params.user_gesture = true;
+   params.disposition = WindowOpenDisposition::kNewForegroundTab;
+-  // Only an existing dashboard document in this window may be reused.
++  // Reuse the matching workbench or dashboard tab when it is already open.
+   // Other pages served by the same loopback host are ordinary working tabs.
+   TabStripModel* tabs = browser->GetTabStripModel();
+   for (int i = 0; i < tabs->count(); ++i) {
+     content::WebContents* tab = tabs->GetWebContentsAt(i);
+-    if (tab->GetVisibleURL().EqualsIgnoringRef(panel)) {
++    if (tab->GetVisibleURL().EqualsIgnoringRef(target) && !tab->IsCrashed()) {
+       tabs->ActivateTabAt(i);
+-      if (tab->GetVisibleURL() == home && !tab->IsCrashed()) {
+-        return;
+-      }
++      return;
++    }
++    if (!has_workbench_target &&
++        tab->GetVisibleURL().EqualsIgnoringRef(panel)) {
++      tabs->ActivateTabAt(i);
+       params.disposition = WindowOpenDisposition::kCurrentTab;
+       params.source_contents = tab;
+       break;
+@@ -681,7 +695,7 @@
+ 
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+   auto* moltskin_button = AddChildView(std::make_unique<ToolbarButton>(
+-      base::BindRepeating(&OpenMoltskinHome, browser_)));
++      base::BindRepeating(&OpenMoltskinWorkbench, browser_)));
+   moltskin_button->SetVectorIcon(MoltskinToolbarIcon());
+   moltskin_button->SetTooltipText(u"Moltskin");
+   moltskin_button->GetViewAccessibility().SetName(u"Moltskin");
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -461,6 +461,7 @@
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
++      puts("moltskin-workbench-button");
+ #endif
+     }
+   }

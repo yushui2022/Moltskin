@@ -502,7 +502,8 @@ def test_platform_preview_presets_do_not_change_launch_arguments(client):
                 assert blocked.status_code == 409 and blocked.json()["error"]["code"] == "PROFILE_RUNNING"
         finally:
             client.post(url + "/stop").raise_for_status()
-    assert launches[0] == launches[1]
+    stable = lambda args: [arg for arg in args if not arg.startswith("--moltskin-workbench-url=")]
+    assert stable(launches[0]) == stable(launches[1])
 
 
 def test_manual_user_agent_roundtrip_and_launch(client):

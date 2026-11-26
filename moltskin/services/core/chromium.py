@@ -36,7 +36,8 @@ def _platform_family(chromium_platform: str) -> str:
 def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    chromium_version: str = "", chromium_user_agent: str = "",
                    proxy_server: str | None = None,
-                   block_images: bool = False, open_dashboard: bool = False, workbench_session: str | None = None,
+                   block_images: bool = False, open_dashboard: bool = False,
+                   workbench_session: str | None = None, workbench_button_url: str = "",
                    chromium_js_heap_mb: int = 0, chromium_mute_audio: bool = False, chromium_renderer_limit: int = 0,
                    media_capture: str = "standard", geolocation: str = "standard",
                    hardware_reporting: str = "standard",
@@ -163,12 +164,18 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append(f"--{AUDIO_NOISE_CAPABILITY}={audio_noise_seed}")
     if headless:
         args.append("--headless")
+    if workbench_button_url:
+        args.append("--moltskin-workbench-url=" + workbench_button_url)
     if workbench_session:
-        signature = workbench_signature(workbench_session)
-        args.append(f"http://127.0.0.1:{config.PORT}/workbench/{workbench_session}/{signature}")
+        args.append(workbench_button_url or workbench_url(workbench_session))
     else:
         args.append(config.local_dashboard_url() if open_dashboard else "about:blank")
     return args, version
+
+
+def workbench_url(session_id: str) -> str:
+    signature = workbench_signature(session_id)
+    return f"http://127.0.0.1:{config.PORT}/workbench/{session_id}/{signature}"
 
 
 def _noise_seed(scope: str, profile_id: str) -> int:

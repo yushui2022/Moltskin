@@ -40,6 +40,7 @@ cp "$ROOT/run.py" "$ROOT/requirements.txt" "$ROOT/LICENSE" "$ROOT/NOTICE" "$STAG
 cp "$ROOT/README.md" "$ROOT/README.zh-CN.md" "$ROOT/CHANGELOG.md" "$STAGE/"
 cp "$ROOT/docs/release-macos-alpha.md" "$STAGE/README-alpha.md"
 ditto "$CHROMIUM" "$STAGE/Chromium.app"
+"$ROOT/release/macos/make_icon.sh" "$STAGE/Chromium.app" "$ROOT/web/logo.png"
 
 cat > "$STAGE/runtime.env" <<'ENV'
 # Sourced by the launcher commands. The folder is relocatable; $HERE is set by
