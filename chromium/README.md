@@ -65,7 +65,7 @@ Chromium 窗口可在「运行平台与架构」选择 Windows、macOS 或 Linux
 
 Chromium 窗口可在「WebGL 显卡型号」选择 Apple、Intel、NVIDIA 或 AMD 显卡预设。启动器把预设拆成 `--moltskin-webgl-vendor` 和 `--moltskin-webgl-renderer` 两个参数，内核只覆盖 `WEBGL_debug_renderer_info` 扩展返回的 `UNMASKED_VENDOR_WEBGL` 和 `UNMASKED_RENDERER_WEBGL`。遮蔽的 `VENDOR` 与 `RENDERER` 仍返回 `WebKit` 和 `WebKit WebGL`，与标准 Chromium 一致。
 
-显卡预设只改变网页读到的厂商和型号字符串，不改变实际 GPU、驱动、渲染结果或性能。选择「限制 WebGL 显卡调试信息」时，该扩展不可用，显卡预设也不会暴露。[实机回归](../tests/test_chromium_webgl_info.py)
+Windows 平台预设还会启用稳定的 WebGL 参数画像，例如 `MAX_TEXTURE_SIZE`、`MAX_VIEWPORT_DIMS`、纹理单元和 uniform 向量上限，并过滤 ASTC/ETC/PVRTC 等 macOS 常见压缩纹理扩展。显卡预设本身只改变网页读到的字符串，不改变实际 GPU、驱动、渲染结果或性能。选择「限制 WebGL 显卡调试信息」时，该扩展不可用，显卡预设也不会暴露。[实机回归](../tests/test_chromium_webgl_info.py)
 
 ### Canvas 与 WebGL 像素噪声
 

@@ -1,0 +1,160 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -35,6 +35,9 @@
+ inline constexpr char kMoltskinWebglVendor[] = "moltskin-webgl-vendor";
+ inline constexpr char kMoltskinWebglRenderer[] = "moltskin-webgl-renderer";
+ 
++// Selects a stable WebGL parameter and extension profile.
++inline constexpr char kMoltskinWebglProfile[] = "moltskin-webgl-profile";
++
+ // Adds deterministic per-profile noise to canvas and WebGL pixel readbacks.
+ inline constexpr char kMoltskinCanvasNoise[] = "moltskin-canvas-noise";
+ 
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -65,6 +65,7 @@
+ #include "media/gfx/video_frame_shared_image_cache.h"
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/moltskin_webgl_info.h"
++#include "third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h"
+ #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+ #include "third_party/blink/renderer/platform/graphics/moltskin_canvas_noise.h"
+ #include "third_party/blink/public/mojom/gpu/gpu.mojom-blink.h"
+@@ -3972,6 +3973,11 @@
+ ScriptObject WebGLRenderingContextBase::getExtension(ScriptState* script_state,
+                                                      const String& name) {
+   ExecutionContext* context = ExecutionContext::From(script_state);
++
++  if (!IsMoltskinWebglExtensionAllowed(name)) {
++    return ScriptObject(script_state->GetIsolate(),
++                        v8::Null(script_state->GetIsolate()));
++  }
+ 
+   if (name == WebGLDebugRendererInfo::ExtensionName()) {
+     UseCounter::Count(context, WebFeature::kWebGLDebugRendererInfo);
+@@ -4088,6 +4094,13 @@
+                                                     GLenum pname) {
+   if (isContextLost())
+     return ScriptValue::CreateNull(script_state->GetIsolate());
++  if (const std::optional<int> value = GetMoltskinWebglIntParameter(pname)) {
++    return WebGLAny(script_state, *value);
++  }
++  if (const std::optional<std::array<int, 2>> value =
++          GetMoltskinWebglInt2Parameter(pname)) {
++    return WebGLAny(script_state, base::span<const int>(*value));
++  }
+   const int kIntZero = 0;
+   switch (pname) {
+     case GL_ACTIVE_TEXTURE:
+@@ -4634,7 +4647,8 @@
+   Vector<String> result;
+ 
+   for (ExtensionTracker* tracker : extensions_) {
+-    if (ExtensionSupportedAndAllowed(tracker)) {
++    if (ExtensionSupportedAndAllowed(tracker) &&
++        IsMoltskinWebglExtensionAllowed(tracker->ExtensionName())) {
+       result.push_back(tracker->ExtensionName());
+     }
+   }
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4043,6 +4043,7 @@
+       blink::switches::kMoltskinPlatform,
+       blink::switches::kMoltskinScreenMetrics,
+       blink::switches::kMoltskinSpeechVoices,
++      blink::switches::kMoltskinWebglProfile,
+       blink::switches::kMoltskinWebglRenderer,
+       blink::switches::kMoltskinWebglVendor,
+       blink::switches::kNetworkQuietTimeout,
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -457,6 +457,7 @@
+       puts("moltskin-screen-avail");
+       puts("moltskin-speech-voices");
+       puts("moltskin-webgl-info");
++      puts("moltskin-webgl-params");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+--- /dev/null
++++ b/third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h
+@@ -0,0 +1,79 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGL_MOLTSKIN_WEBGL_PARAMS_H_
++#define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGL_MOLTSKIN_WEBGL_PARAMS_H_
++
++#include <array>
++#include <optional>
++
++#include "base/command_line.h"
++#include "third_party/angle/include/GLES2/gl2.h"
++#include "third_party/angle/include/GLES2/gl2ext.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
++#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
++
++namespace blink {
++
++inline bool IsMoltskinWebglProfileEnabled() {
++  return base::CommandLine::ForCurrentProcess()->HasSwitch(
++      switches::kMoltskinWebglProfile);
++}
++
++inline std::optional<int> GetMoltskinWebglIntParameter(GLenum pname) {
++  if (!IsMoltskinWebglProfileEnabled()) {
++    return std::nullopt;
++  }
++  switch (pname) {
++    case GL_MAX_TEXTURE_SIZE:
++      return 16384;
++    case GL_MAX_CUBE_MAP_TEXTURE_SIZE:
++      return 16384;
++    case GL_MAX_RENDERBUFFER_SIZE:
++      return 16384;
++    case GL_MAX_VERTEX_ATTRIBS:
++      return 16;
++    case GL_MAX_VERTEX_UNIFORM_VECTORS:
++      return 4096;
++    case GL_MAX_VARYING_VECTORS:
++      return 31;
++    case GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS:
++      return 32;
++    case GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS:
++      return 32;
++    case GL_MAX_TEXTURE_IMAGE_UNITS:
++      return 16;
++    case GL_MAX_FRAGMENT_UNIFORM_VECTORS:
++      return 4096;
++    case GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT:
++      return 16;
++    default:
++      return std::nullopt;
++  }
++}
++
++inline std::optional<std::array<int, 2>> GetMoltskinWebglInt2Parameter(
++    GLenum pname) {
++  if (!IsMoltskinWebglProfileEnabled()) {
++    return std::nullopt;
++  }
++  if (pname == GL_MAX_VIEWPORT_DIMS) {
++    return std::array<int, 2>{32767, 32767};
++  }
++  return std::nullopt;
++}
++
++inline bool IsMoltskinWebglExtensionAllowed(const String& name) {
++  if (!IsMoltskinWebglProfileEnabled()) {
++    return true;
++  }
++  return name != "WEBGL_compressed_texture_astc" &&
++         name != "WEBGL_compressed_texture_etc" &&
++         name != "WEBGL_compressed_texture_etc1" &&
++         name != "WEBGL_compressed_texture_pvrtc";
++}
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGL_MOLTSKIN_WEBGL_PARAMS_H_

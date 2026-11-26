@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
-from chromium.native import WEBGL_INFO_CAPABILITY, default_binary, probe_capabilities
+from chromium.native import PLATFORM_CAPABILITY, WEBGL_INFO_CAPABILITY, WEBGL_PARAMS_CAPABILITY, default_binary, probe_capabilities
 from moltskin.services.core import chromium
 
 PRESET = (
@@ -19,7 +19,7 @@ def test_launcher_passes_webgl_preset(tmp_path, monkeypatch):
     monkeypatch.setattr(
         chromium,
         "resolve_build",
-        lambda version: (tmp_path / "Chromium", "158.0.0.0", frozenset({WEBGL_INFO_CAPABILITY})),
+        lambda version: (tmp_path / "Chromium", "158.0.0.0", frozenset({WEBGL_INFO_CAPABILITY, WEBGL_PARAMS_CAPABILITY, PLATFORM_CAPABILITY})),
     )
     monkeypatch.setattr(chromium, "check_access_policies", lambda *args: None)
     monkeypatch.setattr(chromium, "chromium_owns_directory", lambda path: False)
@@ -28,9 +28,11 @@ def test_launcher_passes_webgl_preset(tmp_path, monkeypatch):
         "standard",
         True,
         chromium_webgl=PRESET,
+        chromium_platform="windows:10.0.0:x86_64",
     )
     assert "--moltskin-webgl-vendor=Google Inc. (Apple)" in args
     assert "--moltskin-webgl-renderer=ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)" in args
+    assert "--moltskin-webgl-profile=windows" in args
 
 
 def test_editor_exposes_webgl_field():
@@ -86,6 +88,7 @@ def test_profile_webgl_persists_and_exports(data_dir):
 def test_native_webgl_info_is_consistent():
     binary, _, capabilities = probe_capabilities(default_binary())
     assert WEBGL_INFO_CAPABILITY in capabilities
+    assert WEBGL_PARAMS_CAPABILITY in capabilities
     with sync_playwright() as driver:
         browser = driver.chromium.launch(
             executable_path=str(binary),
@@ -93,6 +96,7 @@ def test_native_webgl_info_is_consistent():
             args=[
                 "--moltskin-webgl-vendor=Google Inc. (Apple)",
                 "--moltskin-webgl-renderer=ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)",
+                "--moltskin-webgl-profile=windows",
             ],
         )
         try:
@@ -107,6 +111,10 @@ def test_native_webgl_info_is_consistent():
                     renderer: gl.getParameter(ext.UNMASKED_RENDERER_WEBGL),
                     maskedVendor: gl.getParameter(gl.VENDOR),
                     maskedRenderer: gl.getParameter(gl.RENDERER),
+                    maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+                    viewportDims: Array.from(gl.getParameter(gl.MAX_VIEWPORT_DIMS)),
+                    astc: Boolean(gl.getExtension('WEBGL_compressed_texture_astc')),
+                    astcSupported: gl.getSupportedExtensions().includes('WEBGL_compressed_texture_astc'),
                   };
                 }"""
             )
@@ -116,3 +124,7 @@ def test_native_webgl_info_is_consistent():
     assert values["renderer"] == "ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)"
     assert values["maskedVendor"] == "WebKit"
     assert values["maskedRenderer"] == "WebKit WebGL"
+    assert values["maxTexture"] == 16384
+    assert values["viewportDims"] == [32767, 32767]
+    assert values["astc"] is False
+    assert values["astcSupported"] is False

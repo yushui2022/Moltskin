@@ -16,7 +16,7 @@ from chromium.native import (
     AUDIO_NOISE_CAPABILITY, CANVAS_NOISE_CAPABILITY, HARDWARE_REPORTING_CAPABILITY, LOCALE_CAPABILITY,
     FONT_FILTER_CAPABILITY, PLATFORM_CAPABILITY, SPEECH_VOICES_CAPABILITY,
     SCREEN_METRICS_CAPABILITY, SCREEN_AVAIL_CAPABILITY,
-    WEBDRIVER_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY,
+    WEBDRIVER_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY, WEBGL_PARAMS_CAPABILITY,
     check_access_policies, chromium_owns_directory, resolve_build,
 )
 
@@ -138,6 +138,9 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         _, vendor, renderer = chromium_webgl.split("|", 2)
         args.append("--moltskin-webgl-vendor=" + vendor)
         args.append("--moltskin-webgl-renderer=" + renderer)
+        if (chromium_platform.startswith("windows:") and
+                WEBGL_PARAMS_CAPABILITY in capabilities):
+            args.append("--moltskin-webgl-profile=windows")
     if canvas_noise_seed:
         args.append(f"--{CANVAS_NOISE_CAPABILITY}={canvas_noise_seed}")
     if audio_noise_seed:
