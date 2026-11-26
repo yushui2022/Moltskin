@@ -35,12 +35,13 @@ def fixture_archive(source: Path, ids, *, legacy=False):
                 "VALUES ('old-completed', ?, 456, 'stopped', 'yesterday', 'then')", (ids[0],),
             )
         if legacy:
+            c.execute("ALTER TABLE profiles DROP COLUMN hardware_reporting")
             c.execute("ALTER TABLE profiles DROP COLUMN canvas_readback")
             c.execute("ALTER TABLE profiles DROP COLUMN webgl_debug_info")
             c.execute("ALTER TABLE profiles DROP COLUMN local_fonts")
             c.execute("ALTER TABLE profiles DROP COLUMN engine")
         else:
-            c.execute("UPDATE profiles SET canvas_readback='blocked', webgl_debug_info='blocked' WHERE engine='chromium'")
+            c.execute("UPDATE profiles SET hardware_reporting='limited', canvas_readback='blocked', webgl_debug_info='blocked' WHERE engine='chromium'")
     result = io.BytesIO()
     with zipfile.ZipFile(result, "w") as zf:
         zf.write(database, backup.DB_NAME)
@@ -68,8 +69,10 @@ def test_cross_root_restore_rebases_paths_and_disarms_stale_sessions(data_dir, t
         rows = c.execute("SELECT * FROM profiles ORDER BY name").fetchall()
         assert [Path(row["user_data_dir"]) for row in rows] == [config.PROFILES_DIR / ident for ident in ids]
         assert all(row["status"] == "ready" and row["last_session_id"] is None for row in rows)
+        assert rows[0]["hardware_reporting"] == "standard"
         assert rows[0]["canvas_readback"] == rows[0]["webgl_debug_info"] == "standard"
         if not legacy:
+            assert rows[1]["hardware_reporting"] == "limited"
             assert rows[1]["canvas_readback"] == rows[1]["webgl_debug_info"] == "blocked"
             assert (rows[1]["engine"], rows[1]["local_fonts"]) == ("chromium", "restricted")
         sessions = c.execute("SELECT * FROM sessions WHERE id LIKE 'current%'").fetchall()

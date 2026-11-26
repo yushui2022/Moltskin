@@ -17,6 +17,7 @@ BLOCK_MEDIA = "--moltskin-block-media-capture"
 BLOCK_LOCATION = "--moltskin-block-geolocation"
 BLOCK_WEBGL = "--moltskin-block-webgl-debug-info"
 BLOCK_CANVAS = "--moltskin-block-canvas-readback"
+LIMIT_HARDWARE = "--moltskin-limit-hardware-reporting"
 
 
 @pytest.fixture
@@ -37,6 +38,7 @@ if sys.argv[1:] == ["--version", "--moltskin-capabilities"]:
         print("moltskin-block-media-capture")
         if not os.environ.get("TEST_MEDIA_ONLY_CHROMIUM"):
             print("moltskin-block-geolocation")
+            print("moltskin-limit-hardware-reporting")
             for capability in ("moltskin-block-webgl-debug-info", "moltskin-block-canvas-readback"):
                 if capability != os.environ.get("TEST_MISSING_GRAPHICS_CAPABILITY"):
                     print(capability)
@@ -227,6 +229,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
         conn.execute("ALTER TABLE profiles DROP COLUMN local_fonts")
         conn.execute("ALTER TABLE profiles DROP COLUMN media_capture")
         conn.execute("ALTER TABLE profiles DROP COLUMN geolocation")
+        conn.execute("ALTER TABLE profiles DROP COLUMN hardware_reporting")
         conn.execute("ALTER TABLE profiles DROP COLUMN canvas_readback")
         conn.execute("ALTER TABLE profiles DROP COLUMN webgl_debug_info")
         conn.execute("ALTER TABLE profiles DROP COLUMN chromium_js_heap_mb")
@@ -257,6 +260,7 @@ def test_migrate_existing_camoufox_profile(data_dir):
     assert row["chromium_user_agent"] == ""
     assert row["preview_platform"] == row["preview_platform_version"] == row["preview_architecture"] == ""
     assert row["media_capture"] == row["geolocation"] == "standard"
+    assert row["hardware_reporting"] == "standard"
     assert row["canvas_readback"] == row["webgl_debug_info"] == "standard"
     assert row["browser_language"] == row["browser_timezone"] == row["browser_window_size"] == ""
     assert row["user_data_dir"] == str(data_dir / "old-profile")
@@ -302,6 +306,37 @@ def test_engine_contract_and_portable_settings(client):
     assert restored["media_capture"] == restored["geolocation"] == "blocked"
     assert restored["user_data_dir"] != original["user_data_dir"]
     assert (restored["startup_page"], restored["block_images"]) == ("dashboard", True)
+
+
+def test_hardware_policy_follows_profile_and_requires_capable_build(client, monkeypatch):
+    old_flag = "TEST_MEDIA_ONLY_CHROMIUM"
+    engine = client.get("/api/v1/engine").raise_for_status().json()["data"]["chromium"]
+    assert engine["supports_hardware_reporting_policy"]
+    profile = create_chromium(client, "Hardware", hardware_reporting="limited")
+    url = f"{PROFILES}/{profile['id']}"
+    assert client.patch(url, json={"remark": "note"}).raise_for_status().json()["data"]["hardware_reporting"] == "limited"
+    assert client.post(url + "/duplicate").raise_for_status().json()["data"]["hardware_reporting"] == "limited"
+    client.post(url + "/launch").raise_for_status()
+    args_file = Path(profile["user_data_dir"]) / "test-args.json"
+    try:
+        assert LIMIT_HARDWARE in json.loads(args_file.read_text())
+        assert client.patch(url, json={"hardware_reporting": "standard"}).status_code == 409
+    finally:
+        client.post(url + "/stop").raise_for_status()
+
+    monkeypatch.setenv(old_flag, "1")
+    old_engine = client.get("/api/v1/engine").raise_for_status().json()["data"]["chromium"]
+    assert not old_engine["supports_hardware_reporting_policy"]
+    assert not old_engine["installed_versions"][0]["supports_hardware_reporting_policy"]
+    assert client.patch(url, json={"chromium_version": old_engine["version"]}).status_code == 422
+    refusal = client.post(url + "/launch")
+    assert refusal.status_code == 503 and LIMIT_HARDWARE[2:] in refusal.json()["error"]["message"]
+    client.patch(url, json={"hardware_reporting": "standard"}).raise_for_status()
+    client.post(url + "/launch").raise_for_status()
+    try:
+        assert LIMIT_HARDWARE not in json.loads(args_file.read_text())
+    finally:
+        client.post(url + "/stop").raise_for_status()
 
 
 @pytest.mark.parametrize(("policy", "other"), [

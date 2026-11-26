@@ -17,11 +17,12 @@ if __package__:
 else:  # Direct invocation: python3 chromium/launch_preview.py
     import native
 
-# The non-default value and native switch for each environment permission.
+# The non-default value and native switch for each environment policy.
 POLICIES = {
     "local_fonts": ("restricted", native.CAPABILITY),
     "media_capture": ("blocked", native.MEDIA_CAPTURE_CAPABILITY),
     "geolocation": ("blocked", native.GEOLOCATION_CAPABILITY),
+    "hardware_reporting": ("limited", native.HARDWARE_REPORTING_CAPABILITY),
     "canvas_readback": ("blocked", native.CANVAS_READBACK_CAPABILITY),
     "webgl_debug_info": ("blocked", native.WEBGL_DEBUG_INFO_CAPABILITY),
 }
@@ -100,6 +101,7 @@ def main() -> int:
     parser.add_argument("--local-fonts", choices=("standard", "restricted"), help="font access policy; new profiles default to standard")
     parser.add_argument("--media-capture", choices=("standard", "blocked"), help="camera and microphone policy (default: standard)")
     parser.add_argument("--geolocation", choices=("standard", "blocked"), help="site location policy (default: standard)")
+    parser.add_argument("--hardware-reporting", choices=("standard", "limited"), help="limit reported CPU count and device memory to 4")
     parser.add_argument("--canvas-readback", choices=("standard", "blocked"), help="2D canvas pixel readback policy")
     parser.add_argument("--webgl-debug-info", choices=("standard", "blocked"), help="WebGL debug renderer information policy")
     parser.add_argument(

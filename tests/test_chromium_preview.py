@@ -157,6 +157,20 @@ else:
         self.assertIn(webgl, restarted)
         self.assertNotIn(webgl, self.browser_args("graphics", "--webgl-debug-info", "standard", "--canvas-readback", "standard"))
 
+    def test_named_hardware_limit_requires_support_on_every_launch(self):
+        flag = "--moltskin-limit-hardware-reporting"
+        args = self.browser_args("hardware")
+        self.assertNotIn(flag, args)
+        caps = "\n".join([SWITCH[2:], flag[2:]])
+        saved = self.run_cli("hardware", "--hardware-reporting", "limited", TEST_CAPABILITY=caps)
+        self.assertEqual(saved.returncode, 0, saved.stderr)
+        self.assertEqual(self.run_cli("hardware", TEST_CAPABILITY=caps).returncode, 0)
+        self.assertIn(flag, json.loads((self.data / "last-launch").read_text()))
+        rejected = self.run_cli("hardware")
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn(flag[2:], rejected.stderr)
+        self.assertEqual(self.browser_args("hardware", "--hardware-reporting", "standard"), args)
+
     def test_active_launches_cannot_change_saved_mode(self):
         self.browser_args("one")
         profile = self.data / "chromium-preview" / "one"

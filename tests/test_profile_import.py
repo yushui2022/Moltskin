@@ -104,6 +104,23 @@ def test_graphics_policy_needs_version_nine_and_roundtrips(api, policy):
     }
 
 
+def test_hardware_limit_roundtrips_and_legacy_exports_remain_compatible(api):
+    old = {"version": 9, "profiles": [{"name": "old", "engine": "chromium"}]}
+    assert api.post("/api/v1/import/profiles", json=old).raise_for_status().json()["data"]["created"] == 1
+    exported = api.get("/api/v1/export/profiles").raise_for_status().json()
+    assert exported["version"] == 1 and exported["profiles"][0]["hardware_reporting"] == "standard"
+    item = {"name": "limited", "engine": "chromium", "hardware_reporting": "limited"}
+    result = import_rows(api, [item, {**item, "engine": "camoufox"}, {**item, "hardware_reporting": 4}])
+    assert result["created"] == 1 and [r["row"] for r in result["skipped"]] == [2, 3]
+    exported = api.get("/api/v1/export/profiles").raise_for_status().json()
+    assert exported["version"] == 10
+    assert api.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]["created"] == 2
+    copied = api.get("/api/v1/profiles").raise_for_status().json()["data"]["items"]
+    assert {p["name"]: p["hardware_reporting"] for p in copied if p["name"].endswith("(2)")} == {
+        "limited (2)": "limited", "old (2)": "standard",
+    }
+
+
 def test_unsupported_or_invalid_file_version_rejects_whole_import(api):
     rows = [{"name": "untouched", "group": "team", "proxy": {"host": "proxy.invalid", "port": 80}}]
     unsupported = main.PROFILE_FORMAT_VERSION + 1

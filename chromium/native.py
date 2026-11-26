@@ -15,9 +15,10 @@ MEDIA_CAPTURE_CAPABILITY = "moltskin-block-media-capture"
 GEOLOCATION_CAPABILITY = "moltskin-block-geolocation"
 WEBGL_DEBUG_INFO_CAPABILITY = "moltskin-block-webgl-debug-info"
 CANVAS_READBACK_CAPABILITY = "moltskin-block-canvas-readback"
+HARDWARE_REPORTING_CAPABILITY = "moltskin-limit-hardware-reporting"
 CANVAS_READBACK_SWITCH = CANVAS_READBACK_CAPABILITY
 DESKTOP_CAPABILITIES = frozenset({CAPABILITY, MEDIA_CAPTURE_CAPABILITY, GEOLOCATION_CAPABILITY,
-                                  WEBGL_DEBUG_INFO_CAPABILITY, CANVAS_READBACK_CAPABILITY,
+                                  WEBGL_DEBUG_INFO_CAPABILITY, CANVAS_READBACK_CAPABILITY, HARDWARE_REPORTING_CAPABILITY,
                                   "moltskin-panel", "moltskin-toolbar"})
 
 
@@ -27,9 +28,11 @@ def default_binary() -> Path:
         return Path(configured).expanduser()
     out = Path.home() / "chromium-baseline" / "src" / "out"
     executable = "Chromium.app" if sys.platform == "darwin" else "chrome"
-    for directory in ("MoltskinGraphicsPrivacy", "MoltskinLocation", "MoltskinMedia", "MoltskinToolbar", "MoltskinPanel"):
+    for directory in ("MoltskinHardwarePrivacy", "MoltskinGraphicsPrivacy", "MoltskinLocation", "MoltskinMedia",
+                      "MoltskinToolbar", "MoltskinPanel"):
         binary = out / directory / executable
-        if binary.exists():
+        program = binary / "Contents/MacOS/Chromium" if sys.platform == "darwin" else binary
+        if program.is_file():
             return binary
     return out / "MoltskinFont" / executable
 
@@ -110,7 +113,8 @@ def resolve_build(version: str) -> InstalledBuild:
 
 
 def check_access_policies(capabilities: frozenset[str], media_capture: str, geolocation: str,
-                          webgl_debug_info: str = "standard", canvas_readback: str = "standard") -> None:
+                          webgl_debug_info: str = "standard", canvas_readback: str = "standard",
+                          hardware_reporting: str = "standard") -> None:
     if media_capture == "blocked" and MEDIA_CAPTURE_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {MEDIA_CAPTURE_CAPABILITY} 补丁，请更新内核以阻止摄像头与麦克风访问")
     if geolocation == "blocked" and GEOLOCATION_CAPABILITY not in capabilities:
@@ -119,6 +123,8 @@ def check_access_policies(capabilities: frozenset[str], media_capture: str, geol
         raise ValueError(f"当前内核缺少 {WEBGL_DEBUG_INFO_CAPABILITY} 补丁，请更新内核以限制 WebGL 显卡信息")
     if canvas_readback == "blocked" and CANVAS_READBACK_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {CANVAS_READBACK_CAPABILITY} 补丁，请更新内核以限制 Canvas 2D 读取")
+    if hardware_reporting == "limited" and HARDWARE_REPORTING_CAPABILITY not in capabilities:
+        raise ValueError(f"当前内核缺少 {HARDWARE_REPORTING_CAPABILITY} 补丁，请更新内核以限制硬件信息")
 
 
 def probe(path: Path, *, capability: str = CAPABILITY) -> tuple[Path, str]:

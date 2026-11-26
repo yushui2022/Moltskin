@@ -1,0 +1,100 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 628353064454a022664fa2129d47b81587890f32..819f36b98b08a2559fa757e4d6ba2e792c2b37a4 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -446,6 +446,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+       puts("moltskin-block-geolocation");
+       puts("moltskin-block-webgl-debug-info");
+       puts("moltskin-block-canvas-readback");
++      puts("moltskin-limit-hardware-reporting");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 0cdfde1804f711124ac602b192746ed77b58899b..b3cd9797cb5ab73c5fe7d3e678a920da2c268114 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4034,6 +4034,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       blink::switches::kMaxUntiledLayerHeight,
+       blink::switches::kMoltskinBlockCanvasReadback,
+       blink::switches::kMoltskinBlockWebGLDebugInfo,
++      blink::switches::kMoltskinLimitHardwareReporting,
+       blink::switches::kNetworkQuietTimeout,
+       blink::switches::kShowContentfulPaintRects,
+       blink::switches::kShowLayoutShiftRegions,
+diff --git a/third_party/blink/common/device_memory/approximated_device_memory.cc b/third_party/blink/common/device_memory/approximated_device_memory.cc
+index 7fd53ebba0dc53be6e085620010edc962de37f9e..d0f362970896dfc90f41090a58b43d7add1e3d97 100644
+--- a/third_party/blink/common/device_memory/approximated_device_memory.cc
++++ b/third_party/blink/common/device_memory/approximated_device_memory.cc
+@@ -4,11 +4,15 @@
+ 
+ #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
+ 
++#include <algorithm>
++
+ #include "base/byte_size.h"
+ #include "base/check_op.h"
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/system/sys_info.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ 
+ namespace blink {
+ 
+@@ -27,6 +31,11 @@ void ApproximatedDeviceMemory::Initialize() {
+ 
+ // static
+ float ApproximatedDeviceMemory::GetApproximatedDeviceMemory() {
++  // Both navigator.deviceMemory and Device-Memory client hints use this value.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinLimitHardwareReporting)) {
++    return std::min(approximated_device_memory_gb_, 4.0f);
++  }
+   return approximated_device_memory_gb_;
+ }
+ 
+diff --git a/third_party/blink/public/common/moltskin_switches.h b/third_party/blink/public/common/moltskin_switches.h
+index c387bbf428ece710289fb1ebd7f7f71abe9ca429..76659d557830b109f295b7a1dac43937830d6a97 100644
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -15,6 +15,10 @@ inline constexpr char kMoltskinBlockCanvasReadback[] =
+ inline constexpr char kMoltskinBlockWebGLDebugInfo[] =
+     "moltskin-block-webgl-debug-info";
+ 
++// Limits the amount of processor and memory information exposed to the web.
++inline constexpr char kMoltskinLimitHardwareReporting[] =
++    "moltskin-limit-hardware-reporting";
++
+ }  // namespace blink::switches
+ 
+ #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
+diff --git a/third_party/blink/renderer/core/execution_context/navigator_base.cc b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+index 83f427c5ec9b75cbf41935af9935f9fa293ea11c..97ec5f9821cccb862ef38810e18e781920a9c141 100644
+--- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
++++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+@@ -4,9 +4,13 @@
+ 
+ #include "third_party/blink/renderer/core/execution_context/navigator_base.h"
+ 
++#include <algorithm>
++
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
+ #include "third_party/blink/renderer/core/probe/core_probes.h"
+@@ -90,6 +94,10 @@ unsigned int NavigatorBase::hardwareConcurrency() const {
+ 
+   probe::ApplyHardwareConcurrencyOverride(
+       probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinLimitHardwareReporting)) {
++    return std::min(hardware_concurrency, 4u);
++  }
+   return hardware_concurrency;
+ }
+ 
