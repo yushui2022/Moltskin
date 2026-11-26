@@ -113,7 +113,7 @@ find "$STAGE" -name '__pycache__' -type d -prune -exec rm -rf {} +
 find "$STAGE" -name '*.pyc' -delete
 
 ditto -c -k --sequesterRsrc --keepParent "$STAGE" "$ZIP"
-shasum -a 256 "$ZIP" | tee "$ZIP.sha256"
+(cd "$STAGE_PARENT" && shasum -a 256 "$(basename "$ZIP")" | tee "$(basename "$ZIP").sha256")
 echo
 echo "Package: $ZIP"
 du -sh "$STAGE" "$ZIP"
