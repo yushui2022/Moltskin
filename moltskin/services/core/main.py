@@ -24,6 +24,7 @@ from urllib.parse import quote
 from uuid import UUID
 
 from platforms import current as host_platform
+from moltskin import __version__
 from camoufox.fingerprints import get_random_preset
 from camoufox.multiversion import list_installed
 from camoufox.pkgman import installed_verstr
@@ -556,7 +557,7 @@ async def lifespan(app: FastAPI):
         stop_event.set()
 
 
-app = FastAPI(title="Moltskin", version="0.4.1", lifespan=lifespan)
+app = FastAPI(title="Moltskin", version=__version__, lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -726,7 +727,7 @@ def font(name: str):
 
 @app.get("/api/v1/health")
 def health(panel_challenge: str | None = None):
-    result = {"status": "ok", "version": "0.4.1"}
+    result = {"status": "ok", "version": __version__}
     if panel_challenge and re.fullmatch(r"[0-9a-f]{32}", panel_challenge):
         # The local panel launcher can verify this service without sending its API token.
         message = b"moltskin-panel-v1\x00" + panel_challenge.encode("ascii")

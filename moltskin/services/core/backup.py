@@ -14,6 +14,8 @@ import tempfile
 import zipfile
 from contextlib import closing
 from datetime import datetime, timezone
+
+from moltskin import __version__
 from pathlib import Path
 from typing import Any
 
@@ -86,7 +88,7 @@ def _write_archive(workdir: Path, include_profiles: bool) -> Path:
             json.dumps(
                 {
                     "app": "moltskin",
-                    "version": "0.4.1",
+                    "version": __version__,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "include_profiles": include_profiles,
                     "profiles": profiles,

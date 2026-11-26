@@ -4,7 +4,7 @@
 
 [中文文档](README.zh-CN.md)
 
-Moltskin is a self-hosted browser for managing isolated profiles. Each profile has its own data directory. The **0.4.1 alpha** uses Camoufox for fingerprint presets and per-profile proxies. This development branch also supports a native Chromium preview with per-profile permissions. [Camoufox](https://github.com/daijro/camoufox) · [Changelog](CHANGELOG.md) · [Quick start](#quick-start)
+Moltskin is a self-hosted browser for managing isolated profiles. Each profile has its own data directory. The **0.5.0 alpha** uses Camoufox for fingerprint presets and per-profile proxies. This development branch also supports a native Chromium preview with per-profile permissions. [Camoufox](https://github.com/daijro/camoufox) · [Changelog](CHANGELOG.md) · [Quick start](#quick-start)
 
 ## Chromium roadmap
 

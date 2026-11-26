@@ -4,7 +4,7 @@
 
 [English](README.md)
 
-Moltskin 是可自行部署的多环境指纹浏览器。每个环境有独立的数据目录。**0.4.1 alpha** 使用 Camoufox（Firefox）提供指纹预设和独立代理。当前开发分支也可启动自编 Chromium 预览版，按环境管理网站权限。[更新记录](CHANGELOG.md) · [快速开始](#快速开始)
+Moltskin 是可自行部署的多环境指纹浏览器。每个环境有独立的数据目录。**0.5.0 alpha** 使用 Camoufox（Firefox）提供指纹预设和独立代理。当前开发分支也可启动自编 Chromium 预览版，按环境管理网站权限。[更新记录](CHANGELOG.md) · [快速开始](#快速开始)
 
 ## Chromium 开发路线
 
@@ -59,7 +59,7 @@ Camoufox 环境使用以下公开组件来启动浏览器、生成指纹和处�
 - `camoufox.geolocation.get_geolocation`：国家、语言、经纬度
 - `camoufox.multiversion.list_installed`：内核版本
 
-在 0.4.1 中，Moltskin 负责环境管理、进程监管、本地 API、界面和数据库。
+在 0.5.0 中，Moltskin 负责环境管理、进程监管、本地 API、界面和数据库。
 
 ## 当前能力
 
