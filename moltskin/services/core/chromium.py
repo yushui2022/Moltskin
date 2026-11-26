@@ -13,7 +13,8 @@ from pathlib import Path
 
 from chromium.native import (
     CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
-    AUDIO_NOISE_CAPABILITY, CANVAS_NOISE_CAPABILITY, HARDWARE_REPORTING_CAPABILITY, PLATFORM_CAPABILITY,
+    AUDIO_NOISE_CAPABILITY, CANVAS_NOISE_CAPABILITY, HARDWARE_REPORTING_CAPABILITY, LOCALE_CAPABILITY,
+    PLATFORM_CAPABILITY,
     SCREEN_METRICS_CAPABILITY,
     WEBDRIVER_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY,
     check_access_policies, chromium_owns_directory, resolve_build,
@@ -113,6 +114,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--blink-settings=imagesEnabled=false")
     if browser_language:
         args.append(f"--accept-lang={browser_language}")
+        if LOCALE_CAPABILITY in capabilities:
+            args.append(f"--{LOCALE_CAPABILITY}={browser_language}")
     if chromium_user_agent:
         args.append(f"--user-agent={chromium_user_agent}")
     if browser_window_size:

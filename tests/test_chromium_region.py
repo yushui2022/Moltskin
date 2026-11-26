@@ -17,6 +17,7 @@ from moltskin.services.core.security import get_token
 READINGS = b"""
 function readings() {
   return {userAgent: navigator.userAgent, language: navigator.language, languages: navigator.languages,
+          locale: Intl.DateTimeFormat().resolvedOptions().locale,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           offset: new Date('2025-07-01T12:00:00Z').getTimezoneOffset()};
 }
@@ -99,9 +100,9 @@ def test_per_window_region_survives_restart_and_resets(data_dir, monkeypatch):
                    chromium_js_heap_mb=512)
         with run(a) as france, run(b) as japan:
             assert france["page"] == {"userAgent": agent_a, "language": "fr-FR", "languages": ["fr-FR"],
-                                      "timezone": "Europe/Paris", "offset": -120}
+                                      "locale": "fr-FR", "timezone": "Europe/Paris", "offset": -120}
             assert japan["page"] == {"userAgent": agent_b, "language": "ja-JP", "languages": ["ja-JP"],
-                                     "timezone": "Asia/Tokyo", "offset": -540}
+                                     "locale": "ja-JP", "timezone": "Asia/Tokyo", "offset": -540}
             assert france["size"] == [1024, 768]
             assert japan["size"] == [1280, 800]
             assert 0 < france["heapLimit"] < japan["heapLimit"]

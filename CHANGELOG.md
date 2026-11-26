@@ -10,6 +10,8 @@
 - Chromium 内核补丁 `0012-webgl-info`：窗口可选择 WebGL 显卡预设，覆盖 `WEBGL_debug_renderer_info` 读取的厂商和型号。
 - Chromium 内核补丁 `0013-canvas-noise`：窗口可开启 Canvas 2D 与 WebGL 像素噪声，按环境生成稳定且互不相同的 ±1 颜色噪声，Alpha 保持不变。
 - Chromium 内核补丁 `0014-audio-noise`：窗口可开启 AudioContext 指纹噪声，对 OfflineAudioContext 渲染结果和解码音频加入稳定、听感不可闻的样本扰动。
+- Chromium 内核补丁 `0015-analyser-noise`：同一音频开关也覆盖 `AnalyserNode` 的浮点/字节频域和时域读数。
+- Chromium 内核补丁 `0016-locale`：网站首选语言同时设置渲染进程的 ICU 默认区域，`Intl` 格式化与 `navigator.language` 保持一致。
 - Chromium 窗口绑定固定代理时加入 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`，避免 WebRTC 绕过代理使用非代理 UDP。
 
 ## 0.4.1 — 2026-11-07

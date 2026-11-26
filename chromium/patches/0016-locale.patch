@@ -1,0 +1,60 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -41,6 +41,9 @@
+ // Adds deterministic per-profile noise to rendered and decoded audio samples.
+ inline constexpr char kMoltskinAudioNoise[] = "moltskin-audio-noise";
+ 
++// Sets the renderer ICU default locale for Intl and locale-aware formatting.
++inline constexpr char kMoltskinLocale[] = "moltskin-locale";
++
+ }  // namespace blink::switches
+ 
+ #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
+--- a/content/renderer/renderer_main.cc
++++ b/content/renderer/renderer_main.cc
+@@ -59,6 +59,7 @@
+ #include "services/webnn/public/cpp/webnn_sandbox_init.h"
+ #include "skia/ext/font_utils.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
+ #include "third_party/skia/include/core/SkFontMgr.h"
+@@ -156,6 +157,17 @@
+       base::CurrentProcessType::PROCESS_RENDERER);
+ 
+   const base::CommandLine& command_line = *parameters.command_line;
++
++  if (command_line.HasSwitch(blink::switches::kMoltskinLocale)) {
++    const std::string locale =
++        command_line.GetSwitchValueASCII(blink::switches::kMoltskinLocale);
++    std::optional<base::i18n::LanguageTag> lang_tag =
++        base::i18n::GetLanguageTagFromString(locale);
++    if (lang_tag) {
++      base::i18n::SetDefaultIcuLocale(
++          base::i18n::DefaultIcuLocaleSetterKey(), *lang_tag);
++    }
++  }
+ 
+ #if BUILDFLAG(IS_MAC)
+   base::apple::ScopedNSAutoreleasePool* pool = parameters.autorelease_pool;
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4038,6 +4038,7 @@
+       blink::switches::kMoltskinCanvasNoise,
+       blink::switches::kMoltskinHideWebdriver,
+       blink::switches::kMoltskinLimitHardwareReporting,
++      blink::switches::kMoltskinLocale,
+       blink::switches::kMoltskinPlatform,
+       blink::switches::kMoltskinScreenMetrics,
+       blink::switches::kMoltskinWebglRenderer,
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -449,6 +449,7 @@
+       puts("moltskin-audio-noise");
+       puts("moltskin-canvas-noise");
+       puts("moltskin-limit-hardware-reporting");
++      puts("moltskin-locale");
+       puts("moltskin-hide-webdriver");
+       puts("moltskin-platform");
+       puts("moltskin-screen-metrics");

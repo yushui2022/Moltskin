@@ -128,13 +128,46 @@ AUDIO_PROBE = """async () => {
     return Array.from(buffer.getChannelData(0));
   };
 
+  const analyse = async () => {
+    const context = new OfflineAudioContext(1, 44100, 44100);
+    const oscillator = context.createOscillator();
+    oscillator.frequency.value = 1000;
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0;
+    oscillator.connect(analyser);
+    analyser.connect(context.destination);
+    oscillator.start();
+    const floatFrequency = new Float32Array(analyser.frequencyBinCount);
+    const byteFrequency = new Uint8Array(analyser.frequencyBinCount);
+    const floatTime = new Float32Array(analyser.fftSize);
+    const byteTime = new Uint8Array(analyser.fftSize);
+    context.suspend(0.2).then(() => {
+      analyser.getFloatFrequencyData(floatFrequency);
+      analyser.getByteFrequencyData(byteFrequency);
+      analyser.getFloatTimeDomainData(floatTime);
+      analyser.getByteTimeDomainData(byteTime);
+      context.resume();
+    });
+    await context.startRendering();
+    return {
+      floatFrequency: Array.from(floatFrequency.slice(0, 64)),
+      byteFrequency: Array.from(byteFrequency.slice(0, 64)),
+      floatTime: Array.from(floatTime.slice(0, 64)),
+      byteTime: Array.from(byteTime.slice(0, 64)),
+      hashes: [hash(floatFrequency), hash(byteFrequency), hash(floatTime), hash(byteTime)],
+    };
+  };
+
   const rendered = await render();
   const decoded = await decode();
+  const analyser = await analyse();
   return {
     rendered: rendered.slice(0, 128),
     renderedHash: hash(rendered),
     decoded: decoded.slice(0, 64),
     decodedHash: hash(decoded),
+    analyser,
   };
 }"""
 
@@ -180,3 +213,21 @@ def test_native_audio_noise_is_stable():
     for original, changed in zip(baseline["decoded"], noisy["decoded"]):
         assert abs(original - changed) <= 2.0e-4
     assert baseline["decoded"] != noisy["decoded"]
+
+    analyser = noisy["analyser"]
+    analyser_again = noisy_again["analyser"]
+    base_analyser = baseline["analyser"]
+    other_analyser = other["analyser"]
+    assert analyser["hashes"] == analyser_again["hashes"]
+    assert analyser["hashes"] != base_analyser["hashes"]
+    assert analyser["hashes"] != other_analyser["hashes"]
+
+    for original, changed in zip(base_analyser["floatFrequency"], analyser["floatFrequency"]):
+        assert abs(original - changed) <= 0.02
+    for original, changed in zip(base_analyser["floatTime"], analyser["floatTime"]):
+        assert abs(original - changed) <= 2.0e-4
+    for original, changed in zip(base_analyser["byteFrequency"], analyser["byteFrequency"]):
+        assert abs(original - changed) <= 1
+    for original, changed in zip(base_analyser["byteTime"], analyser["byteTime"]):
+        assert abs(original - changed) <= 1
+    assert base_analyser["hashes"] != analyser["hashes"]

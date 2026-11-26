@@ -47,6 +47,7 @@
         <div><dt>系统版本 <small lang="en">UA-CH</small></dt><dd id="platformVersion">—</dd></div>
         <div><dt>处理器架构</dt><dd id="architecture">—</dd></div>
         <div><dt>网站语言</dt><dd id="language">—</dd></div>
+        <div><dt>Intl 默认区域</dt><dd id="intlLocale">—</dd></div>
         <div><dt>时区</dt><dd id="timezone">—</dd></div>
         <div class="wide"><dt>HTTP 请求头 UA</dt><dd><code id="httpUa">__HTTP_USER_AGENT__</code></dd></div>
         <div class="wide"><dt>网页读取的 UA</dt><dd><code id="ua">—</code>
@@ -123,6 +124,7 @@
     });
     show("platform", navigator.userAgentData?.platform || navigator.platform);
     show("language", navigator.languages.join("、") || navigator.language);
+    show("intlLocale", Intl.DateTimeFormat().resolvedOptions().locale);
     show("timezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
     show("cpu", navigator.hardwareConcurrency);
     show("memory", navigator.deviceMemory ? navigator.deviceMemory + " GiB" : null);

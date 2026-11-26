@@ -14,6 +14,8 @@
 
 「浏览器与系统」显示运行浏览器的主机系统与架构。内核版本默认跟随本机默认构建，也可为每个窗口固定一个已安装版本。自定义默认构建时，在启动面板前设置 `MOLTSKIN_CHROMIUM_BINARY`，指向 Mac 的 `Chromium.app` 或 Linux 的 `chrome`。要提供更多版本，可设置 `MOLTSKIN_CHROMIUM_BUILDS_DIR`，每个子目录分别放置一个 `Chromium.app` 或 `chrome`。列表使用程序实际报告的版本。使用旧主版本测试时应新建环境，已由更新主版本使用的数据目录有降级保护。
 
+「网站首选语言」会同时设置 `navigator.language`、HTTP `Accept-Language` 和渲染进程的 ICU 默认区域。`Intl.DateTimeFormat`、`Intl.NumberFormat`、日期与数字格式化都使用该区域，不再跟随宿主系统。
+
 在「浏览器与系统」可以为单个 Chromium 窗口填写 User-Agent。留空使用所选内核的默认 UA。要修改已创建的窗口，先关闭窗口，保存后重新打开。要核对结果，在该环境打开本机 `/runtime.html`，页面会分别显示本机服务收到的 HTTP 请求头和网页通过 `navigator.userAgent` 读到的值，以及此窗口实际公开的平台版本、处理器架构和位数。
 
 「本地兼容性预览」支持选择 Windows、macOS 或 Linux，填写可选的平台版本，并选择 ARM64 或 x86-64。每个窗口可以保存自己的预览设置。点击运行后，面板使用选定内核，在一次性离线测试页实测 Chromium 的 User-Agent Client Hints。读数中的 `x86` 加 `64` 表示 x86-64。预览用于快速核对所选内核与预设，不改变工作窗口；要让正常网站读到平台预设，使用下面「平台与 Client Hints」中的窗口设置。
@@ -76,8 +78,10 @@ Chromium 窗口可在「WebGL 显卡型号」选择 Apple、Intel、NVIDIA 或 A
 
 - `OfflineAudioContext.startRendering()` 返回的渲染结果
 - `decodeAudioData()` 返回的 `AudioBuffer`
+- `AnalyserNode.getFloatFrequencyData()` / `getByteFrequencyData()`
+- `AnalyserNode.getFloatTimeDomainData()` / `getByteTimeDomainData()`
 
-扰动幅度为 `±0.0001`，约 -80 dBFS，听感不可闻，但会改变浮点样本和量化后的指纹哈希。同一环境每次启动得到相同图案；不同环境以及同一环境的 Canvas 噪声使用不同种子。直播 AnalyserNode 输出、采样率、输出延迟和声道数仍来自真实音频设备。[实机回归](../tests/test_chromium_audio_noise.py)
+渲染和解码样本的扰动幅度为 `±0.0001`，约 -80 dBFS；`AnalyserNode` 浮点频域扰动为 `±0.01 dB`，字节读数为 `±1`。这些变化听感不可闻，但会改变浮点样本和量化后的指纹哈希。同一环境每次启动得到相同图案；不同环境以及同一环境的 Canvas 噪声使用不同种子。采样率、输出延迟和声道数仍来自真实音频设备。[实机回归](../tests/test_chromium_audio_noise.py)
 
 ### 自动化标记与 WebRTC
 
