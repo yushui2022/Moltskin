@@ -147,5 +147,16 @@ def stored_profile_directory(profile_id: str, saved: str | None) -> Path:
 
 
 def ensure_dirs() -> None:
+    """Create private runtime directories.
+
+    The database holds proxy credentials and the token unlocks the local API,
+    so the data root must not be readable by other local accounts. New
+    directories are created with 0700 and existing ones are tightened on
+    startup; a directory owned by another account is left untouched.
+    """
     for path in (DATA_DIR, PROFILES_DIR, RUN_DIR, LOG_DIR, SELFTEST_DIR):
-        path.mkdir(parents=True, exist_ok=True)
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            path.chmod(0o700)
+        except OSError:
+            pass

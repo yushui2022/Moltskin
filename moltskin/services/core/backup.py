@@ -25,6 +25,12 @@ from .cookies import SESSION_FILENAME
 MANIFEST = "manifest.json"
 DB_NAME = "moltskin.db"
 
+# Backups should contain configuration, extensions and opt-in profile storage,
+# never a full browser image. Cap the archive so a hostile zip cannot fill the
+# disk before validation rejects it.
+MAX_BACKUP_MEMBERS = 100_000
+MAX_BACKUP_UNCOMPRESSED = 4 * 1024**3
+
 
 def _copy_database(source: Path, destination: Path) -> None:
     with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as src:
@@ -66,7 +72,7 @@ def _write_archive(workdir: Path, include_profiles: bool) -> Path:
         ext_dir = config.DATA_DIR / "extensions"
         if ext_dir.exists():
             for path in ext_dir.rglob("*"):
-                if path.is_file():
+                if path.is_file() and not path.is_symlink():
                     zf.write(path, str(Path("extensions") / path.relative_to(ext_dir)))
         if include_profiles:
             for profile in all_profiles:
@@ -75,12 +81,12 @@ def _write_archive(workdir: Path, include_profiles: bool) -> Path:
                 base = config.profile_directory(profile["id"])
                 for name in ("cookies.sqlite", SESSION_FILENAME):
                     cookies = base / name
-                    if cookies.is_file():
+                    if cookies.is_file() and not cookies.is_symlink():
                         zf.write(cookies, f"profiles/{profile['id']}/{name}")
                 storage = base / "storage"
                 if storage.exists():
                     for path in storage.rglob("*"):
-                        if path.is_file():
+                        if path.is_file() and not path.is_symlink():
                             zf.write(path, f"profiles/{profile['id']}/storage/{path.relative_to(storage)}")
 
         zf.writestr(
@@ -109,6 +115,51 @@ def _write_archive(workdir: Path, include_profiles: bool) -> Path:
     return tmp
 
 
+def _checked_member(name: str) -> None:
+    """Reject zip names that could escape the extraction directory."""
+    if not isinstance(name, str) or not name or "\x00" in name or "\\" in name:
+        raise ValueError("备份包包含非法文件路径")
+    if name.startswith("/") or (len(name) > 1 and name[1] == ":" and name[0].isalpha()):
+        raise ValueError("备份包包含绝对路径")
+    trimmed = name[:-1] if name.endswith("/") else name
+    if not trimmed or any(part in ("", ".", "..") for part in trimmed.split("/")):
+        raise ValueError("备份包包含目录穿越路径")
+
+
+def _safe_extract(zf: zipfile.ZipFile, destination: Path) -> None:
+    """Extract a backup after validating every member, with size limits.
+
+    ``ZipFile.extractall`` trusts member names; a crafted backup could write
+    outside the restore directory. The launcher treats backups as untrusted
+    input, so validation happens before any byte reaches the disk.
+    """
+    infos = zf.infolist()
+    if len(infos) > MAX_BACKUP_MEMBERS:
+        raise ValueError("备份包文件条目过多")
+    total = 0
+    for info in infos:
+        _checked_member(info.filename)
+        if info.flag_bits & 0x1:
+            raise ValueError("备份包包含加密文件")
+        total += info.file_size
+        if total > MAX_BACKUP_UNCOMPRESSED:
+            raise ValueError("备份包解压后超过大小限制")
+
+    written = 0
+    for info in infos:
+        target = destination.joinpath(*info.filename.rstrip("/").split("/"))
+        if info.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(info) as source, target.open("wb") as output:
+            while chunk := source.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_BACKUP_UNCOMPRESSED:
+                    raise ValueError("备份包解压后超过大小限制")
+                output.write(chunk)
+
+
 def _prepare_incoming(incoming: Path) -> set[str]:
     """Rebase a private backup copy before changing the live database."""
     camoufox_ids = set()
@@ -131,9 +182,12 @@ def _prepare_incoming(incoming: Path) -> set[str]:
                 dest = config.profile_directory(ident)
                 if not all(isinstance(value, str) for value in (payload, history, extensions)):
                     raise ValueError("备份中回收站环境的配置无效")
-                profile = json.loads(payload)
-                sessions = json.loads(history)
-                ext_ids = json.loads(extensions)
+                try:
+                    profile = json.loads(payload)
+                    sessions = json.loads(history)
+                    ext_ids = json.loads(extensions)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("备份中回收站环境的配置无效") from exc
                 if (ident in active_ids or not isinstance(profile, dict) or profile.get("id") != ident
                         or profile.get("name") != name or profile.get("engine") != engine_name
                         or engine_name not in ("chromium", "camoufox")):
@@ -176,7 +230,10 @@ def restore(archive: bytes) -> dict[str, Any]:
 
     workdir = Path(tempfile.mkdtemp(prefix="moltskin-restore-"))
     try:
-        zf.extractall(workdir)
+        try:
+            _safe_extract(zf, workdir)
+        except (zipfile.BadZipFile, NotImplementedError, RuntimeError, OSError) as exc:
+            raise ValueError(f"备份包无法解压：{exc}") from exc
         incoming = workdir / DB_NAME
 
         try:

@@ -14,6 +14,8 @@ from pathlib import Path
 from . import config, db
 
 MAX_SIZE = 40 * 1024 * 1024
+MAX_EXTRACTED_SIZE = 200 * 1024 * 1024
+MAX_MEMBERS = 20_000
 
 
 def store_dir() -> Path:
@@ -34,6 +36,47 @@ def _read_manifest(path: Path) -> dict:
         return json.loads(manifest_path.read_text(encoding="utf-8", errors="replace"))
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def _member_parts(name: str) -> list[str]:
+    """Return safe relative path parts, or reject the member."""
+    if not name or "\x00" in name or "\\" in name:
+        raise ValueError("压缩包路径非法")
+    if name.startswith("/") or (len(name) > 1 and name[1] == ":" and name[0].isalpha()):
+        raise ValueError("压缩包路径非法")
+    parts = name.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError("压缩包路径非法")
+    return parts
+
+
+def _extract(zf: zipfile.ZipFile, target: Path, prefix: str) -> None:
+    infos = zf.infolist()
+    if len(infos) > MAX_MEMBERS:
+        raise ValueError("扩展压缩包文件条目过多")
+    if sum(member.file_size for member in infos) > MAX_EXTRACTED_SIZE:
+        raise ValueError("扩展解压后超过大小限制")
+
+    root = target.resolve()
+    written = 0
+    for member in infos:
+        if member.is_dir():
+            continue
+        rel = member.filename[len(prefix):] if prefix and member.filename.startswith(prefix) else member.filename
+        if rel.startswith("__MACOSX") or rel.endswith(".DS_Store"):
+            continue
+        parts = _member_parts(rel)
+        dest = target.joinpath(*parts)
+        resolved = dest.resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError("压缩包路径非法")
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        with zf.open(member) as src, open(resolved, "wb") as out:
+            while chunk := src.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_EXTRACTED_SIZE:
+                    raise ValueError("扩展解压后超过大小限制")
+                out.write(chunk)
 
 
 def install(ext_id: str, archive: bytes, filename: str) -> dict:
@@ -59,18 +102,10 @@ def install(ext_id: str, archive: bytes, filename: str) -> dict:
                     if name.endswith("/manifest.json") and name.count("/") == 1:
                         prefix = name[: -len("manifest.json")]
                         break
-            for member in zf.infolist():
-                rel = member.filename[len(prefix):] if prefix and member.filename.startswith(prefix) else member.filename
-                if not rel or rel.endswith("/"):
-                    continue
-                if rel.startswith("__MACOSX") or rel.endswith(".DS_Store"):
-                    continue
-                dest = (target / rel).resolve()
-                if not str(dest).startswith(str(target.resolve())):
-                    raise ValueError("压缩包路径非法")
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(member) as src, open(dest, "wb") as out:
-                    shutil.copyfileobj(src, out)
+            _extract(zf, target, prefix)
+    except BaseException:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -166,8 +201,8 @@ def icon_data_url(ext_id: str) -> str | None:
     for rel in candidates:
         if not isinstance(rel, str):
             continue
-        path = (base / rel.lstrip("/")).resolve()
-        if not str(path).startswith(str(base.resolve())) or not path.exists():
+        path = (base / rel).resolve()
+        if not path.is_relative_to(base.resolve()) or not path.is_file():
             continue
         suffix = path.suffix.lower()
         mime = {".png": "image/png", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(suffix)
