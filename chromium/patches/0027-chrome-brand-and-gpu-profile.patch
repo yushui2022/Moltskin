@@ -98,63 +98,54 @@
    if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless)) {
      product.insert(0, "Headless");
    }
-@@ -648,6 +653,34 @@
+@@ -646,6 +651,17 @@
+ #else
+   return std::string(version_info::GetOSType());
  #endif
- }
- 
-+void ApplyMoltskinBrand(blink::UserAgentBrandList& list,
-+                        const std::string& version,
-+                        bool full_version) {
-+  const std::optional<blink::MoltskinBrand> brand =
-+      blink::GetMoltskinBrand();
-+  if (!brand) {
-+    return;
-+  }
-+  bool has_chromium = false;
-+  bool has_google = false;
-+  for (auto& entry : list) {
-+    if (entry.brand == "Chromium") {
-+      entry.version = version;
-+      has_chromium = true;
-+    }
-+    if (entry.brand == "Google Chrome") {
-+      entry.version = version;
-+      has_google = true;
-+    }
-+  }
-+  if (!has_chromium) {
-+    list.emplace_back("Chromium", version);
-+  }
-+  if (!has_google) {
-+    list.emplace_back("Google Chrome", version);
-+  }
 +}
 +
- blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
-   blink::UserAgentMetadata metadata;
++void ApplyMoltskinBrand(blink::UserAgentBrandList& list,
++                        const std::string& version,
++                        blink::UserAgentBrandVersionType version_type,
++                        int seed) {
++  if (!blink::GetMoltskinBrand()) {
++    return;
++  }
++  list = GenerateBrandVersionList(seed, std::string("Google Chrome"), version,
++                                  version_type, std::nullopt);
+ }
  
-@@ -658,6 +691,13 @@
+ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+@@ -658,6 +674,19 @@
    // Low entropy client hints.
    metadata.brand_version_list =
        GetUserAgentBrandMajorVersionListInternal(std::nullopt);
 +  const std::optional<blink::MoltskinBrand> moltskin_brand =
 +      blink::GetMoltskinBrand();
++  int moltskin_major_number = 0;
 +  if (moltskin_brand) {
 +    const std::string major_version =
 +        moltskin_brand->version.substr(0, moltskin_brand->version.find('.'));
-+    ApplyMoltskinBrand(metadata.brand_version_list, major_version, false);
++    if (!base::StringToInt(major_version, &moltskin_major_number)) {
++      moltskin_major_number = 0;
++    }
++    ApplyMoltskinBrand(metadata.brand_version_list, major_version,
++                       blink::UserAgentBrandVersionType::kMajorVersion,
++                       moltskin_major_number);
 +  }
    metadata.mobile = platform_override ? false : GetMobileBitForUAMetadata();
    metadata.platform = platform_override
                            ? blink::MoltskinUaPlatform(*platform_override)
-@@ -684,6 +724,11 @@
+@@ -684,6 +713,13 @@
    metadata.brand_full_version_list =
        GetUserAgentBrandFullVersionListInternal(std::nullopt);
    metadata.full_version = std::string(version_info::GetVersionNumber());
 +  if (moltskin_brand) {
 +    metadata.full_version = moltskin_brand->full_version;
 +    ApplyMoltskinBrand(metadata.brand_full_version_list,
-+                       moltskin_brand->full_version, true);
++                       moltskin_brand->full_version,
++                       blink::UserAgentBrandVersionType::kFullVersion,
++                       moltskin_major_number);
 +  }
    metadata.architecture = GetCpuArchitecture();
    metadata.model = BuildModelInfo();
@@ -255,7 +246,7 @@
  #include "third_party/blink/renderer/modules/webgpu/gpu_device.h"
  #include "third_party/blink/renderer/modules/webgpu/gpu_device_lost_info.h"
  #include "third_party/blink/renderer/modules/webgpu/gpu_memory_heap_info.h"
-@@ -104,6 +105,17 @@
+@@ -104,6 +105,22 @@
    }
    description_ = String::FromUtf8(info.device);
    driver_ = String::FromUtf8(info.description);
@@ -269,6 +260,11 @@
 +  if (const std::optional<String> device = GetMoltskinWebgpuDevice()) {
 +    device_ = *device;
 +    description_ = *device;
++  }
++  if (GetMoltskinWebgpuVendor() || GetMoltskinWebgpuArchitecture() ||
++      GetMoltskinWebgpuDevice()) {
++    // Do not leak the host Metal/D3D driver description.
++    driver_ = String();
 +  }
    if (supportsPropertiesD3D) {
      d3d_shader_model_ = d3dProperties.shaderModel;
@@ -307,9 +303,9 @@
 +    case GL_MAX_COMBINED_UNIFORM_BLOCKS:
 +      return 36;
 +    case GL_MAX_VERTEX_UNIFORM_COMPONENTS:
-+      return 4096;
++      return 16384;
 +    case GL_MAX_FRAGMENT_UNIFORM_COMPONENTS:
-+      return 4096;
++      return 16384;
 +    case GL_MAX_VARYING_COMPONENTS:
 +      return 124;
 +    case GL_MAX_VERTEX_OUTPUT_COMPONENTS:
@@ -319,7 +315,7 @@
      default:
        return std::nullopt;
    }
-@@ -64,6 +94,40 @@
+@@ -64,6 +94,39 @@
    return std::nullopt;
  }
  
@@ -345,13 +341,12 @@
 +  switch (precision_type) {
 +    case GL_LOW_FLOAT:
 +    case GL_MEDIUM_FLOAT:
-+      return std::array<GLint, 3>{15, 15, 10};
 +    case GL_HIGH_FLOAT:
 +      return std::array<GLint, 3>{127, 127, 23};
 +    case GL_LOW_INT:
 +    case GL_MEDIUM_INT:
 +    case GL_HIGH_INT:
-+      return std::array<GLint, 3>{31, 31, 0};
++      return std::array<GLint, 3>{31, 30, 0};
 +    default:
 +      return std::nullopt;
 +  }

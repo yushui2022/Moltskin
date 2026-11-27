@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0-alpha.2 — 2026-11-27
+
+### Fixed
+
+- `0027` 品牌列表改用官方 `GenerateBrandVersionList` 重新生成，GREASE 品牌、三元素顺序和自定义旧版 Chrome UA 的版本保持一致。
+- Windows ANGLE 着色器精度画像修正为浮点 `{127,127,23}`、整数 `{31,30,0}`，避免半精度和越界 `rangeMax`。
+- WebGL2 `MAX_VERTEX/FRAGMENT_UNIFORM_COMPONENTS` 改为 `16384`，满足 `COMPONENTS = 4 × VECTORS`。
+- WebGPU Apple 预设架构改为真实 Dawn 字符串 `metal-3`；NVIDIA/AMD 按 `rtx 40xx`/`rx 7xxx` 正则选择 `ada-lovelace`/`rdna-3`，并清空宿主 Metal/D3D 驱动描述。
+
 ## 0.7.0-alpha.1 — 2026-11-27
 
 ### Added

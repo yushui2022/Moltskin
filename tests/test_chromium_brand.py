@@ -85,6 +85,12 @@ PROBE = """async () => {
         const p = gl.getShaderPrecisionFormat(gl.VERTEX_SHADER, gl.HIGH_INT);
         return [p.rangeMin, p.rangeMax, p.precision];
       })(),
+      lowFloat: (() => {
+        const p = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.LOW_FLOAT);
+        return [p.rangeMin, p.rangeMax, p.precision];
+      })(),
+      vertexComponents: gl.getParameter(gl.MAX_VERTEX_UNIFORM_COMPONENTS),
+      fragmentComponents: gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_COMPONENTS),
     };
   }
   if (navigator.gpu) {
@@ -138,7 +144,10 @@ def test_native_chrome_brand_codecs_and_gpu_profile():
     assert result["webgl2"]["samples"] == 4
     assert result["webgl2"]["ubo"] == 72
     assert result["webgl2"]["point"] == [1.0, 1024.0]
-    assert result["webgl2"]["highInt"] == [31, 31, 0]
+    assert result["webgl2"]["highInt"] == [31, 30, 0]
+    assert result["webgl2"]["lowFloat"] == [127, 127, 23]
+    assert result["webgl2"]["vertexComponents"] == 16384
+    assert result["webgl2"]["fragmentComponents"] == 16384
     if "gpu" in result:
         assert result["gpu"]["vendor"] == "nvidia"
         assert result["gpu"]["architecture"] == "ampere"

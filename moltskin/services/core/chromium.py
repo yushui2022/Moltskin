@@ -212,23 +212,19 @@ def _webgpu_profile(webgl_preset: str) -> tuple[str, str, str] | None:
     lower = (vendor + " " + renderer + " " + label).lower()
     if "nvidia" in lower:
         vendor_id = "nvidia"
-        architecture = "ada" if any(x in lower for x in ("40", "4070", "4080", "4090")) else "ampere"
+        if re.search(r"\brtx\s*40\d{2}\b", lower):
+            architecture = "ada-lovelace"
+        elif re.search(r"\brtx\s*20\d{2}\b", lower):
+            architecture = "turing"
+        else:
+            architecture = "ampere"
     elif "amd" in lower or "radeon" in lower:
         vendor_id = "amd"
-        architecture = "rdna-3" if any(x in lower for x in ("7000", "7600", "7700", "7800", "7900")) else "rdna-2"
+        architecture = "rdna-3" if re.search(r"\brx\s*7\d{3}\b", lower) else "rdna-2"
     elif "intel" in lower:
-        vendor_id = "intel"
-        architecture = "gen-12lp" if "iris" in lower or "uhd" in lower else "gen-12lp"
+        vendor_id, architecture = "intel", "gen-12lp"
     elif "apple" in lower:
-        vendor_id = "apple"
-        if "m3" in lower:
-            architecture = "apple-m3"
-        elif "m2" in lower:
-            architecture = "apple-m2"
-        elif "m1 pro" in lower:
-            architecture = "apple-m1-pro"
-        else:
-            architecture = "apple-m1"
+        vendor_id, architecture = "apple", "metal-3"
     else:
         vendor_id, architecture = "google", "swiftshader"
     return vendor_id, architecture, label
