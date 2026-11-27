@@ -1,0 +1,219 @@
+--- a/third_party/blink/renderer/platform/fonts/font_description.h
++++ b/third_party/blink/renderer/platform/fonts/font_description.h
+@@ -372,7 +372,7 @@
+   FontCacheKey CacheKey(const FontFaceCreationParams&,
+                         bool is_unique_match) const;
+ 
+-  void SetFamily(const FontFamily& family);
++  void SetFamily(const FontFamily& family) { family_list_ = family; }
+   void SetComputedSize(float s) { computed_size_ = ClampTo<float>(s); }
+   void SetSpecifiedSize(float s) { specified_size_ = ClampTo<float>(s); }
+   void SetAdjustedSize(float s) { adjusted_size_ = ClampTo<float>(s); }
+--- a/third_party/blink/renderer/platform/fonts/font_description.cc
++++ b/third_party/blink/renderer/platform/fonts/font_description.cc
+@@ -36,7 +36,6 @@
+ #include "base/notreached.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/platform/web_font_description.h"
+-#include "third_party/blink/renderer/platform/fonts/moltskin_font_filter.h"
+ #include "third_party/blink/renderer/platform/geometry/evaluation_input.h"
+ #include "third_party/blink/renderer/platform/language.h"
+ #include "third_party/blink/renderer/platform/wtf/hash_functions.h"
+@@ -45,49 +44,12 @@
+ #include "third_party/blink/renderer/platform/wtf/text/format.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_hash.h"
+ #include "third_party/blink/renderer/platform/wtf/text/string_hasher.h"
+-#include "third_party/blink/renderer/platform/wtf/vector.h"
+ 
+ #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+ #include "third_party/blink/renderer/platform/fonts/font_cache.h"
+ #endif
+ 
+ namespace blink {
+-
+-void FontDescription::SetFamily(const FontFamily& family) {
+-  if (!IsMoltskinFontFilterEnabled()) {
+-    family_list_ = family;
+-    return;
+-  }
+-
+-  Vector<const FontFamily*> allowed;
+-  for (const FontFamily* current = &family; current; current = current->Next()) {
+-    if (current->FamilyIsGeneric() ||
+-        IsMoltskinFontAllowed(current->FamilyName())) {
+-      allowed.push_back(current);
+-    }
+-  }
+-
+-  if (allowed.empty()) {
+-    family_list_ = FontFamily(font_family_names::kSansSerif,
+-                              FontFamily::Type::kGenericFamily);
+-    return;
+-  }
+-
+-  scoped_refptr<SharedFontFamily> head;
+-  for (auto current = allowed.rbegin(); current != allowed.rend(); ++current) {
+-    const FontFamily* source = *current;
+-    head = SharedFontFamily::Create(
+-        source->FamilyName(),
+-        source->FamilyIsGeneric() ? FontFamily::Type::kGenericFamily
+-                                  : FontFamily::Type::kFamilyName,
+-        std::move(head));
+-  }
+-  family_list_ = FontFamily(
+-      head->FamilyName(),
+-      head->FamilyIsGeneric() ? FontFamily::Type::kGenericFamily
+-                              : FontFamily::Type::kFamilyName,
+-      head->ReleaseNext());
+-}
+ 
+ struct SameSizeAsFontDescription {
+   DISALLOW_NEW();
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -160,6 +160,13 @@
+     AlternateFontName alternate_font_name) {
+   TRACE_EVENT0("fonts", "FontCache::GetFontPlatformData");
+ 
++  if (IsMoltskinFontFilterEnabled() &&
++      creation_params.CreationType() == kCreateFontByFamily &&
++      alternate_font_name != AlternateFontName::kLastResort &&
++      !IsMoltskinFontAllowed(creation_params.Family())) {
++    return nullptr;
++  }
++
+ #if !BUILDFLAG(IS_MAC)
+   if (creation_params.CreationType() == kCreateFontByFamily &&
+       creation_params.Family() == font_family_names::kSystemUi) {
+--- a/third_party/blink/renderer/platform/fonts/mac/font_cache_mac.mm
++++ b/third_party/blink/renderer/platform/fonts/mac/font_cache_mac.mm
+@@ -437,7 +437,7 @@
+   // any prefs.
+   const SimpleFontData* simple_font_data =
+       GetFontData(font_description, font_family_names::kTimes,
+-                  AlternateFontName::kAllowAlternate);
++                  AlternateFontName::kLastResort);
+   if (simple_font_data)
+     return simple_font_data;
+ 
+@@ -446,7 +446,7 @@
+   // that's guaranteed to be there, according to Nathan Taylor. This is good
+   // enough to avoid a crash at least.
+   return GetFontData(font_description, font_family_names::kLucidaGrande,
+-                     AlternateFontName::kAllowAlternate);
++                     AlternateFontName::kLastResort);
+ }
+ 
+ const FontPlatformData* FontCache::CreateFontPlatformData(
+--- a/third_party/blink/renderer/platform/fonts/moltskin_font_filter.h
++++ b/third_party/blink/renderer/platform/fonts/moltskin_font_filter.h
+@@ -19,34 +19,6 @@
+ 
+ inline bool IsMoltskinFontAllowed(const AtomicString& family);
+ 
+-inline bool MoltskinFontStringRequestsOnlyDisallowedFamilies(
+-    const String& font_string) {
+-  if (!IsMoltskinFontFilterEnabled()) {
+-    return false;
+-  }
+-  bool found_family = false;
+-  for (unsigned i = 0; i < font_string.length(); ++i) {
+-    const UChar quote = font_string[i];
+-    if (quote != '"' && quote != '\'') {
+-      continue;
+-    }
+-    unsigned end = i + 1;
+-    while (end < font_string.length() && font_string[end] != quote) {
+-      ++end;
+-    }
+-    if (end >= font_string.length()) {
+-      break;
+-    }
+-    found_family = true;
+-    if (IsMoltskinFontAllowed(
+-            AtomicString(font_string.subview(i + 1, end - i - 1)))) {
+-      return false;
+-    }
+-    i = end;
+-  }
+-  return found_family;
+-}
+-
+ inline bool IsMoltskinFontAllowed(const AtomicString& family) {
+   if (family.empty()) {
+     return true;
+--- a/third_party/blink/renderer/core/css/font_face.cc
++++ b/third_party/blink/renderer/core/css/font_face.cc
+@@ -642,11 +642,6 @@
+ }
+ 
+ ScriptPromise<FontFace> FontFace::load(ScriptState* script_state) {
+-  if (IsMoltskinFontFilterEnabled() && !IsMoltskinFontAllowed(family_)) {
+-    SetError(MakeGarbageCollected<DOMException>(
+-        DOMExceptionCode::kNetworkError, "Font is not available."));
+-    return FontStatusPromise(script_state);
+-  }
+   if (status_ == kUnloaded) {
+     css_font_face_->Load();
+   }
+@@ -655,12 +650,6 @@
+ }
+ 
+ void FontFace::LoadWithCallback(LoadFontCallback* callback) {
+-  if (IsMoltskinFontFilterEnabled() && !IsMoltskinFontAllowed(family_)) {
+-    SetError(MakeGarbageCollected<DOMException>(
+-        DOMExceptionCode::kNetworkError, "Font is not available."));
+-    AddCallback(callback);
+-    return;
+-  }
+   if (status_ == kUnloaded) {
+     css_font_face_->Load();
+   }
+--- a/third_party/blink/renderer/core/css/font_face_set.cc
++++ b/third_party/blink/renderer/core/css/font_face_set.cc
+@@ -236,10 +236,6 @@
+   if (!InActiveContext()) {
+     return false;
+   }
+-  if (MoltskinFontStringRequestsOnlyDisallowedFamilies(font_string)) {
+-    return false;
+-  }
+-
+   const Font* font = ResolveFontStyle(font_string);
+   if (!font) {
+     exception_state.ThrowDOMException(
+@@ -265,7 +261,12 @@
+ 
+       CSSSegmentedFontFace* face =
+           font_face_cache->Get(font->GetFontDescription(), f->FamilyName());
+-      if (face && !face->CheckFont(c)) {
++      if (face) {
++        if (!face->CheckFont(c)) {
++          return false;
++        }
++      } else if (IsMoltskinFontFilterEnabled() &&
++                 !IsMoltskinFontAllowed(f->FamilyName())) {
+         return false;
+       }
+     }
+--- a/third_party/blink/renderer/core/css/local_font_face_source.cc
++++ b/third_party/blink/renderer/core/css/local_font_face_source.cc
+@@ -16,6 +16,7 @@
+ #include "third_party/blink/renderer/platform/fonts/font_global_context.h"
+ #include "third_party/blink/renderer/platform/fonts/font_selector.h"
+ #include "third_party/blink/renderer/platform/fonts/font_unique_name_lookup.h"
++#include "third_party/blink/renderer/platform/fonts/moltskin_font_filter.h"
+ #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
+ #include "third_party/blink/renderer/platform/heap/persistent.h"
+ #include "third_party/blink/renderer/platform/wtf/functional.h"
+@@ -42,6 +43,10 @@
+ 
+ bool LocalFontFaceSource::IsLocalFontAvailable(
+     const FontDescription& font_description) const {
++  if (IsMoltskinFontFilterEnabled() &&
++      !IsMoltskinFontAllowed(AtomicString(font_name_))) {
++    return false;
++  }
+   // TODO(crbug.com/1025945): Properly handle Windows prior to 10 and Android.
+   bool font_available = FontCache::Get().IsPlatformFontUniqueNameMatchAvailable(
+       font_description, font_name_);

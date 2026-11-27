@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Chromium 内核补丁 `0026-web-font-filter`：字体白名单不再在 CSS 字体列表阶段删除名称，改为只拦截平台字体解析与 `local(...)` 本地字体；远程 `@font-face`（Inter、Roboto、FontAwesome 等）和图标字体恢复正常，同时 `PingFang`、`Helvetica` 等宿主字体仍不可探测。
+
 ## 0.5.0-alpha.3 — 2026-11-27
 
 ### Added

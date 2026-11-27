@@ -105,6 +105,7 @@ moltskin-workbench-button
 | `0023-workbench-toolbar` | 工具栏按钮打开当前会话工作台 |
 | `0024-canvas-noise-hardening` | 纯色探针、putImageData 与跨 API 像素一致 |
 | `0025-audio-noise-hardening` | 静音/直流保护与 Analyser Float/Byte 一致 |
+| `0026-web-font-filter` | 保留远程 Web Font，只过滤本地系统字体 |
 
 ### 2.3 平台差异边界
 

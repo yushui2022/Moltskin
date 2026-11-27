@@ -2,6 +2,7 @@
 
 import os
 import sys
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
@@ -157,3 +158,68 @@ def test_native_font_filter_hides_macos_families():
     assert filtered_apis["checks"]["Arial"] is True
     assert filtered_apis["loads"]["PingFang HK"] == "error"
     assert filtered_apis["loads"]["Arial"] == "loaded"
+
+
+FONT_WEB = """async (dataUri) => {
+  const width = family => {
+    const context = document.createElement('canvas').getContext('2d');
+    context.font = '32px ' + JSON.stringify(family) + ', monospace';
+    return context.measureText('mmmmmmmmmmlli').width;
+  };
+  const fallback = width('InterMoltskinWeb');
+  const face = new FontFace('InterMoltskinWeb', `url(${dataUri})`);
+  await face.load();
+  document.fonts.add(face);
+  const loadedWidth = width('InterMoltskinWeb');
+  const remotePingFang = new FontFace('PingFang HK', `url(${dataUri})`);
+  await remotePingFang.load();
+
+  const style = document.createElement('style');
+  style.textContent = `@font-face { font-family: InterMoltskinCss; src: url(${dataUri}); }`;
+  document.head.append(style);
+  await document.fonts.load('32px InterMoltskinCss');
+  const cssWidth = width('InterMoltskinCss');
+  return {
+    fallback,
+    loadedWidth,
+    cssWidth,
+    checkLoaded: document.fonts.check('32px InterMoltskinWeb'),
+    checkCss: document.fonts.check('32px InterMoltskinCss'),
+    faceStatus: face.status,
+    remotePingFangStatus: remotePingFang.status,
+    remotePingFangCheck: document.fonts.check('32px "PingFang HK"'),
+  };
+}"""
+
+
+@pytest.mark.skipif(
+    os.getenv("MOLTSKIN_TEST_NATIVE_BROWSERS") != "1" or sys.platform != "darwin",
+    reason="needs the installed macOS Chromium and its local fonts",
+)
+def test_native_font_filter_keeps_remote_web_fonts():
+    import base64
+
+    binary, _, capabilities = probe_capabilities(default_binary())
+    assert FONT_FILTER_CAPABILITY in capabilities
+    font = (Path(__file__).resolve().parents[1] / "web" / "fonts" / "inter-400.woff2").read_bytes()
+    data_uri = "data:font/woff2;base64," + base64.b64encode(font).decode("ascii")
+
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(
+            executable_path=str(binary),
+            headless=True,
+            args=["--moltskin-font-filter=windows"],
+        )
+        try:
+            page = browser.new_page()
+            page.set_content("<html><body>web font probe</body></html>")
+            result = page.evaluate(FONT_WEB, data_uri)
+        finally:
+            browser.close()
+
+    assert result["faceStatus"] == "loaded"
+    assert result["checkLoaded"] is True
+    assert result["checkCss"] is True
+    assert result["remotePingFangStatus"] == "loaded"
+    assert result["loadedWidth"] != result["fallback"]
+    assert result["cssWidth"] != result["fallback"]
