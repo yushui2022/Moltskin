@@ -24,6 +24,8 @@ MANAGER_URL = os.environ.get("MOLTSKIN_MANAGER_URL", f"http://127.0.0.1:{PORT}")
 
 CHROMIUM_JS_HEAP_LIMITS = (256, 512, 1024)
 CHROMIUM_RENDERER_LIMITS = (2, 4, 8)
+CHROMIUM_HARDWARE_CONCURRENCY_VALUES = (4, 6, 8, 12, 16)
+CHROMIUM_DEVICE_MEMORY_VALUES = (2, 4, 8)
 PreviewPlatform = Literal["Windows", "macOS", "Linux"]
 PreviewArchitecture = Literal["arm64", "x86_64"]
 PREVIEW_PLATFORMS = get_args(PreviewPlatform)

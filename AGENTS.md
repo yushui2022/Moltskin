@@ -85,6 +85,7 @@ moltskin-webgl-params
 moltskin-font-filter
 moltskin-brand
 moltskin-webgpu
+moltskin-hardware-profile
 moltskin-panel
 moltskin-toolbar
 moltskin-workbench-button
@@ -113,6 +114,7 @@ moltskin-workbench-button
 | `0025-audio-noise-hardening` | 静音/直流保护与 Analyser Float/Byte 一致 |
 | `0026-web-font-filter` | 保留远程 Web Font，只过滤本地系统字体 |
 | `0027-chrome-brand-and-gpu-profile` | Chrome 品牌、WebGPU 与 WebGL2 画像 |
+| `0028-hardware-and-anticorrelation` | 硬件参数、配额、电池、音频与设备防关联 |
 
 ### 2.3 平台差异边界
 

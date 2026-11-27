@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0-alpha.1 — 2026-11-27
+
+### Added
+
+- Chromium 内核补丁 `0028-hardware-and-anticorrelation`：`--moltskin-hardware-concurrency` 与 `--moltskin-device-memory` 同步 Navigator、Worker 和 `Device-Memory` Client Hints；`--moltskin-hardware-seed` 按环境生成稳定值。
+- Storage Quota 按环境种子选择 256 GiB / 512 GiB / 1 TiB 虚拟磁盘档位，并加入 4 KiB 对齐偏移；同机不同环境不再共享字节级相同的配额。
+- Battery 状态统一为插电桌面画像（`charging=true`、`level=1`、`dischargingTime=Infinity`）。
+- AudioContext 的 `baseLatency` / `outputLatency` / `destination.maxChannelCount` 使用稳定的 Windows/macOS 桌面画像。
+- `enumerateDevices()` 在无权限时仍返回三种标准设备类型；有权限时返回每环境稳定的虚拟麦克风、摄像头、扬声器及设备 ID/分组 ID，避免暴露真实设备列表和 OBS/BlackHole 等虚拟驱动。
+
 ## 0.7.0-alpha.2 — 2026-11-27
 
 ### Fixed

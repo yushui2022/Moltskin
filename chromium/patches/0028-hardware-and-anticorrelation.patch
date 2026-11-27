@@ -1,0 +1,424 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -19,6 +19,17 @@
+ inline constexpr char kMoltskinLimitHardwareReporting[] =
+     "moltskin-limit-hardware-reporting";
+ 
++// Overrides navigator.hardwareConcurrency in window and worker contexts.
++inline constexpr char kMoltskinHardwareConcurrency[] =
++    "moltskin-hardware-concurrency";
++
++// Overrides navigator.deviceMemory and Device-Memory client hints.
++inline constexpr char kMoltskinDeviceMemory[] = "moltskin-device-memory";
++
++// Per-profile seed for storage quota, audio metadata, battery and media
++// device anti-correlation.
++inline constexpr char kMoltskinHardwareSeed[] = "moltskin-hardware-seed";
++
+ // Keeps navigator.webdriver false even when the browser was started by an
+ // automation client that enables the automation-controlled runtime feature.
+ inline constexpr char kMoltskinHideWebdriver[] =
+--- /dev/null
++++ b/third_party/blink/public/common/moltskin_hardware.h
+@@ -0,0 +1,125 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_HARDWARE_H_
++#define THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_HARDWARE_H_
++
++#include <algorithm>
++#include <array>
++#include <cstdint>
++#include <optional>
++#include <string>
++
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
++
++namespace blink {
++
++inline uint32_t MoltskinHardwareMix(uint32_t value) {
++  value ^= value >> 16;
++  value *= 0x7feb352dU;
++  value ^= value >> 15;
++  value *= 0x846ca68bU;
++  value ^= value >> 16;
++  return value;
++}
++
++inline uint32_t GetMoltskinHardwareSeed() {
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kMoltskinHardwareSeed)) {
++    return 0;
++  }
++  uint32_t seed = 0;
++  if (!base::StringToUint(
++          command_line->GetSwitchValueASCII(switches::kMoltskinHardwareSeed),
++          &seed)) {
++    return 0;
++  }
++  return seed;
++}
++
++inline std::optional<unsigned int> GetMoltskinHardwareConcurrencyOverride() {
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kMoltskinHardwareConcurrency)) {
++    return std::nullopt;
++  }
++  unsigned int value = 0;
++  if (!base::StringToUint(command_line->GetSwitchValueASCII(
++                              switches::kMoltskinHardwareConcurrency),
++                          &value) ||
++      value < 1U || value > 64U) {
++    return std::nullopt;
++  }
++  return value;
++}
++
++inline std::optional<float> GetMoltskinDeviceMemoryOverride() {
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kMoltskinDeviceMemory)) {
++    return std::nullopt;
++  }
++  double value = 0.0;
++  if (!base::StringToDouble(command_line->GetSwitchValueASCII(
++                                switches::kMoltskinDeviceMemory),
++                            &value)) {
++    return std::nullopt;
++  }
++  for (double allowed : {0.25, 0.5, 1.0, 2.0, 4.0, 8.0}) {
++    if (value == allowed) {
++      return static_cast<float>(value);
++    }
++  }
++  return std::nullopt;
++}
++
++inline std::optional<int64_t> GetMoltskinVirtualStorageQuota(
++    int64_t usage_in_bytes) {
++  const uint32_t seed = GetMoltskinHardwareSeed();
++  if (seed == 0) {
++    return std::nullopt;
++  }
++  // 60% of 256 GiB, 512 GiB or 1 TiB virtual disk tiers, plus a deterministic
++  // 4 KiB-aligned offset so profiles on the same host never share an identical
++  // byte-precise quota.
++  constexpr std::array<int64_t, 3> kBaseQuotas = {
++      164926744166LL,
++      329853488332LL,
++      659706976665LL,
++  };
++  const uint32_t tier = MoltskinHardwareMix(seed ^ 0x5107a9e1U) % 3U;
++  const int64_t offset =
++      static_cast<int64_t>(MoltskinHardwareMix(seed ^ 0x5107a9e2U) & 0xFFFFFU) *
++      4096LL;
++  const int64_t quota = kBaseQuotas[tier] + offset;
++  return std::max(quota, std::max<int64_t>(0, usage_in_bytes) +
++                             (int64_t{64} << 30));
++}
++
++inline bool ShouldStabilizeMoltskinBattery() {
++  return GetMoltskinHardwareSeed() != 0;
++}
++
++inline std::string GetMoltskinHardwareHexId(uint32_t seed, uint32_t domain) {
++  static constexpr std::array<char, 16> kHex = {
++      '0', '1', '2', '3', '4', '5', '6', '7',
++      '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
++  std::string out;
++  out.reserve(64);
++  for (uint32_t i = 0; i < 8U; ++i) {
++    uint32_t word = MoltskinHardwareMix(seed ^ (domain * 0x9e3779b1U) ^
++                                        (i * 0x85ebca77U));
++    for (int shift = 28; shift >= 0; shift -= 4) {
++      out.push_back(kHex[(word >> shift) & 0xFU]);
++    }
++  }
++  return out;
++}
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_HARDWARE_H_
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4041,6 +4041,9 @@
+       blink::switches::kMoltskinCanvasNoise,
+       blink::switches::kMoltskinFontFilter,
+       blink::switches::kMoltskinHideWebdriver,
++      blink::switches::kMoltskinDeviceMemory,
++      blink::switches::kMoltskinHardwareConcurrency,
++      blink::switches::kMoltskinHardwareSeed,
+       blink::switches::kMoltskinLimitHardwareReporting,
+       blink::switches::kMoltskinLocale,
+       blink::switches::kMoltskinPlatform,
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -451,6 +451,7 @@
+       puts("moltskin-canvas-noise");
+       puts("moltskin-font-filter");
+       puts("moltskin-limit-hardware-reporting");
++      puts("moltskin-hardware-profile");
+       puts("moltskin-locale");
+       puts("moltskin-hide-webdriver");
+       puts("moltskin-platform");
+--- a/third_party/blink/renderer/core/execution_context/navigator_base.cc
++++ b/third_party/blink/renderer/core/execution_context/navigator_base.cc
+@@ -10,6 +10,7 @@
+ #include "base/feature_list.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_hardware.h"
+ #include "third_party/blink/public/common/moltskin_platform.h"
+ #include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+@@ -98,6 +99,10 @@
+ 
+   probe::ApplyHardwareConcurrencyOverride(
+       probe::ToCoreProbeSink(GetExecutionContext()), hardware_concurrency);
++  if (const std::optional<unsigned int> override_concurrency =
++          GetMoltskinHardwareConcurrencyOverride()) {
++    return *override_concurrency;
++  }
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kMoltskinLimitHardwareReporting)) {
+     return std::min(hardware_concurrency, 4u);
+--- a/third_party/blink/common/device_memory/approximated_device_memory.cc
++++ b/third_party/blink/common/device_memory/approximated_device_memory.cc
+@@ -12,6 +12,7 @@
+ #include "base/feature_list.h"
+ #include "base/system/sys_info.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_hardware.h"
+ #include "third_party/blink/public/common/moltskin_switches.h"
+ 
+ namespace blink {
+@@ -32,6 +33,10 @@
+ // static
+ float ApproximatedDeviceMemory::GetApproximatedDeviceMemory() {
+   // Both navigator.deviceMemory and Device-Memory client hints use this value.
++  if (const std::optional<float> override_memory =
++          GetMoltskinDeviceMemoryOverride()) {
++    return *override_memory;
++  }
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+           switches::kMoltskinLimitHardwareReporting)) {
+     return std::min(approximated_device_memory_gb_, 4.0f);
+--- a/third_party/blink/renderer/modules/quota/storage_manager.cc
++++ b/third_party/blink/renderer/modules/quota/storage_manager.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "third_party/blink/renderer/modules/quota/storage_manager.h"
+ 
++#include "third_party/blink/public/common/moltskin_hardware.h"
++
+ #include "mojo/public/cpp/bindings/callback_helpers.h"
+ #include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink.h"
+ #include "third_party/blink/public/mojom/quota/quota_types.mojom-blink.h"
+@@ -68,6 +70,10 @@
+     return;
+   }
+ 
++  if (const std::optional<int64_t> virtual_quota =
++          GetMoltskinVirtualStorageQuota(usage_in_bytes)) {
++    quota_in_bytes = *virtual_quota;
++  }
+   StorageEstimate* estimate = StorageEstimate::Create();
+   estimate->setUsage(usage_in_bytes);
+   estimate->setQuota(quota_in_bytes);
+--- a/third_party/blink/renderer/modules/battery/battery_manager.cc
++++ b/third_party/blink/renderer/modules/battery/battery_manager.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "third_party/blink/renderer/modules/battery/battery_manager.h"
+ 
++#include <limits>
++
++#include "third_party/blink/public/common/moltskin_hardware.h"
++
+ #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+@@ -80,18 +84,30 @@
+ }
+ 
+ bool BatteryManager::charging() {
++  if (ShouldStabilizeMoltskinBattery()) {
++    return true;
++  }
+   return battery_status_.Charging();
+ }
+ 
+ double BatteryManager::chargingTime() {
++  if (ShouldStabilizeMoltskinBattery()) {
++    return 0.0;
++  }
+   return battery_status_.charging_time().InSecondsF();
+ }
+ 
+ double BatteryManager::dischargingTime() {
++  if (ShouldStabilizeMoltskinBattery()) {
++    return std::numeric_limits<double>::infinity();
++  }
+   return battery_status_.discharging_time().InSecondsF();
+ }
+ 
+ double BatteryManager::level() {
++  if (ShouldStabilizeMoltskinBattery()) {
++    return 1.0;
++  }
+   return battery_status_.Level();
+ }
+ 
+@@ -99,7 +115,9 @@
+   DCHECK(battery_property_);
+ 
+   BatteryStatus old_status = battery_status_;
+-  battery_status_ = *battery_dispatcher_->LatestData();
++  battery_status_ = ShouldStabilizeMoltskinBattery()
++                        ? BatteryStatus()
++                        : *battery_dispatcher_->LatestData();
+ 
+   if (battery_property_->GetState() == BatteryProperty::kPending) {
+     battery_property_->Resolve(this);
+--- a/third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc
++++ b/third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "third_party/blink/renderer/modules/webaudio/realtime_audio_destination_handler.h"
+ 
++#include "third_party/blink/public/common/moltskin_hardware.h"
++
+ #include "base/feature_list.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "media/base/output_device_info.h"
+@@ -211,6 +213,9 @@
+ }
+ 
+ uint32_t RealtimeAudioDestinationHandler::MaxChannelCount() const {
++  if (GetMoltskinHardwareSeed() != 0) {
++    return 2U;
++  }
+   return platform_destination_->MaxChannelCount();
+ }
+ 
+--- a/third_party/blink/renderer/modules/webaudio/audio_context.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_context.cc
+@@ -3,6 +3,9 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/modules/webaudio/audio_context.h"
++
++#include "third_party/blink/public/common/moltskin_hardware.h"
++#include "third_party/blink/public/common/moltskin_platform.h"
+ 
+ #include <algorithm>
+ #include <atomic>
+@@ -1307,6 +1310,12 @@
+   DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+   DCHECK(destinationNode());
+ 
++  if (GetMoltskinHardwareSeed() != 0 && sampleRate() > 0.0f) {
++    const std::optional<MoltskinPlatform> platform = GetMoltskinPlatform();
++    const double frames =
++        (platform && platform->platform == "windows") ? 480.0 : 256.0;
++    return frames / static_cast<double>(sampleRate());
++  }
+   return base_latency_;
+ }
+ 
+@@ -1314,6 +1323,9 @@
+   DCHECK_CALLED_ON_VALID_SEQUENCE(main_thread_sequence_checker_);
+   DCHECK(destinationNode());
+ 
++  if (GetMoltskinHardwareSeed() != 0) {
++    return 0.016;
++  }
+   DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
+ 
+   double factor = GetOutputLatencyQuantizingFactor();
+--- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
++++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
+@@ -4,6 +4,9 @@
+ 
+ #include "third_party/blink/renderer/modules/mediastream/media_devices.h"
+ 
++#include "third_party/blink/public/common/moltskin_hardware.h"
++#include "third_party/blink/public/common/moltskin_platform.h"
++
+ #include <algorithm>
+ #include <utility>
+ 
+@@ -1495,6 +1498,66 @@
+     }
+   }
+ 
++  if (const uint32_t hardware_seed = GetMoltskinHardwareSeed();
++      hardware_seed != 0) {
++    MediaDeviceInfoVector virtual_devices;
++    if (!result_contains_nonempty_input_device_ids) {
++      virtual_devices.push_back(MakeGarbageCollected<InputDeviceInfo>(
++          String(), String(), String(),
++          mojom::blink::MediaDeviceType::kMediaAudioInput));
++      virtual_devices.push_back(MakeGarbageCollected<InputDeviceInfo>(
++          String(), String(), String(),
++          mojom::blink::MediaDeviceType::kMediaVideoInput));
++      virtual_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
++          String(), String(), String(),
++          mojom::blink::MediaDeviceType::kMediaAudioOutput));
++    } else {
++      const std::optional<MoltskinPlatform> platform = GetMoltskinPlatform();
++      const bool is_windows = platform && platform->platform == "windows";
++      const std::string audio_group_hex =
++          GetMoltskinHardwareHexId(hardware_seed, 0xD04U);
++      const std::string video_group_hex =
++          GetMoltskinHardwareHexId(hardware_seed, 0xE05U);
++      const std::string audio_in_hex =
++          GetMoltskinHardwareHexId(hardware_seed, 0xA01U);
++      const std::string video_in_hex =
++          GetMoltskinHardwareHexId(hardware_seed, 0xB02U);
++      const std::string audio_out_hex =
++          GetMoltskinHardwareHexId(hardware_seed, 0xC03U);
++      const String audio_group =
++          String::FromUtf8(std::string_view(audio_group_hex));
++      const String video_group =
++          String::FromUtf8(std::string_view(video_group_hex));
++      InputDeviceInfo* audio_in = MakeGarbageCollected<InputDeviceInfo>(
++          String::FromUtf8(std::string_view(audio_in_hex)),
++          is_windows ? "Default - Microphone (Realtek(R) Audio)"
++                     : "Built-in Microphone",
++          audio_group, mojom::blink::MediaDeviceType::kMediaAudioInput);
++      if (!audio_input_capabilities.empty() && audio_input_capabilities[0]) {
++        audio_in->SetAudioInputCapabilities(
++            std::move(audio_input_capabilities[0]));
++      }
++      virtual_devices.push_back(audio_in);
++
++      InputDeviceInfo* video_in = MakeGarbageCollected<InputDeviceInfo>(
++          String::FromUtf8(std::string_view(video_in_hex)),
++          is_windows ? "HD WebCam" : "FaceTime HD Camera",
++          video_group, mojom::blink::MediaDeviceType::kMediaVideoInput);
++      if (!video_input_capabilities.empty() && video_input_capabilities[0]) {
++        video_in->SetVideoInputCapabilities(
++            std::move(video_input_capabilities[0]));
++      }
++      virtual_devices.push_back(video_in);
++
++      virtual_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
++          String::FromUtf8(std::string_view(audio_out_hex)),
++          is_windows ? "Default - Speakers (Realtek(R) Audio)"
++                     : "Built-in Output",
++          audio_group, mojom::blink::MediaDeviceType::kMediaAudioOutput));
++    }
++    media_devices = std::move(virtual_devices);
++  }
++
+   ReportCompletedEnumerateDevices(result_contains_nonempty_input_device_ids);
+   result_tracker->Resolve(media_devices);
+   tracer->End();

@@ -283,6 +283,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 chromium_webgl=profile["chromium_webgl"],
                 canvas_noise_seed=chromium.canvas_noise_seed(profile["id"]) if profile["chromium_canvas_noise"] else 0,
                 audio_noise_seed=chromium.audio_noise_seed(profile["id"]) if profile["chromium_audio_noise"] else 0,
+                hardware_seed=chromium.hardware_seed(profile["id"]),
             )
         except BlockingIOError as exc:
             _close_bridge(session_id)
