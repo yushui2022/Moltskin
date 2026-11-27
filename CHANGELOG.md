@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0-alpha.2 — 2026-11-27
 
 ### Security
 
