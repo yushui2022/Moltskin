@@ -244,6 +244,12 @@ def init_db() -> None:
     with session() as conn:
         conn.executescript(SCHEMA)
         _migrate(conn)
+        from .secret_store import encrypt, is_encrypted
+        for row in conn.execute(
+                "SELECT id, password FROM proxies WHERE password IS NOT NULL AND password != ''"):
+            if not is_encrypted(row["password"]):
+                conn.execute("UPDATE proxies SET password=? WHERE id=?",
+                             (encrypt(row["password"]), row["id"]))
         for key, value in config.DEFAULTS.items():
             conn.execute(
                 "INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)",

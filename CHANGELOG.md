@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Chromium 支持带用户名和密码的 HTTP、HTTPS、SOCKS5 代理：每个窗口启动本地回环代理桥，上游认证在主进程完成，密码不进入浏览器命令行；代理失败时不会直连回退。
+- 代理检测后自动为空白环境补齐出口时区和网站首选语言，并提供「按代理对齐」入口。
+- 代理密码使用本地主密钥加密后写入 SQLite，API、日志和导出不返回明文。
+
 ### Fixed
 
 - Chromium 内核补丁 `0026-web-font-filter`：字体白名单不再在 CSS 字体列表阶段删除名称，改为只拦截平台字体解析与 `local(...)` 本地字体；远程 `@font-face`（Inter、Roboto、FontAwesome 等）和图标字体恢复正常，同时 `PingFang`、`Helvetica` 等宿主字体仍不可探测。

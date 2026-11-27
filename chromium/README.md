@@ -97,9 +97,9 @@ Moltskin Chromium 启动时固定传入 `--moltskin-hide-webdriver`，因此即�
 
 ### 窗口代理
 
-在「代理 IP」保存代理，然后在新建或编辑 Chromium 窗口时选择该代理。留空会沿用系统网络。支持未设置用户名和密码的 HTTP、HTTPS 和 SOCKS5 代理。窗口运行期间需先关闭窗口再变更绑定或代理地址。复制环境、导出和重新导入配置都会保留代理设置。
+在「代理 IP」保存代理，然后在新建或编辑 Chromium 窗口时选择该代理。留空会沿用系统网络。支持 HTTP、HTTPS 和 SOCKS5，以及需要用户名/密码的代理。窗口运行期间需先关闭窗口再变更绑定或代理地址。复制环境、导出和重新导入配置都会保留代理设置。
 
-指定代理通过 Chromium 的原生网络栈路由普通网页请求。代理失联时，相应的网页请求会报错。本机回环地址按 Chromium 的内置规则访问，所以本地工作台仍可用。WebRTC 的媒体传输和 UDP 需要独立验证。[Chromium 代理行为](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md)
+带账号密码的代理不会直接写入 Chromium 命令行。每个窗口启动一个只监听 `127.0.0.1` 的本地代理桥，由主进程完成上游 HTTP Basic 或 SOCKS5 认证；浏览器只看到本地端口，因此进程列表、崩溃报告和命令行里都没有上游密码。上游断开或认证失败时返回代理错误，不会静默回退直连。检测代理后可以点击「按代理对齐」，把出口国家对应的时区和网站首选语言写入环境；启动时也会用代理记录的时区/国家补齐空白字段。本机回环地址按 Chromium 的内置规则访问，所以本地工作台仍可用。WebRTC 的媒体传输和 UDP 需要独立验证。[Chromium 代理行为](https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/proxy.md)
 
 ## 临时打开看效果
 

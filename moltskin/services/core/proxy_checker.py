@@ -15,7 +15,8 @@ from camoufox.exceptions import InvalidIP
 from camoufox.geolocation import get_geolocation
 from camoufox.ip import Proxy, proxy_exit_geo
 
-from . import db
+from . import db, geoip
+from .secret_store import decrypt
 
 
 def check_proxy(
@@ -28,7 +29,7 @@ def check_proxy(
     proxy = Proxy(
         server=f"{protocol}://{host}:{port}",
         username=username or None,
-        password=password or None,
+        password=decrypt(password) or None,
     )
     proxy_str = proxy.as_string()
 
@@ -100,6 +101,7 @@ def check_and_save(proxy: dict) -> dict:
         proxy.get("username"),
         proxy.get("password"),
     )
+    language = geoip.locale_for_country(result.get("country"), result.get("locale"))
     with db.session() as conn:
         conn.execute(
             "UPDATE proxies SET status=?, exit_ip=?, country=?, timezone=?, latency_ms=?, "
@@ -114,6 +116,13 @@ def check_and_save(proxy: dict) -> dict:
                 db.now(),
                 proxy["id"],
             ),
+        )
+        # Fill only blank fields so an explicit operator choice is preserved.
+        conn.execute(
+            "UPDATE profiles SET browser_timezone=?, browser_language=?, updated_at=? "
+            "WHERE proxy_id=? AND engine='chromium' AND "
+            "COALESCE(browser_timezone, '')='' AND COALESCE(browser_language, '')=''",
+            (result["timezone"] or "", language, db.now(), proxy["id"]),
         )
     result["id"] = proxy["id"]
     return result

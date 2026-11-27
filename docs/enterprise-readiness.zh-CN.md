@@ -10,7 +10,7 @@
 
 Chromium 也已接入独立的 Canvas 2D 读取控制和 WebGL 显卡调试扩展控制。本地实测页能核对这两个设置。屏幕尺寸、像素比、运行平台、CPU 架构、WebGL 显卡厂商/型号与参数画像、Canvas/WebGL 像素噪声、AudioContext 指纹噪声、语音列表和 Windows 字体白名单已支持按环境配置，并同步 Client Hints；处理器型号与真实音频设备参数仍没有可替换的硬件预设。[图形能力对照](../chromium/fingerprint-coverage.md)
 
-代理库中已有的密码仍作为文本写入 SQLite。数据目录、`profiles`、`run` 和 `logs` 已收紧为 `0700`，但数据库本身仍未加密。进入多人试用前应补上凭据存储保护，并用一份带测试凭据的备份验证访问和恢复范围。Chromium 本次仅接受未填写凭据的代理。[代理写入](../moltskin/services/core/main.py) · [数据库备份](../moltskin/services/core/backup.py)
+代理密码已使用本地主密钥加密后写入 SQLite，密钥文件为 `0600` 并放在已收紧为 `0700` 的数据目录内；API、日志和配置导出不返回明文。Chromium 通过本地代理桥支持带账号密码的 HTTP、HTTPS 和 SOCKS5 上游，密码不进入浏览器命令行。备份仍包含密文，换机恢复需要同时带走密钥文件；主密钥托管到系统钥匙串仍是后续工作。[代理写入](../moltskin/services/core/main.py) · [数据库备份](../moltskin/services/core/backup.py)
 
 | 用户操作 | 当前行为 | 下一步与验收方法 |
 |---|---|---|

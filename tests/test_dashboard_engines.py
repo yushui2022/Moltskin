@@ -87,11 +87,13 @@ def test_chromium_fixed_proxy_persists_and_requires_explicit_unbinding(client, p
     url = f"{PROFILES}/{profile['id']}"
     assert client.get(proxies).json()["data"][0]["chromium_compatible"]
     assert client.delete(endpoint).status_code == 409
-    assert client.patch(endpoint, json={"username": "user"}).status_code == 422
+    assert client.patch(endpoint, json={"username": "user"}).status_code == 200
     client.post(url + "/launch").raise_for_status()
     try:
         args = json.loads((Path(profile["user_data_dir"]) / "test-args.json").read_text())
-        assert [arg for arg in args if arg.startswith("--proxy-server=")] == [f"--proxy-server={protocol}://[::1]:3128"]
+        proxy_args = [arg for arg in args if arg.startswith("--proxy-server=")]
+        assert len(proxy_args) == 1
+        assert re.fullmatch(r"--proxy-server=http://127\.0\.0\.1:[0-9]+", proxy_args[0])
         assert client.patch(url, json={"proxy_id": None}).status_code == 409
         assert client.patch(endpoint, json={"port": 4321}).status_code == 409
     finally:
@@ -104,25 +106,24 @@ def test_chromium_fixed_proxy_persists_and_requires_explicit_unbinding(client, p
     client.delete(endpoint).raise_for_status()
 
 
-def test_chromium_refuses_incompatible_proxy_before_saving_or_launching(client):
-    from moltskin.services.core import db
-
+def test_chromium_accepts_credentialed_proxy_and_rejects_invalid_host(client):
     proxies = "/api/v1/proxies"
     profile = create_chromium(client, "Keep network setting")
     url = f"{PROFILES}/{profile['id']}"
     assert client.patch(url, json={"proxy_id": "px_missing"}).status_code == 422
-    for opts in ({"username": "user"}, {"password": "test-only"}, {"host": "example.invalid,direct://"}):
-        proxy = client.post(proxies, json={
-            "name": "Legacy proxy", "host": "example.invalid", "port": 443, **opts,
-        }).raise_for_status().json()["data"]["id"]
-        assert client.post(PROFILES, json={"name": "Reject", "engine": "chromium", "proxy_id": proxy}).status_code == 422
-        assert client.patch(url, json={"proxy_id": proxy}).status_code == 422
-    assert all(not row["chromium_compatible"] for row in client.get(proxies).json()["data"])
-    with db.session() as conn:
-        conn.execute("UPDATE profiles SET proxy_id=? WHERE id=?", (proxy, profile["id"]))
-    failure = client.post(url + "/launch")
-    assert failure.status_code == 422 and failure.json()["error"]["code"] == "INVALID_CHROMIUM_PROXY"
+    credential = client.post(proxies, json={
+        "name": "Residential", "host": "proxy.example", "port": 443,
+        "username": "operator", "password": "test-secret",
+    }).raise_for_status().json()["data"]["id"]
+    assert client.get(proxies).json()["data"][0]["chromium_compatible"] is True
+    assert client.patch(url, json={"proxy_id": credential}).raise_for_status().json()["data"]["proxy"]["id"] == credential
 
+    invalid = client.post(proxies, json={
+        "name": "Invalid", "host": "example.invalid,direct://", "port": 443,
+    }).raise_for_status().json()["data"]["id"]
+    assert client.post(PROFILES, json={
+        "name": "Reject invalid host", "engine": "chromium", "proxy_id": invalid,
+    }).status_code == 422
 
 def test_directory_mismatch_refuses_launch_and_single_or_batch_data_deletion(client, monkeypatch):
     from moltskin.services.core import chromium, db

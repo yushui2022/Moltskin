@@ -16,10 +16,19 @@ from camoufox.fingerprints import get_random_preset
 
 from platforms import current as host_platform
 
-from . import chromium, config, db, extensions
+from . import chromium, config, db, extensions, geoip
+from .proxy_bridge import ProxyBridge, ProxyBridgeError
+from .secret_store import decrypt
 from .proxy_settings import chromium_proxy_server
 
 ACTIVE_STATES = ("starting", "running", "stopping")
+_active_bridges: dict[str, ProxyBridge] = {}
+
+
+def _close_bridge(session_id: str) -> None:
+    bridge = _active_bridges.pop(session_id, None)
+    if bridge is not None:
+        bridge.close()
 
 
 class LaunchError(Exception):
@@ -74,6 +83,7 @@ def _active_session(conn, profile_id: str):
 
 def _finish_session(session_id: str, profile_id: str, state: str, code: str | None = None,
                     message: str | None = None, *, observed_exit: bool = False) -> None:
+    _close_bridge(session_id)
     with db.session() as conn:
         changed = conn.execute(
             "UPDATE sessions SET state=?, error_code=?, error_message=?, ended_at=COALESCE(ended_at, ?) "
@@ -217,6 +227,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                     "PROXY_UNCHECKED", "严格模式下代理必须先检测通过", 422
                 )
             proxy = dict(row)
+            proxy["password"] = decrypt(proxy.get("password"))
 
     session_id = f"ss_{os.urandom(6).hex()}"
     status_path = config.RUN_DIR / f"{session_id}.json"
@@ -226,12 +237,26 @@ def launch(profile_id: str, actor: str = "local") -> dict:
     browser_version = None
     process_env = None
     if is_chromium:
+        bridge = None
         try:
-            proxy_server = chromium_proxy_server(proxy) if proxy else None
-        except ValueError as exc:
-            raise LaunchError("INVALID_CHROMIUM_PROXY", str(exc), 422) from exc
+            if proxy and (proxy.get("username") or proxy.get("password")):
+                bridge = ProxyBridge(proxy).start()
+                _active_bridges[session_id] = bridge
+                proxy_server = bridge.url
+            else:
+                proxy_server = chromium_proxy_server(proxy) if proxy else None
+        except (ValueError, OSError, ProxyBridgeError) as exc:
+            if bridge is not None:
+                _close_bridge(session_id)
+            raise LaunchError("INVALID_CHROMIUM_PROXY", f"无法建立本地代理桥：{exc}", 422) from exc
+        effective_timezone = profile["browser_timezone"]
+        effective_language = profile["browser_language"]
+        if proxy:
+            effective_timezone = effective_timezone or proxy.get("timezone") or ""
+            effective_language = effective_language or geoip.locale_for_country(
+                proxy.get("country"))
         try:
-            process_env = chromium.launch_environment(profile["browser_timezone"])
+            process_env = chromium.launch_environment(effective_timezone)
             open_workbench = (not headless and config.OPEN_MANAGER and profile["startup_page"] == "default"
                               and db.get_setting("open_manager_on_launch", True))
             workbench_button_url = chromium.workbench_url(session_id)
@@ -250,15 +275,17 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 media_capture=profile["media_capture"], geolocation=profile["geolocation"],
                 hardware_reporting=profile["hardware_reporting"],
                 canvas_readback=profile["canvas_readback"], webgl_debug_info=profile["webgl_debug_info"],
-                browser_language=profile["browser_language"], browser_window_size=profile["browser_window_size"],
+                browser_language=effective_language, browser_window_size=profile["browser_window_size"],
                 chromium_screen=profile["chromium_screen"], chromium_platform=profile["chromium_platform"],
                 chromium_webgl=profile["chromium_webgl"],
                 canvas_noise_seed=chromium.canvas_noise_seed(profile["id"]) if profile["chromium_canvas_noise"] else 0,
                 audio_noise_seed=chromium.audio_noise_seed(profile["id"]) if profile["chromium_audio_noise"] else 0,
             )
         except BlockingIOError as exc:
+            _close_bridge(session_id)
             raise LaunchError("PROFILE_LOCKED", str(exc)) from exc
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
+            _close_bridge(session_id)
             raise LaunchError("CHROMIUM_UNAVAILABLE", f"无法启动 Moltskin Chromium：{exc}", 503) from exc
         status_path = None
     else:
@@ -344,6 +371,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                                         stderr=subprocess.STDOUT, env=process_env,
                                         **host_platform.process_start_kwargs())
         except OSError as exc:
+            _close_bridge(session_id)
             raise LaunchError("LAUNCH_FAILED", f"无法启动浏览器进程：{exc}", 500) from exc
         conn.execute("UPDATE sessions SET pid=? WHERE id=?", (proc.pid, session_id))
 

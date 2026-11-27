@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from moltskin.services.core import db, main
+from moltskin.services.core.secret_store import decrypt, is_encrypted
 from moltskin.services.core.security import get_token
 
 
@@ -41,7 +42,9 @@ def test_bulk_rows_preserve_source_lines_and_canonicalize_legacy_hosts(client):
     assert [(r["line"], r["status"]) for r in data["skipped"]] == [(3, "duplicate"), (7, "duplicate")]
     with db.session() as conn:
         record = conn.execute("SELECT host,username,password FROM proxies WHERE id=?", (data["items"][0]["id"],)).fetchone()
-        assert tuple(record) == ("[2001:db8::10]", "operator", "test@secret")
+        assert (record["host"], record["username"]) == ("[2001:db8::10]", "operator")
+        assert is_encrypted(record["password"]) and "test@secret" not in record["password"]
+        assert decrypt(record["password"]) == "test@secret"
         assert conn.execute("SELECT COUNT(*) FROM proxies").fetchone()[0] == 5
         assert "test@secret" not in str(conn.execute("SELECT group_concat(detail) FROM logs").fetchone()[0])
 

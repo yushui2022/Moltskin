@@ -37,10 +37,11 @@ from pydantic import AfterValidator, BaseModel, Field, ValidationError, model_va
 from chromium import native as chromium_native
 
 from . import backup as backup_store
-from . import config, db, extensions, jobs, launcher, observation, proxy_checker, scheduler, selftest, state_sync
+from . import config, db, extensions, geoip, jobs, launcher, observation, proxy_checker, scheduler, selftest, state_sync
 from . import platform_preview, recycle, workbench_location
 from . import cookies as cookie_store
 from .proxy_settings import chromium_proxy_server, normalize_host
+from .secret_store import encrypt
 from .security import get_token, workbench_signature
 
 # ---------------------------------------------------------------------------
@@ -1810,7 +1811,7 @@ def create_proxy(payload: ProxyCreate):
             "INSERT INTO proxies(id, name, protocol, host, port, username, password, "
             "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'unchecked', ?, ?)",
             (proxy_id, payload.name, payload.protocol, payload.host, payload.port,
-             payload.username, payload.password, ts, ts),
+             payload.username, encrypt(payload.password), ts, ts),
         )
     db.log("proxy.create", proxy_id, {"name": payload.name})
     return {"data": {"id": proxy_id, "name": payload.name, "status": "unchecked"}}
@@ -1879,7 +1880,8 @@ def bulk_create_proxies(payload: Any = Body(default=None)):
                 "INSERT INTO proxies(id, name, protocol, host, port, username, password, "
                 "status, created_at, updated_at) VALUES (:id, :name, :protocol, :host, :port, "
                 ":username, :password, 'unchecked', :ts, :ts)",
-                {**values, "id": proxy_id, "ts": ts},
+                {**values, "id": proxy_id, "ts": ts,
+                 "password": encrypt(values["password"])},
             )
             existing.add(key)
             created.append({"id": proxy_id, "name": values["name"], "line": line})
@@ -1891,6 +1893,8 @@ def bulk_create_proxies(payload: Any = Body(default=None)):
 @app.patch("/api/v1/proxies/{proxy_id}")
 def update_proxy(proxy_id: str, payload: ProxyUpdate):
     fields = payload.model_dump(exclude_unset=True)
+    if "password" in fields:
+        fields["password"] = encrypt(fields["password"])
     if fields:
         fields["updated_at"] = db.now()
         fields["status"] = "unchecked"
@@ -1946,6 +1950,46 @@ def check_proxy(proxy_id: str):
     result = proxy_checker.check_and_save(dict(row))
     db.log("proxy.check", proxy_id, {"status": result["status"]})
     return {"data": result}
+
+
+@app.post("/api/v1/profiles/{profile_id}/align-proxy")
+def align_profile_proxy(profile_id: str):
+    with db.session() as conn:
+        profile = conn.execute("SELECT * FROM profiles WHERE id=?", (profile_id,)).fetchone()
+        if profile is None:
+            raise HTTPException(404, detail={"code": "PROFILE_NOT_FOUND", "message": "环境不存在"})
+        if not profile["proxy_id"]:
+            raise HTTPException(422, detail={"code": "NO_PROXY", "message": "环境未绑定代理"})
+        proxy = conn.execute("SELECT * FROM proxies WHERE id=?", (profile["proxy_id"],)).fetchone()
+    if proxy is None:
+        raise HTTPException(422, detail={"code": "PROXY_FAILED", "message": "绑定的代理不存在"})
+    result = proxy_checker.check_and_save(dict(proxy))
+    if result["status"] in ("failed", "mismatch"):
+        raise HTTPException(422, detail={
+            "code": "PROXY_UNAVAILABLE",
+            "message": result.get("error") or "代理不可用",
+        })
+    timezone = result.get("timezone") or ""
+    language = geoip.locale_for_country(result.get("country"), result.get("locale"))
+    if not timezone or not language:
+        raise HTTPException(422, detail={
+            "code": "GEOIP_UNAVAILABLE",
+            "message": "代理出口地区缺少可用的时区或语言",
+        })
+    with db.session() as conn:
+        conn.execute(
+            "UPDATE profiles SET browser_timezone=?, browser_language=?, updated_at=? WHERE id=?",
+            (timezone, language, db.now(), profile_id),
+        )
+    db.log("profile.align_proxy", profile_id,
+           {"country": result.get("country"), "timezone": timezone, "language": language})
+    return {"data": {
+        "profile_id": profile_id,
+        "country": result.get("country"),
+        "exit_ip": result.get("exit_ip"),
+        "browser_timezone": timezone,
+        "browser_language": language,
+    }}
 
 
 @app.post("/api/v1/proxies/check-batch")

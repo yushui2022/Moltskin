@@ -24,6 +24,9 @@ moltskin/services/core/main.py       FastAPI、环境 CRUD、导入导出、API
         ├── db.py                    SQLite schema、迁移、事务
         ├── launcher.py              启动、停止、状态回收、会话
         ├── chromium.py              Chromium 启动参数与能力校验
+        ├── proxy_bridge.py          每环境本地代理桥（HTTP/SOCKS5 认证）
+        ├── secret_store.py          代理密码本地加密
+        ├── geoip.py                 出口国家到语言/时区的映射
         ├── config.py                预设、路径、产物配置
         ├── observation.py           Camoufox 实测
         ├── platform_preview.py      Chromium 平台预览

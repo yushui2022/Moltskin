@@ -29,12 +29,13 @@ def test_chromium_proxy_round_trip_and_rejected_imports(api):
     row = {"name": "Assigned network", "engine": "chromium", "proxy": endpoint}
     result = import_rows(api, [row, {**row, "proxy": {**endpoint, "password": "test-only"}},
                                {**row, "proxy": None, "proxy_id": "px_old"}])
-    assert result["created"] == 1 and [r["row"] for r in result["skipped"]] == [2, 3]
+    assert result["created"] == 2 and [r["row"] for r in result["skipped"]] == [3]
     assert "test-only" not in str(result)
     exported = api.get("/api/v1/export/profiles").raise_for_status().json()
     assert exported["version"] == 8
     assert endpoint.items() <= exported["profiles"][0]["proxy"].items()
-    assert api.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]["created"] == 1
+    assert "password" not in exported["profiles"][0]["proxy"]
+    assert api.post("/api/v1/import/profiles", json=exported).raise_for_status().json()["data"]["created"] == 2
     profiles = api.get("/api/v1/profiles").raise_for_status().json()["data"]["items"]
     duplicate = api.post("/api/v1/profiles/" + profiles[0]["id"] + "/duplicate").raise_for_status().json()["data"]
     assert {profile["proxy"]["id"] for profile in profiles} == {duplicate["proxy"]["id"]}

@@ -29,8 +29,8 @@ def normalize_host(value: str) -> str:
 
 
 def chromium_proxy_server(proxy) -> str:
-    if proxy["username"] or proxy["password"]:
-        raise ValueError("Chromium 当前仅支持代理库中未设置用户名和密码的代理")
+    # Credentials are consumed by the loopback proxy bridge, never by the
+    # Chromium command line. This helper only validates the upstream endpoint.
     protocol = proxy["protocol"]
     port = proxy["port"]
     if protocol not in ("http", "https", "socks5"):
