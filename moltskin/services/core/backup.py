@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config, db
+from .secret_store import decrypt, encrypt, is_encrypted, key_path
 from .cookies import SESSION_FILENAME
 
 MANIFEST = "manifest.json"
@@ -74,6 +75,9 @@ def _write_archive(workdir: Path, include_profiles: bool) -> Path:
             for path in ext_dir.rglob("*"):
                 if path.is_file() and not path.is_symlink():
                     zf.write(path, str(Path("extensions") / path.relative_to(ext_dir)))
+        secret_key = key_path()
+        if secret_key.exists():
+            zf.write(secret_key, "secrets/proxy.key")
         if include_profiles:
             for profile in all_profiles:
                 if profile["engine"] != "camoufox" or profile.get("purge_started"):
@@ -160,7 +164,7 @@ def _safe_extract(zf: zipfile.ZipFile, destination: Path) -> None:
                 output.write(chunk)
 
 
-def _prepare_incoming(incoming: Path) -> set[str]:
+def _prepare_incoming(incoming: Path, backup_key: bytes | None = None) -> set[str]:
     """Rebase a private backup copy before changing the live database."""
     camoufox_ids = set()
     with closing(sqlite3.connect(incoming)) as conn, conn:
@@ -201,6 +205,15 @@ def _prepare_incoming(incoming: Path) -> set[str]:
                 if engine_name == "camoufox" and not purge_started:
                     camoufox_ids.add(ident)
 
+        for proxy_id, password in conn.execute(
+                "SELECT id, password FROM proxies WHERE password IS NOT NULL AND password != ''"):
+            if not is_encrypted(password):
+                continue
+            if backup_key is None:
+                raise ValueError("备份包含加密代理密码，但缺少 proxy.key")
+            conn.execute("UPDATE proxies SET password=? WHERE id=?",
+                         (encrypt(decrypt(password, backup_key)), proxy_id))
+
         conn.execute("UPDATE profiles SET status='ready' WHERE status='running'")
         conn.execute("UPDATE profiles SET last_session_id=NULL")
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone():
@@ -236,8 +249,12 @@ def restore(archive: bytes) -> dict[str, Any]:
             raise ValueError(f"备份包无法解压：{exc}") from exc
         incoming = workdir / DB_NAME
 
+        backup_key = None
+        backup_key_path = workdir / "secrets" / "proxy.key"
+        if backup_key_path.is_file():
+            backup_key = backup_key_path.read_bytes().strip()
         try:
-            camoufox_ids = _prepare_incoming(incoming)
+            camoufox_ids = _prepare_incoming(incoming, backup_key)
         except sqlite3.Error as exc:
             raise ValueError(f"备份中的数据库不可用：{exc}") from exc
 

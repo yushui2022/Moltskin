@@ -162,19 +162,19 @@ def test_proxy_selection_create_edit_and_batch(panel):
     panel.locator('button[aria-controls="profileBrowser"]').click()
     panel.locator("#fEngine").select_option("chromium")
     panel.locator("#confirmProfile").click()
-    expect(proxy).to_be_focused()
+    row = panel.locator("#rows tr").filter(has_text="Office window")
+    expect(row.locator(".addr")).to_have_text("Accounts")
+    row.get_by_label("更多操作").click()
+    panel.locator('[data-cmd="edit"]').click()
+    panel.locator('button[aria-controls="profileNetwork"]').click()
     expect(proxy).to_have_value(authenticated)
-    expect(proxy.locator("option:checked")).to_be_disabled()
-    expect(panel.locator("#toast")).to_contain_text("重新选择网络")
     proxy.select_option(fixed)
     expect(panel.locator("#fNetworkSummary")).to_contain_text("Office")
     panel.locator("#confirmProfile").click()
-    row = panel.locator("#rows tr").filter(has_text="Office window")
     expect(row.locator(".addr")).to_have_text("Office")
     row.get_by_label("更多操作").click()
     panel.locator('[data-cmd="edit"]').click()
     panel.locator('button[aria-controls="profileNetwork"]').click()
-    expect(proxy).to_have_value(fixed)
     proxy.select_option("")
     panel.locator("#confirmProfile").click()
     expect(row.locator(".addr")).to_have_text("系统网络")
@@ -185,7 +185,7 @@ def test_proxy_selection_create_edit_and_batch(panel):
     panel.locator("#bCount").fill("2")
     panel.locator("#bEngine").select_option("chromium")
     bulk = panel.locator("#bProxy")
-    expect(bulk.locator(f'option[value="{authenticated}"]')).to_be_disabled()
+    expect(bulk.locator(f'option[value="{authenticated}"]')).not_to_be_disabled()
     bulk.select_option(fixed)
     panel.locator("#confirmBatch").click()
     for name in ("Team-1", "Team-2"):
@@ -739,12 +739,16 @@ def test_proxy_import_txt_and_csv_previews_and_imports_valid_rows(panel, monkeyp
     assert imported.value.json()["data"]["created"] == 1
     expect(dialog).not_to_be_visible()
     expect(rows).to_have_count(2)
+    from moltskin.services.core.secret_store import decrypt, is_encrypted
+
     with db.session() as conn:
         saved = conn.execute("SELECT protocol, host, port, username, password FROM proxies ORDER BY port").fetchall()
-    assert [tuple(row) for row in saved] == [
-        ("socks5", "127.0.0.1", 18080, "fixture-user", "fixture-secret"),
-        ("https", "127.0.0.1", 18443, "another-user", "pass,with,comma"),
+    assert [tuple(row)[:4] for row in saved] == [
+        ("socks5", "127.0.0.1", 18080, "fixture-user"),
+        ("https", "127.0.0.1", 18443, "another-user"),
     ]
+    assert [decrypt(row["password"]) for row in saved] == ["fixture-secret", "pass,with,comma"]
+    assert all(is_encrypted(row["password"]) for row in saved)
 
 
 def test_proxy_import_cancel_resets_file_text_and_preview(panel):

@@ -26,10 +26,20 @@ def check_proxy(
     username: str | None = None,
     password: str | None = None,
 ) -> dict:
+    failed = {
+        "status": "failed", "exit_ip": None, "country": None, "timezone": None,
+        "locale": None, "latitude": None, "longitude": None,
+        "latency_ms": None, "error": None,
+    }
+    try:
+        password = decrypt(password)
+    except ValueError as exc:
+        failed["error"] = str(exc)
+        return failed
     proxy = Proxy(
         server=f"{protocol}://{host}:{port}",
         username=username or None,
-        password=decrypt(password) or None,
+        password=password or None,
     )
     proxy_str = proxy.as_string()
 

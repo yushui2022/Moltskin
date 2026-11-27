@@ -46,22 +46,24 @@ def is_encrypted(value: str | None) -> bool:
     return isinstance(value, str) and value.startswith(PREFIX)
 
 
-def encrypt(value: str | None) -> str | None:
+def encrypt(value: str | None, key: bytes | None = None) -> str | None:
     if not value:
         return value
     if is_encrypted(value):
         return value
-    token = _fernet().encrypt(value.encode("utf-8")).decode("ascii")
+    cipher = Fernet(key) if key is not None else _fernet()
+    token = cipher.encrypt(value.encode("utf-8")).decode("ascii")
     return PREFIX + token
 
 
-def decrypt(value: str | None) -> str | None:
+def decrypt(value: str | None, key: bytes | None = None) -> str | None:
     if not value:
         return value
     if not is_encrypted(value):
         return value
+    cipher = Fernet(key) if key is not None else _fernet()
     try:
-        return _fernet().decrypt(value[len(PREFIX):].encode("ascii")).decode("utf-8")
+        return cipher.decrypt(value[len(PREFIX):].encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError, TypeError) as exc:
         raise ValueError("代理密码无法解密，请重新填写") from exc
 

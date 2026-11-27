@@ -66,3 +66,28 @@ def test_api_does_not_return_password(data_dir):
     with db.session() as conn:
         password = conn.execute("SELECT password FROM proxies").fetchone()[0]
     assert is_encrypted(password) and "secret" not in password
+
+
+def test_backup_moves_proxy_key_and_reencrypts(data_dir, monkeypatch):
+    from moltskin.services.core import main
+    from moltskin.services.core.security import get_token
+
+    db.init_db()
+    headers = {"Authorization": f"Bearer {get_token()}"}
+    with TestClient(main.app, headers=headers) as source:
+        source.post("/api/v1/proxies", json={
+            "name": "backup", "host": "proxy.test", "port": 8080,
+            "username": "user", "password": "backup-secret",
+        }).raise_for_status()
+        archive = source.get("/api/v1/backup").raise_for_status().content
+
+    target = data_dir / "other-install"
+    monkeypatch.setattr(config, "DATA_DIR", target)
+    for name in ("DB_PATH", "PROFILES_DIR", "RUN_DIR", "LOG_DIR", "SELFTEST_DIR", "TOKEN_PATH"):
+        monkeypatch.setattr(config, name, target / getattr(config, name).name)
+    with TestClient(main.app, headers={"Authorization": f"Bearer {get_token()}"}) as dest:
+        dest.post("/api/v1/backup/restore", files={"file": ("backup.zip", archive)}).raise_for_status()
+    with db.session() as conn:
+        password = conn.execute("SELECT password FROM proxies").fetchone()[0]
+    assert is_encrypted(password)
+    assert decrypt(password) == "backup-secret"

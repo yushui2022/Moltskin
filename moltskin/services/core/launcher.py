@@ -227,7 +227,10 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                     "PROXY_UNCHECKED", "严格模式下代理必须先检测通过", 422
                 )
             proxy = dict(row)
-            proxy["password"] = decrypt(proxy.get("password"))
+            try:
+                proxy["password"] = decrypt(proxy.get("password"))
+            except ValueError as exc:
+                raise LaunchError("PROXY_CREDENTIAL", str(exc), 422) from exc
 
     session_id = f"ss_{os.urandom(6).hex()}"
     status_path = config.RUN_DIR / f"{session_id}.json"
