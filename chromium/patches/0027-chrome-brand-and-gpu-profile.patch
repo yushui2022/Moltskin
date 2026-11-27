@@ -1,0 +1,426 @@
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -38,6 +38,18 @@
+ // Selects a stable WebGL parameter and extension profile.
+ inline constexpr char kMoltskinWebglProfile[] = "moltskin-webgl-profile";
+ 
++// Overrides the WebGPU adapter info strings.
++inline constexpr char kMoltskinWebgpuVendor[] = "moltskin-webgpu-vendor";
++inline constexpr char kMoltskinWebgpuArchitecture[] =
++    "moltskin-webgpu-architecture";
++inline constexpr char kMoltskinWebgpuDevice[] = "moltskin-webgpu-device";
++
++// Emits a Chrome-compatible brand list and product token.
++inline constexpr char kMoltskinBrand[] = "moltskin-brand";
++inline constexpr char kMoltskinBrandVersion[] = "moltskin-brand-version";
++inline constexpr char kMoltskinBrandFullVersion[] =
++    "moltskin-brand-full-version";
++
+ // URL opened by the Moltskin toolbar button for the current session.
+ inline constexpr char kMoltskinWorkbenchURL[] = "moltskin-workbench-url";
+ 
+--- /dev/null
++++ b/third_party/blink/public/common/moltskin_brand.h
+@@ -0,0 +1,55 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_BRAND_H_
++#define THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_BRAND_H_
++
++#include <optional>
++#include <string>
++
++#include "base/command_line.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
++
++namespace blink {
++
++struct MoltskinBrand {
++  std::string brand;       // chrome
++  std::string version;     // reduced UA version, e.g. 158.0.0.0
++  std::string full_version;  // full build version, e.g. 158.0.8127.88
++};
++
++inline std::optional<MoltskinBrand> GetMoltskinBrand() {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switches::kMoltskinBrand)) {
++    return std::nullopt;
++  }
++  const std::string brand =
++      command_line->GetSwitchValueASCII(switches::kMoltskinBrand);
++  const std::string version =
++      command_line->GetSwitchValueASCII(switches::kMoltskinBrandVersion);
++  std::string full_version = command_line->GetSwitchValueASCII(
++      switches::kMoltskinBrandFullVersion);
++  if (full_version.empty()) {
++    full_version = version;
++  }
++  if (brand != "chrome" || version.empty() || version.size() > 32 ||
++      full_version.size() > 32) {
++    return std::nullopt;
++  }
++  for (char ch : version) {
++    if ((ch < '0' || ch > '9') && ch != '.') {
++      return std::nullopt;
++    }
++  }
++  for (char ch : full_version) {
++    if ((ch < '0' || ch > '9') && ch != '.') {
++      return std::nullopt;
++    }
++  }
++  return MoltskinBrand{brand, version, full_version};
++}
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_BRAND_H_
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -29,6 +29,7 @@
+ #include "components/version_info/version_info.h"
+ #include "net/http/http_util.h"
+ #include "third_party/blink/public/common/features.h"
++#include "third_party/blink/public/common/moltskin_brand.h"
+ #include "third_party/blink/public/common/moltskin_platform.h"
+ #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
+ 
+@@ -447,6 +448,10 @@
+ // depending on the Reduce User-Agent reduction phase features.
+ std::string GetUserAgentInternal() {
+   std::string product = GetProductAndVersion();
++  if (const std::optional<blink::MoltskinBrand> brand =
++          blink::GetMoltskinBrand()) {
++    product = "Chrome/" + brand->version;
++  }
+   if (base::CommandLine::ForCurrentProcess()->HasSwitch(kHeadless)) {
+     product.insert(0, "Headless");
+   }
+@@ -648,6 +653,34 @@
+ #endif
+ }
+ 
++void ApplyMoltskinBrand(blink::UserAgentBrandList& list,
++                        const std::string& version,
++                        bool full_version) {
++  const std::optional<blink::MoltskinBrand> brand =
++      blink::GetMoltskinBrand();
++  if (!brand) {
++    return;
++  }
++  bool has_chromium = false;
++  bool has_google = false;
++  for (auto& entry : list) {
++    if (entry.brand == "Chromium") {
++      entry.version = version;
++      has_chromium = true;
++    }
++    if (entry.brand == "Google Chrome") {
++      entry.version = version;
++      has_google = true;
++    }
++  }
++  if (!has_chromium) {
++    list.emplace_back("Chromium", version);
++  }
++  if (!has_google) {
++    list.emplace_back("Google Chrome", version);
++  }
++}
++
+ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+   blink::UserAgentMetadata metadata;
+ 
+@@ -658,6 +691,13 @@
+   // Low entropy client hints.
+   metadata.brand_version_list =
+       GetUserAgentBrandMajorVersionListInternal(std::nullopt);
++  const std::optional<blink::MoltskinBrand> moltskin_brand =
++      blink::GetMoltskinBrand();
++  if (moltskin_brand) {
++    const std::string major_version =
++        moltskin_brand->version.substr(0, moltskin_brand->version.find('.'));
++    ApplyMoltskinBrand(metadata.brand_version_list, major_version, false);
++  }
+   metadata.mobile = platform_override ? false : GetMobileBitForUAMetadata();
+   metadata.platform = platform_override
+                           ? blink::MoltskinUaPlatform(*platform_override)
+@@ -684,6 +724,11 @@
+   metadata.brand_full_version_list =
+       GetUserAgentBrandFullVersionListInternal(std::nullopt);
+   metadata.full_version = std::string(version_info::GetVersionNumber());
++  if (moltskin_brand) {
++    metadata.full_version = moltskin_brand->full_version;
++    ApplyMoltskinBrand(metadata.brand_full_version_list,
++                       moltskin_brand->full_version, true);
++  }
+   metadata.architecture = GetCpuArchitecture();
+   metadata.model = BuildModelInfo();
+   metadata.form_factors = GetFormFactorsClientHint(metadata, metadata.mobile);
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4035,6 +4035,9 @@
+       blink::switches::kMoltskinBlockCanvasReadback,
+       blink::switches::kMoltskinBlockWebGLDebugInfo,
+       blink::switches::kMoltskinAudioNoise,
++      blink::switches::kMoltskinBrand,
++      blink::switches::kMoltskinBrandVersion,
++      blink::switches::kMoltskinBrandFullVersion,
+       blink::switches::kMoltskinCanvasNoise,
+       blink::switches::kMoltskinFontFilter,
+       blink::switches::kMoltskinHideWebdriver,
+@@ -4046,6 +4049,9 @@
+       blink::switches::kMoltskinWebglProfile,
+       blink::switches::kMoltskinWebglRenderer,
+       blink::switches::kMoltskinWebglVendor,
++      blink::switches::kMoltskinWebgpuArchitecture,
++      blink::switches::kMoltskinWebgpuDevice,
++      blink::switches::kMoltskinWebgpuVendor,
+       blink::switches::kNetworkQuietTimeout,
+       blink::switches::kShowContentfulPaintRects,
+       blink::switches::kShowLayoutShiftRegions,
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -447,6 +447,7 @@
+       puts("moltskin-block-webgl-debug-info");
+       puts("moltskin-block-canvas-readback");
+       puts("moltskin-audio-noise");
++      puts("moltskin-brand");
+       puts("moltskin-canvas-noise");
+       puts("moltskin-font-filter");
+       puts("moltskin-limit-hardware-reporting");
+@@ -458,6 +459,7 @@
+       puts("moltskin-speech-voices");
+       puts("moltskin-webgl-info");
+       puts("moltskin-webgl-params");
++      puts("moltskin-webgpu");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+--- /dev/null
++++ b/third_party/blink/renderer/modules/webgpu/moltskin_webgpu.h
+@@ -0,0 +1,43 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGPU_MOLTSKIN_WEBGPU_H_
++#define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGPU_MOLTSKIN_WEBGPU_H_
++
++#include <optional>
++#include <string>
++
++#include "base/command_line.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
++#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
++
++namespace blink {
++
++inline std::optional<String> GetMoltskinWebgpuValue(const char* switch_name) {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (!command_line->HasSwitch(switch_name)) {
++    return std::nullopt;
++  }
++  const std::string value = command_line->GetSwitchValueASCII(switch_name);
++  if (value.empty() || value.size() > 256) {
++    return std::nullopt;
++  }
++  return String::FromUtf8(std::string_view(value));
++}
++
++inline std::optional<String> GetMoltskinWebgpuVendor() {
++  return GetMoltskinWebgpuValue(switches::kMoltskinWebgpuVendor);
++}
++
++inline std::optional<String> GetMoltskinWebgpuArchitecture() {
++  return GetMoltskinWebgpuValue(switches::kMoltskinWebgpuArchitecture);
++}
++
++inline std::optional<String> GetMoltskinWebgpuDevice() {
++  return GetMoltskinWebgpuValue(switches::kMoltskinWebgpuDevice);
++}
++
++}  // namespace blink
++
++#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGPU_MOLTSKIN_WEBGPU_H_
+--- a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
+@@ -15,6 +15,7 @@
+ #include "third_party/blink/renderer/modules/webgpu/dawn_enum_conversions.h"
+ #include "third_party/blink/renderer/modules/webgpu/gpu.h"
+ #include "third_party/blink/renderer/modules/webgpu/gpu_adapter_info.h"
++#include "third_party/blink/renderer/modules/webgpu/moltskin_webgpu.h"
+ #include "third_party/blink/renderer/modules/webgpu/gpu_device.h"
+ #include "third_party/blink/renderer/modules/webgpu/gpu_device_lost_info.h"
+ #include "third_party/blink/renderer/modules/webgpu/gpu_memory_heap_info.h"
+@@ -104,6 +105,17 @@
+   }
+   description_ = String::FromUtf8(info.device);
+   driver_ = String::FromUtf8(info.description);
++  if (const std::optional<String> vendor = GetMoltskinWebgpuVendor()) {
++    vendor_ = *vendor;
++  }
++  if (const std::optional<String> architecture =
++          GetMoltskinWebgpuArchitecture()) {
++    architecture_ = *architecture;
++  }
++  if (const std::optional<String> device = GetMoltskinWebgpuDevice()) {
++    device_ = *device;
++    description_ = *device;
++  }
+   if (supportsPropertiesD3D) {
+     d3d_shader_model_ = d3dProperties.shaderModel;
+   }
+--- a/third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h
++++ b/third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h
+@@ -11,6 +11,7 @@
+ #include "base/command_line.h"
+ #include "third_party/angle/include/GLES2/gl2.h"
+ #include "third_party/angle/include/GLES2/gl2ext.h"
++#include "third_party/angle/include/GLES3/gl3.h"
+ #include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ 
+@@ -48,6 +49,35 @@
+       return 4096;
+     case GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT:
+       return 16;
++    // WebGL2 limits on Windows ANGLE/D3D11.
++    case GL_MAX_3D_TEXTURE_SIZE:
++      return 2048;
++    case GL_MAX_ARRAY_TEXTURE_LAYERS:
++      return 2048;
++    case GL_MAX_COLOR_ATTACHMENTS:
++      return 8;
++    case GL_MAX_DRAW_BUFFERS:
++      return 8;
++    case GL_MAX_SAMPLES:
++      return 4;
++    case GL_MAX_UNIFORM_BUFFER_BINDINGS:
++      return 72;
++    case GL_MAX_VERTEX_UNIFORM_BLOCKS:
++      return 12;
++    case GL_MAX_FRAGMENT_UNIFORM_BLOCKS:
++      return 12;
++    case GL_MAX_COMBINED_UNIFORM_BLOCKS:
++      return 36;
++    case GL_MAX_VERTEX_UNIFORM_COMPONENTS:
++      return 4096;
++    case GL_MAX_FRAGMENT_UNIFORM_COMPONENTS:
++      return 4096;
++    case GL_MAX_VARYING_COMPONENTS:
++      return 124;
++    case GL_MAX_VERTEX_OUTPUT_COMPONENTS:
++      return 124;
++    case GL_MAX_FRAGMENT_INPUT_COMPONENTS:
++      return 124;
+     default:
+       return std::nullopt;
+   }
+@@ -64,6 +94,40 @@
+   return std::nullopt;
+ }
+ 
++inline std::optional<std::array<float, 2>> GetMoltskinWebglFloat2Parameter(
++    GLenum pname) {
++  if (!IsMoltskinWebglProfileEnabled()) {
++    return std::nullopt;
++  }
++  if (pname == GL_ALIASED_LINE_WIDTH_RANGE) {
++    return std::array<float, 2>{1.0f, 1.0f};
++  }
++  if (pname == GL_ALIASED_POINT_SIZE_RANGE) {
++    return std::array<float, 2>{1.0f, 1024.0f};
++  }
++  return std::nullopt;
++}
++
++inline std::optional<std::array<GLint, 3>> GetMoltskinShaderPrecision(
++    GLenum precision_type) {
++  if (!IsMoltskinWebglProfileEnabled()) {
++    return std::nullopt;
++  }
++  switch (precision_type) {
++    case GL_LOW_FLOAT:
++    case GL_MEDIUM_FLOAT:
++      return std::array<GLint, 3>{15, 15, 10};
++    case GL_HIGH_FLOAT:
++      return std::array<GLint, 3>{127, 127, 23};
++    case GL_LOW_INT:
++    case GL_MEDIUM_INT:
++    case GL_HIGH_INT:
++      return std::array<GLint, 3>{31, 31, 0};
++    default:
++      return std::nullopt;
++  }
++}
++
+ inline bool IsMoltskinWebglExtensionAllowed(const String& name) {
+   if (!IsMoltskinWebglProfileEnabled()) {
+     return true;
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -4106,6 +4106,10 @@
+   if (const std::optional<std::array<int, 2>> value =
+           GetMoltskinWebglInt2Parameter(pname)) {
+     return WebGLAny(script_state, base::span<const int>(*value));
++  }
++  if (const std::optional<std::array<float, 2>> value =
++          GetMoltskinWebglFloat2Parameter(pname)) {
++    return WebGLAny(script_state, DOMFloat32Array::Create(*value));
+   }
+   const int kIntZero = 0;
+   switch (pname) {
+@@ -4630,12 +4634,17 @@
+       return nullptr;
+   }
+ 
+-  GLint range[2] = {0, 0};
+-  GLint precision = 0;
++  if (const std::optional<std::array<GLint, 3>> precision =
++          GetMoltskinShaderPrecision(precision_type)) {
++    return MakeGarbageCollected<WebGLShaderPrecisionFormat>(
++        (*precision)[0], (*precision)[1], (*precision)[2]);
++  }
++  GLint range[2] = {0, 0};
++  GLint precision_value = 0;
+   ContextGL()->GetShaderPrecisionFormat(shader_type, precision_type, range,
+-                                        &precision);
+-  return MakeGarbageCollected<WebGLShaderPrecisionFormat>(range[0], range[1],
+-                                                          precision);
++                                        &precision_value);
++  return MakeGarbageCollected<WebGLShaderPrecisionFormat>(
++      range[0], range[1], precision_value);
+ }
+ 
+ String WebGLRenderingContextBase::getShaderSource(WebGLShader* shader) {
+--- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.h"
++#include "third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h"
+ 
+ #include <memory>
+ 
+@@ -4838,6 +4839,17 @@
+                                                      GLenum pname) {
+   if (isContextLost())
+     return ScriptValue::CreateNull(script_state->GetIsolate());
++  if (const std::optional<int> value = GetMoltskinWebglIntParameter(pname)) {
++    return WebGLAny(script_state, *value);
++  }
++  if (const std::optional<std::array<int, 2>> value =
++          GetMoltskinWebglInt2Parameter(pname)) {
++    return WebGLAny(script_state, base::span<const int>(*value));
++  }
++  if (const std::optional<std::array<float, 2>> value =
++          GetMoltskinWebglFloat2Parameter(pname)) {
++    return WebGLAny(script_state, DOMFloat32Array::Create(*value));
++  }
+   switch (pname) {
+     case GL_SHADING_LANGUAGE_VERSION: {
+       return WebGLAny(

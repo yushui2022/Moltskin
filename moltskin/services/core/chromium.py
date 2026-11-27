@@ -16,7 +16,7 @@ from chromium.native import (
     FONT_FILTER_CAPABILITY, PLATFORM_CAPABILITY, SPEECH_VOICES_CAPABILITY,
     SCREEN_METRICS_CAPABILITY, SCREEN_AVAIL_CAPABILITY,
     WEBDRIVER_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY, WEBGL_PARAMS_CAPABILITY,
-    check_access_policies, chromium_owns_directory, resolve_build,
+    BRAND_CAPABILITY, WEBGPU_CAPABILITY, check_access_policies, chromium_owns_directory, resolve_build,
 )
 
 from . import config
@@ -92,6 +92,11 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
     if chromium_owns_directory(profile_dir):
         raise BlockingIOError("此 Chromium 环境已被其他进程打开")
     args = [str(binary), f"--user-data-dir={profile_dir.absolute()}", "--no-first-run", "--no-default-browser-check"]
+    brand_versions = _brand_versions(chromium_user_agent, version)
+    if brand_versions and BRAND_CAPABILITY in capabilities:
+        args.append("--moltskin-brand=chrome")
+        args.append("--moltskin-brand-version=" + brand_versions[0])
+        args.append("--moltskin-brand-full-version=" + brand_versions[1])
     if proxy_server:
         args.append(f"--proxy-server={proxy_server}")
         # Do not let WebRTC bypass the profile proxy with direct UDP/STUN.
@@ -155,6 +160,12 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         _, vendor, renderer = chromium_webgl.split("|", 2)
         args.append("--moltskin-webgl-vendor=" + vendor)
         args.append("--moltskin-webgl-renderer=" + renderer)
+        webgpu = _webgpu_profile(chromium_webgl)
+        if webgpu and WEBGPU_CAPABILITY in capabilities:
+            vendor_id, architecture, label = webgpu
+            args.append("--moltskin-webgpu-vendor=" + vendor_id)
+            args.append("--moltskin-webgpu-architecture=" + architecture)
+            args.append("--moltskin-webgpu-device=" + label)
         if (cross_os and target_family == "windows" and
                 WEBGL_PARAMS_CAPABILITY in capabilities):
             args.append("--moltskin-webgl-profile=windows")
@@ -176,6 +187,51 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
 def workbench_url(session_id: str) -> str:
     signature = workbench_signature(session_id)
     return f"http://127.0.0.1:{config.PORT}/workbench/{session_id}/{signature}"
+
+
+def _brand_versions(user_agent: str, fallback: str) -> tuple[str, str] | None:
+    """Return reduced UA and full Chrome versions only for Chrome-like UAs."""
+    if user_agent:
+        match = re.search(r"(?:Chrome|Chromium)/([0-9]+(?:\.[0-9]+)*)", user_agent)
+        if not match:
+            return None
+        parts = match.group(1).split(".")
+        while len(parts) < 4:
+            parts.append("0")
+        version = ".".join(parts[:4])
+        return version, version
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", fallback):
+        return None
+    return fallback.split(".", 1)[0] + ".0.0.0", fallback
+
+
+def _webgpu_profile(webgl_preset: str) -> tuple[str, str, str] | None:
+    if not webgl_preset:
+        return None
+    label, vendor, renderer = webgl_preset.split("|", 2)
+    lower = (vendor + " " + renderer + " " + label).lower()
+    if "nvidia" in lower:
+        vendor_id = "nvidia"
+        architecture = "ada" if any(x in lower for x in ("40", "4070", "4080", "4090")) else "ampere"
+    elif "amd" in lower or "radeon" in lower:
+        vendor_id = "amd"
+        architecture = "rdna-3" if any(x in lower for x in ("7000", "7600", "7700", "7800", "7900")) else "rdna-2"
+    elif "intel" in lower:
+        vendor_id = "intel"
+        architecture = "gen-12lp" if "iris" in lower or "uhd" in lower else "gen-12lp"
+    elif "apple" in lower:
+        vendor_id = "apple"
+        if "m3" in lower:
+            architecture = "apple-m3"
+        elif "m2" in lower:
+            architecture = "apple-m2"
+        elif "m1 pro" in lower:
+            architecture = "apple-m1-pro"
+        else:
+            architecture = "apple-m1"
+    else:
+        vendor_id, architecture = "google", "swiftshader"
+    return vendor_id, architecture, label
 
 
 def _noise_seed(scope: str, profile_id: str) -> int:

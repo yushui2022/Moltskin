@@ -89,6 +89,16 @@ Chromium 窗口可在「WebGL 显卡型号」选择 Apple、Intel、NVIDIA 或 A
 
 渲染和解码样本使用与信号幅值成比例的连续扰动，单样本最大约 `±1e-5`；纯静音、前导/尾随静音和 `ConstantSourceNode` 直流信号保持精确原值。`AnalyserNode` 浮点频域与时域先计算一次共享扰动，字节读数再量化同一浮点值，因此 `getByteFrequencyData` / `getByteTimeDomainData` 与对应浮点读数严格一致；静音时频域为 `-Infinity`、字节频域为 0、时域为 0/128。这些变化听感不可闻，但会改变浮点样本和量化后的指纹哈希。同一环境每次启动得到相同图案；不同环境以及同一环境的 Canvas 噪声使用不同种子。采样率、输出延迟和声道数仍来自真实音频设备。[实机回归](../tests/test_chromium_audio_noise.py)
 
+### Chrome 品牌与媒体能力
+
+内部测试包通过 `--moltskin-brand=chrome` 让 `navigator.userAgentData.brands`、`Sec-CH-UA`、`fullVersionList` 和产品令牌统一出现 `Google Chrome`，UA 使用 reduction 后的 `158.0.0.0`，高熵版本仍报告真实补丁号。自定义 Chrome UA 时从 UA 提取版本；Safari/Firefox UA 不会伪装 Chrome 品牌。
+
+`chromium/args.gn` 内的 `proprietary_codecs=true`、`ffmpeg_branding="Chrome"` 用于内部发行包恢复 H.264/AAC 播放。它们涉及编解码专利与分发合规，开源源码默认可以关闭。[构建参数](args.gn)
+
+### WebGPU 与 WebGL2 画像
+
+选择 WebGL 显卡预设后，同一条预设也会写入 WebGPU `adapter.info.vendor`、`architecture`、`device`，避免两套 API 暴露不同 GPU。WebGL2 的 3D 纹理、数组纹理、多重采样、UBO、颜色附件、线宽/点大小范围和 shader 精度表使用稳定的 Windows ANGLE 画像。[WebGPU 回归](../tests/test_chromium_brand.py) · [WebGL2 回归](../tests/test_chromium_brand.py)
+
 ### 自动化标记与 WebRTC
 
 Moltskin Chromium 启动时固定传入 `--moltskin-hide-webdriver`，因此即使窗口被 Playwright、CDP 或其他自动化客户端启动，网页读取的 `navigator.webdriver` 仍为 `false`。这是内核补丁 `0009-hide-webdriver.patch` 的行为，实机回归见 `../tests/test_chromium_webdriver.py`。

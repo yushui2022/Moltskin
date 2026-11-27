@@ -1,3 +1,9 @@
 # Baseline for native Linux x86-64 and macOS arm64 builds.
 is_debug = false
 symbol_level = 0
+
+# Internal distribution builds enable H.264/AAC so sites such as TikTok,
+# Instagram and Amazon behave like Chrome. Set both to false for a
+# patent-policy-clean open-source build.
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"

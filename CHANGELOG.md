@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0-alpha.1 — 2026-11-27
+
+### Added
+
+- Chromium 内核补丁 `0027-chrome-brand-and-gpu-profile`：通过 `--moltskin-brand` 输出 `Google Chrome` 品牌、匹配的 `Sec-CH-UA` / `fullVersionList` 版本与 `Chrome/<UA版本>` 产品令牌；自定义 UA 时从 UA 同步主版本，Safari 等非 Chrome UA 不伪造 Chrome 品牌。
+- 内部发行构建启用 `proprietary_codecs=true` 与 `ffmpeg_branding="Chrome"`，恢复 H.264/AAC 播放与 `MediaSource.isTypeSupported`，消除自编 Chromium 的媒体能力特征。开源基线可在 `chromium/args.gn` 关闭这两项。
+- WebGPU `adapter.info` 的 `vendor` / `architecture` / `device` 可随 WebGL 显卡预设覆盖，避免 WebGL 报 NVIDIA、WebGPU 报 Apple 的矛盾。
+- WebGL2 `getParameter` 补齐 `MAX_3D_TEXTURE_SIZE`、`MAX_ARRAY_TEXTURE_LAYERS`、`MAX_SAMPLES`、`MAX_UNIFORM_BUFFER_BINDINGS`、`MAX_COLOR_ATTACHMENTS` 等限制；`ALIASED_LINE_WIDTH_RANGE` / `ALIASED_POINT_SIZE_RANGE` 与 `getShaderPrecisionFormat()` 使用稳定的 Windows ANGLE 画像。
+
 ## 0.6.0-alpha.1 — 2026-11-27
 
 ### Added
