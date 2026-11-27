@@ -103,6 +103,8 @@ moltskin-workbench-button
 | `0021-font-api-filter` | `document.fonts.check` / `FontFace(local)` 过滤 |
 | `0022-canvas-noise-stealth` | 跳过单像素读数探针 |
 | `0023-workbench-toolbar` | 工具栏按钮打开当前会话工作台 |
+| `0024-canvas-noise-hardening` | 纯色探针、putImageData 与跨 API 像素一致 |
+| `0025-audio-noise-hardening` | 静音/直流保护与 Analyser Float/Byte 一致 |
 
 ### 2.3 平台差异边界
 

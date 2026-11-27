@@ -6,7 +6,7 @@ This is a technical-preview package for **Apple Silicon macOS 14+**.
 
 - Moltskin source and local service
 - A pinned Moltskin Chromium build
-- Fingerprint patches, including screen/platform/WebGL, Canvas and audio noise, locale, speech and Windows cross-OS font/WebGL profiles
+- Fingerprint patches, including screen/platform/WebGL, edge-aware Canvas noise, silence-preserving audio noise, locale, speech and Windows cross-OS font/WebGL profiles
 - A toolbar Moltskin button that opens the current session workbench instead of the manager home
 - The Moltskin chameleon app icon in the Dock and Finder
 - Setup, start and Finder-install commands

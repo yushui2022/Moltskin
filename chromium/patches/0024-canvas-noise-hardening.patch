@@ -1,0 +1,789 @@
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h
+@@ -48,6 +48,7 @@
+ #include "third_party/skia/include/core/SkData.h"
+ #include "third_party/skia/include/core/SkImageInfo.h"
+ #include "third_party/skia/include/core/SkRect.h"
++#include "third_party/skia/include/core/SkRegion.h"
+ #include "third_party/skia/include/core/SkRefCnt.h"
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/geometry/size.h"
+@@ -199,6 +200,25 @@
+   }
+   void DidDraw(const gfx::Rect& dirty_rect, CanvasPerformanceMonitor::DrawType);
+ 
++  // Canvas noise is only applied after content that real renderers rasterize
++  // differently across GPUs. Flat fillRect probes, putImageData writes and
++  // gl.clear() stay byte-exact.
++  bool ShouldApplyMoltskinCanvasNoise() const {
++    return moltskin_noise_eligible_;
++  }
++  const SkRegion& MoltskinRawPutRegion() const {
++    return moltskin_raw_put_region_;
++  }
++  void SetMoltskinNoiseEligible(bool eligible) {
++    moltskin_noise_eligible_ = eligible;
++  }
++  void ResetMoltskinNoiseState() {
++    moltskin_noise_eligible_ = false;
++    moltskin_raw_put_region_.setEmpty();
++  }
++  void RecordMoltskinRawPutRect(const gfx::Rect& rect);
++  void ClearMoltskinRawPutRect(const gfx::Rect& rect);
++
+   // Returns a StaticBitmapImage containing the current content, or nullptr if
+   // it was not possible to obtain that content.
+   virtual scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
+@@ -380,6 +400,9 @@
+ 
+   bool is_context_being_restored_ = false;
+ 
++  bool moltskin_noise_eligible_ = false;
++  SkRegion moltskin_raw_put_region_;
++
+   void RecordUKMCanvasAccessibility();
+ };
+ 
+--- a/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
++++ b/third_party/blink/renderer/core/html/canvas/canvas_rendering_context.cc
+@@ -350,6 +350,24 @@
+   return UnacceleratedStaticBitmapImage::CreateFromRaster(
+       dest_size, draw_to_canvas,
+       drawable_paint_record->paint_state.animated_image_frame_index_map);
++}
++
++void CanvasRenderingContext::RecordMoltskinRawPutRect(const gfx::Rect& rect) {
++  if (rect.IsEmpty()) {
++    return;
++  }
++  moltskin_raw_put_region_.op(
++      SkIRect::MakeXYWH(rect.x(), rect.y(), rect.width(), rect.height()),
++      SkRegion::kUnion_Op);
++}
++
++void CanvasRenderingContext::ClearMoltskinRawPutRect(const gfx::Rect& rect) {
++  if (rect.IsEmpty() || moltskin_raw_put_region_.isEmpty()) {
++    return;
++  }
++  moltskin_raw_put_region_.op(
++      SkIRect::MakeXYWH(rect.x(), rect.y(), rect.width(), rect.height()),
++      SkRegion::kDifference_Op);
+ }
+ 
+ void CanvasRenderingContext::DidDraw(
+@@ -358,6 +376,20 @@
+   CanvasRenderingContextHost* const host = Host();
+   host->DidDraw(dirty_rect);
+ 
++  if (draw_type == CanvasPerformanceMonitor::DrawType::kImageData) {
++    RecordMoltskinRawPutRect(dirty_rect);
++  } else {
++    // A later organic draw covers the raw put area and may be perturbed again.
++    ClearMoltskinRawPutRect(dirty_rect);
++  }
++  if (draw_type == CanvasPerformanceMonitor::DrawType::kText ||
++      draw_type == CanvasPerformanceMonitor::DrawType::kPath ||
++      draw_type == CanvasPerformanceMonitor::DrawType::kElement ||
++      draw_type == CanvasPerformanceMonitor::DrawType::kDrawArrays ||
++      draw_type == CanvasPerformanceMonitor::DrawType::kDrawElements) {
++    moltskin_noise_eligible_ = true;
++  }
++
+   did_draw_text_ |= (draw_type == CanvasPerformanceMonitor::DrawType::kText);
+ 
+   auto& monitor = GetCanvasPerformanceMonitor();
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.h
+@@ -491,6 +491,8 @@
+   virtual CanvasRenderingContextHost* GetCanvasRenderingContextHost() const {
+     return nullptr;
+   }
++
++  void SetMoltskinNoiseEligibleForCanvas();
+ 
+   virtual bool HasAlpha() const = 0;
+ 
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_2d_recorder_context.cc
+@@ -1739,6 +1739,43 @@
+                    SkPathFillType::kWinding, path2d_use_paint_cache_);
+ }
+ 
++void Canvas2DRecorderContext::SetMoltskinNoiseEligibleForCanvas() {
++  if (CanvasRenderingContextHost* host = GetCanvasRenderingContextHost()) {
++    if (CanvasRenderingContext* context = host->RenderingContext()) {
++      context->SetMoltskinNoiseEligible(true);
++    }
++  }
++}
++
++static bool MoltskinFillRectIsUniform(
++    const CanvasRenderingContext2DState& state,
++    const gfx::RectF& rect) {
++  // Known-pixel probes use an opaque solid colour, the default composite and
++  // an axis-aligned integer rectangle. Leave those pixels untouched so the
++  // readback still equals a clean browser's readback.
++  if (!state.FillStyle().IsOpaqueColor() ||
++      state.FillStyle().GetCanvasGradient() != nullptr ||
++      state.FillStyle().GetCanvasPattern() != nullptr) {
++    return false;
++  }
++  if (state.ShadowBlur() > 0 || !state.ShadowOffset().IsZero() ||
++      state.IsFilterResolved() || state.IsFilterUnresolved() ||
++      state.GlobalAlpha() < 1.0 ||
++      state.GlobalComposite() != SkBlendMode::kSrcOver) {
++    return false;
++  }
++  const AffineTransform& transform = state.GetTransform();
++  if (transform.B() != 0 || transform.C() != 0 ||
++      std::floor(transform.A()) != transform.A() ||
++      std::floor(transform.D()) != transform.D()) {
++    return false;
++  }
++  const gfx::RectF mapped = transform.MapRect(rect);
++  auto is_integral = [](float value) { return std::floor(value) == value; };
++  return is_integral(mapped.x()) && is_integral(mapped.y()) &&
++         is_integral(mapped.width()) && is_integral(mapped.height());
++}
++
+ void Canvas2DRecorderContext::fillRect(double x,
+                                        double y,
+                                        double width,
+@@ -1773,6 +1810,9 @@
+   CanvasRenderingContext::AdjustRectForCanvas(x, y, width, height);
+   gfx::RectF rect(ClampTo<float>(x), ClampTo<float>(y), ClampTo<float>(width),
+                   ClampTo<float>(height));
++  if (!MoltskinFillRectIsUniform(GetState(), rect)) {
++    SetMoltskinNoiseEligibleForCanvas();
++  }
+   Draw<OverdrawOp::kNone>(
+       /*draw_func=*/
+       [rect](MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
+@@ -1830,6 +1870,7 @@
+     return;
+   }
+ 
++  SetMoltskinNoiseEligibleForCanvas();
+   Draw<OverdrawOp::kNone>(
+       /*draw_func=*/
+       [rect](MemoryManagedPaintCanvas* c, const cc::PaintFlags* flags) {
+@@ -2253,6 +2294,20 @@
+     return;
+   }
+ 
++  // A canvas that already received organic drawing keeps its noise when it is
++  // copied through drawImage. Decoded images are not perturbed a second time.
++  CanvasRenderingContext* source_context = nullptr;
++  if (image_source->IsCanvasElement()) {
++    source_context =
++        static_cast<HTMLCanvasElement*>(image_source)->RenderingContext();
++  } else if (image_source->IsOffscreenCanvas()) {
++    source_context =
++        static_cast<OffscreenCanvas*>(image_source)->RenderingContext();
++  }
++  if (source_context && source_context->ShouldApplyMoltskinCanvasNoise()) {
++    SetMoltskinNoiseEligibleForCanvas();
++  }
++
+   if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dw) ||
+       !std::isfinite(dh) || !std::isfinite(sx) || !std::isfinite(sy) ||
+       !std::isfinite(sw) || !std::isfinite(sh)) {
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/canvas_style.h
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/canvas_style.h
+@@ -81,6 +81,8 @@
+     return type_ == kColor && color_ == color;
+   }
+ 
++  bool IsOpaqueColor() const { return type_ == kColor && color_.IsOpaque(); }
++
+   bool SetColor(Color color) {
+     if (type_ == kColor) [[likely]] {
+       if (color == color_) {
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+@@ -126,6 +126,7 @@
+ #include "third_party/skia/include/core/SkCanvas.h"
+ #include "third_party/skia/include/core/SkColor.h"
+ #include "third_party/skia/include/core/SkColorSpace.h"
++#include "third_party/skia/include/core/SkData.h"
+ #include "third_party/skia/include/core/SkImageInfo.h"
+ #include "third_party/skia/include/core/SkSurface.h"
+ #include "ui/gfx/geometry/skia_conversions.h"
+@@ -576,6 +577,7 @@
+ 
+ void BaseRenderingContext2D::ResetInternal() {
+   Canvas2DRecorderContext::ResetInternal();
++  ResetMoltskinNoiseState();
+   clear_frame_ = true;
+ }
+ 
+@@ -935,8 +937,47 @@
+       SkIRect bounds =
+           snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
+       DCHECK(!bounds.intersect(SkIRect::MakeXYWH(sx, sy, sw, sh)));
+-    } else {
+-      ApplyMoltskinCanvasNoise(&image_data_pixmap, sx, sy);
++    } else if (ShouldApplyMoltskinCanvasNoise() &&
++               GetMoltskinCanvasNoiseSeed() != 0) {
++      MoltskinCanvasNoiseOptions options;
++      options.origin_x = sx;
++      options.origin_y = sy;
++      options.excluded_region = &MoltskinRawPutRegion();
++
++      // Include a one-pixel halo so edge detection on a cropped readback
++      // matches the same pixels in a full-canvas readback.
++      const gfx::Size snapshot_size = snapshot->Size();
++      const int halo_x = std::max(0, sx - 1);
++      const int halo_y = std::max(0, sy - 1);
++      const int halo_right =
++          std::min(snapshot_size.width(), sx + sw + 1);
++      const int halo_bottom =
++          std::min(snapshot_size.height(), sy + sh + 1);
++      if (halo_x != sx || halo_y != sy ||
++          halo_right != sx + sw || halo_bottom != sy + sh) {
++        const SkImageInfo reference_info = image_data_pixmap.info().makeWH(
++            halo_right - halo_x, halo_bottom - halo_y);
++        const size_t reference_row_bytes = reference_info.minRowBytes();
++        const size_t reference_size =
++            reference_info.computeByteSize(reference_row_bytes);
++        sk_sp<SkData> reference_data =
++            SkData::MakeUninitialized(reference_size);
++        if (reference_data) {
++          SkPixmap reference_pixmap(reference_info,
++                                    reference_data->writable_data(),
++                                    reference_row_bytes);
++          if (snapshot->PaintImageForCurrentFrame().readPixels(
++                  reference_info, reference_pixmap.writable_addr(),
++                  reference_row_bytes, halo_x, halo_y)) {
++            options.reference = &reference_pixmap;
++            options.ref_offset_x = sx - halo_x;
++            options.ref_offset_y = sy - halo_y;
++            ApplyMoltskinCanvasNoise(&image_data_pixmap, options);
++            return image_data;
++          }
++        }
++      }
++      ApplyMoltskinCanvasNoise(&image_data_pixmap, options);
+     }
+   }
+ 
+--- a/third_party/blink/renderer/platform/graphics/image_data_buffer.h
++++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.h
+@@ -40,6 +40,7 @@
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "third_party/skia/include/core/SkPixmap.h"
+ #include "third_party/skia/include/core/SkRefCnt.h"
++#include "third_party/skia/include/core/SkRegion.h"
+ 
+ namespace blink {
+ 
+@@ -60,8 +61,10 @@
+   base::span<const uint8_t> PixelData() const;
+ 
+   // Replaces the retained pixels with a deterministic noised copy when the
+-  // profile enables canvas noise. Safe to call more than once.
+-  void ApplyCanvasNoise();
++  // profile enables canvas noise. Pixels in `excluded_region` keep their exact
++  // values. The buffer is converted to unpremultiplied alpha first so
++  // toDataURL, toBlob and getImageData perturb identical bytes.
++  void ApplyCanvasNoise(const SkRegion* excluded_region = nullptr);
+ 
+  private:
+   ImageDataBuffer(const SkPixmap&);
+--- a/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
++++ b/third_party/blink/renderer/platform/graphics/image_data_buffer.cc
+@@ -139,7 +139,7 @@
+   return gfx::SkPixmapToSpan(pixmap_);
+ }
+ 
+-void ImageDataBuffer::ApplyCanvasNoise() {
++void ImageDataBuffer::ApplyCanvasNoise(const SkRegion* excluded_region) {
+   if (!is_valid_ || GetMoltskinCanvasNoiseSeed() == 0) {
+     return;
+   }
+@@ -150,28 +150,38 @@
+     return;
+   }
+ 
+-  const size_t size = pixmap_.computeByteSize();
++  // toDataURL and toBlob previously encoded different alpha types. Encoders
++  // consume unpremultiplied pixels, and getImageData is unpremultiplied too,
++  // so normalize here before perturbing any channel.
++  const SkImageInfo noise_info = info.makeAlphaType(kUnpremul_SkAlphaType);
++  const size_t row_bytes = noise_info.minRowBytes();
++  const size_t size = noise_info.computeByteSize(row_bytes);
+   if (size == 0) {
+     return;
+   }
+   sk_sp<SkData> data = SkData::MakeUninitialized(size);
+-  if (!data) {
++  sk_sp<SkData> reference_data = SkData::MakeUninitialized(size);
++  if (!data || !reference_data) {
+     return;
+   }
+-  SkPixmap noisy(info, data->writable_data(), pixmap_.rowBytes());
+-  base::span<uint8_t> noisy_bytes = UNSAFE_BUFFERS(base::span(
+-      static_cast<uint8_t*>(noisy.writable_addr()), size));
+-  base::span<const uint8_t> source = UNSAFE_BUFFERS(base::span(
+-      static_cast<const uint8_t*>(pixmap_.addr()), size));
+-  for (int y = 0; y < info.height(); ++y) {
+-    const size_t row_start = static_cast<size_t>(y) * pixmap_.rowBytes();
+-    noisy_bytes.subspan(row_start, pixmap_.rowBytes())
+-        .copy_from(source.subspan(row_start, pixmap_.rowBytes()));
++  SkPixmap noisy(noise_info, data->writable_data(), row_bytes);
++  if (!pixmap_.readPixels(noise_info, noisy.writable_addr(), row_bytes, 0, 0)) {
++    return;
+   }
+-  ApplyMoltskinCanvasNoise(&noisy);
++  base::span<uint8_t> reference_bytes = UNSAFE_BUFFERS(base::span(
++      static_cast<uint8_t*>(reference_data->writable_data()), size));
++  base::span<const uint8_t> noisy_bytes = UNSAFE_BUFFERS(base::span(
++      static_cast<const uint8_t*>(noisy.addr()), size));
++  reference_bytes.copy_from(noisy_bytes);
++  SkPixmap reference(noise_info, reference_data->writable_data(), row_bytes);
+ 
++  MoltskinCanvasNoiseOptions options;
++  options.reference = &reference;
++  options.excluded_region = excluded_region;
++  ApplyMoltskinCanvasNoise(&noisy, options);
++
+   sk_sp<SkImage> image =
+-      SkImages::RasterFromData(info, std::move(data), pixmap_.rowBytes());
++      SkImages::RasterFromData(noise_info, std::move(data), row_bytes);
+   if (!image || !image->peekPixels(&pixmap_)) {
+     is_valid_ = false;
+     return;
+--- a/third_party/blink/renderer/platform/graphics/moltskin_canvas_noise.h
++++ b/third_party/blink/renderer/platform/graphics/moltskin_canvas_noise.h
+@@ -5,14 +5,19 @@
+ #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_MOLTSKIN_CANVAS_NOISE_H_
+ #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_MOLTSKIN_CANVAS_NOISE_H_
+ 
++#include <algorithm>
++#include <cmath>
+ #include <cstdint>
++#include <vector>
+ 
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
++#include "base/memory/raw_ptr_exclusion.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/skia/include/core/SkPixmap.h"
++#include "third_party/skia/include/core/SkRegion.h"
+ 
+ namespace blink {
+ 
+@@ -39,73 +44,187 @@
+   return value;
+ }
+ 
+-inline int MoltskinCanvasNoiseDelta(uint32_t hash) {
+-  return static_cast<int>(hash % 3U) - 1;
++struct MoltskinPixel {
++  uint8_t r = 0;
++  uint8_t g = 0;
++  uint8_t b = 0;
++  uint8_t a = 0;
++};
++
++struct MoltskinCanvasNoiseOptions {
++  // Top-left pixel of the pixmap in canvas coordinates.
++  int origin_x = 0;
++  // Top-down canvas coordinate. WebGL passes the bottom-up readPixels origin.
++  int origin_y = 0;
++  // WebGL readPixels is bottom-up; convert rows to canvas coordinates.
++  bool flip_y = false;
++  int surface_height = 0;
++  // Unnoised pixels used for the four-neighbour edge test. When null, a
++  // snapshot of the pixmap itself is used.
++  RAW_PTR_EXCLUSION const SkPixmap* reference = nullptr;
++  // Position of the pixmap's (0,0) pixel in `reference`.
++  int ref_offset_x = 0;
++  int ref_offset_y = 0;
++  // Pixels written by putImageData must stay byte-exact.
++  RAW_PTR_EXCLUSION const SkRegion* excluded_region = nullptr;
++};
++
++namespace moltskin_canvas_noise_internal {
++
++inline bool IsSupportedColorType(SkColorType color_type) {
++  return color_type == kRGBA_8888_SkColorType ||
++         color_type == kBGRA_8888_SkColorType;
+ }
+ 
+-// Adds deterministic +/-1 noise to the color channels of an 8-bit RGBA/BGRA
+-// pixmap. Alpha is left untouched. Origin lets cropped readbacks keep the same
+-// per-pixel pattern as a full-canvas readback.
+-inline void ApplyMoltskinCanvasNoise(SkPixmap* pixmap,
+-                                     int origin_x = 0,
+-                                     int origin_y = 0) {
++// macOS canvas readbacks are BGRA while getImageData is RGBA. All comparisons
++// and writes use logical RGB order so both APIs perturb the same channel.
++inline MoltskinPixel ReadPixel(const SkPixmap& pixmap, int x, int y) {
++  const bool bgra = pixmap.colorType() == kBGRA_8888_SkColorType;
++  const uint8_t* row = UNSAFE_BUFFERS(
++      static_cast<const uint8_t*>(pixmap.addr()) +
++      static_cast<size_t>(y) * pixmap.rowBytes());
++  base::span<const uint8_t> pixel = UNSAFE_BUFFERS(
++      base::span(row + static_cast<size_t>(x) * 4, size_t{4}));
++  MoltskinPixel result;
++  result.r = pixel[bgra ? 2 : 0];
++  result.g = pixel[1];
++  result.b = pixel[bgra ? 0 : 2];
++  result.a = pixel[3];
++  return result;
++}
++
++inline void WritePixel(SkPixmap& pixmap, int x, int y, MoltskinPixel pixel) {
++  const bool bgra = pixmap.colorType() == kBGRA_8888_SkColorType;
++  uint8_t* row = UNSAFE_BUFFERS(static_cast<uint8_t*>(pixmap.writable_addr()) +
++                                static_cast<size_t>(y) * pixmap.rowBytes());
++  base::span<uint8_t> target = UNSAFE_BUFFERS(
++      base::span(row + static_cast<size_t>(x) * 4, size_t{4}));
++  target[bgra ? 2 : 0] = pixel.r;
++  target[1] = pixel.g;
++  target[bgra ? 0 : 2] = pixel.b;
++  target[3] = pixel.a;
++}
++
++inline bool SamePixel(const MoltskinPixel& a, const MoltskinPixel& b) {
++  return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
++}
++
++}  // namespace moltskin_canvas_noise_internal
++
++// Adds deterministic one-channel +/-1 noise to pixels that sit on an edge or
++// gradient. Flat colour interiors, transparent pixels and putImageData regions
++// are left byte-exact. The four-neighbour test reads from an unnoised
++// reference so noise never cascades across pixels.
++inline void ApplyMoltskinCanvasNoise(
++    SkPixmap* pixmap,
++    const MoltskinCanvasNoiseOptions& options = {}) {
++  using namespace moltskin_canvas_noise_internal;
++
+   const uint32_t seed = GetMoltskinCanvasNoiseSeed();
+   if (seed == 0 || pixmap == nullptr) {
+     return;
+   }
+-  if (pixmap->colorType() != kRGBA_8888_SkColorType &&
+-      pixmap->colorType() != kBGRA_8888_SkColorType) {
++  if (!IsSupportedColorType(pixmap->colorType()) ||
++      pixmap->info().bytesPerPixel() != 4 || pixmap->rowBytes() < 4 ||
++      pixmap->width() <= 0 || pixmap->height() <= 0) {
+     return;
+   }
+-  if (pixmap->info().bytesPerPixel() != 4 || pixmap->rowBytes() < 4) {
+-    return;
+-  }
+-  // Skip single-pixel readback probes used by noise detectors. Normal canvas
+-  // fingerprints use larger regions and still receive noise.
+-  if (pixmap->width() * pixmap->height() < 2) {
+-    return;
+-  }
+-
+   uint8_t* pixels = static_cast<uint8_t*>(pixmap->writable_addr());
+-  const bool premultiplied =
+-      pixmap->alphaType() == kPremul_SkAlphaType;
+   if (pixels == nullptr) {
+     return;
+   }
+-  base::span<uint8_t> bytes = UNSAFE_BUFFERS(
+-      base::span(pixels, pixmap->computeByteSize()));
+-  const size_t row_bytes = pixmap->rowBytes();
+ 
++  const SkPixmap* reference = options.reference;
++  std::vector<uint8_t> reference_storage;
++  SkPixmap reference_pixmap;
++  if (reference == nullptr) {
++    const size_t size = pixmap->computeByteSize();
++    reference_storage.resize(size);
++    reference_pixmap = SkPixmap(pixmap->info(), reference_storage.data(),
++                                pixmap->rowBytes());
++    base::span<uint8_t> destination = UNSAFE_BUFFERS(
++        base::span(reference_storage.data(), reference_storage.size()));
++    base::span<const uint8_t> source = UNSAFE_BUFFERS(base::span(
++        static_cast<const uint8_t*>(pixmap->addr()), size));
++    destination.copy_from(source);
++    reference = &reference_pixmap;
++  }
++
++  const bool premultiplied = pixmap->alphaType() == kPremul_SkAlphaType;
++  const int reference_width = reference->width();
++  const int reference_height = reference->height();
++
+   for (int y = 0; y < pixmap->height(); ++y) {
+-    base::span<uint8_t> row = bytes.subspan(static_cast<size_t>(y) * row_bytes,
+-                                            row_bytes);
+-    const uint32_t absolute_y = static_cast<uint32_t>(origin_y + y);
++    const int canvas_y =
++        options.flip_y
++            ? options.surface_height - 1 - (options.origin_y + y)
++            : options.origin_y + y;
++    const int reference_y = options.ref_offset_y + y;
+     for (int x = 0; x < pixmap->width(); ++x) {
+-      base::span<uint8_t> pixel = row.subspan(static_cast<size_t>(x) * 4, size_t{4});
+-      if (pixel[3] == 0) {
++      const int canvas_x = options.origin_x + x;
++      if (options.excluded_region &&
++          options.excluded_region->contains(canvas_x, canvas_y)) {
+         continue;
+       }
+-      const uint32_t absolute_x = static_cast<uint32_t>(origin_x + x);
++      MoltskinPixel pixel = ReadPixel(*pixmap, x, y);
++      // Semi-transparent pixels cannot round-trip byte-exactly through a
++      // premultiplied canvas and PNG decoding on every GPU backend. Keep them
++      // untouched so getImageData, toDataURL and toBlob stay identical.
++      if (pixel.a < 255) {
++        continue;
++      }
++
++      bool is_edge = false;
++      const int reference_x = options.ref_offset_x + x;
++      constexpr int kNeighbourOffsets[4][2] = {
++          {-1, 0}, {1, 0}, {0, -1}, {0, 1}};
++      for (const auto& offset : kNeighbourOffsets) {
++        const int nx = reference_x + offset[0];
++        const int ny = reference_y + offset[1];
++        if (nx < 0 || nx >= reference_width || ny < 0 ||
++            ny >= reference_height) {
++          continue;
++        }
++        if (!SamePixel(pixel, ReadPixel(*reference, nx, ny))) {
++          is_edge = true;
++          break;
++        }
++      }
++      // Flat colour probes stay untouched. This also keeps solid rectangles
++      // and gl.clear() readbacks byte-identical to an unpatched renderer.
++      if (!is_edge) {
++        continue;
++      }
++
++      const uint32_t rgba =
++          static_cast<uint32_t>(pixel.r) |
++          (static_cast<uint32_t>(pixel.g) << 8) |
++          (static_cast<uint32_t>(pixel.b) << 16) |
++          (static_cast<uint32_t>(pixel.a) << 24);
+       const uint32_t hash = MoltskinCanvasNoiseMix(
+-          seed ^ (absolute_x * 0x9e3779b1U) ^ (absolute_y * 0x85ebca77U));
+-      const int delta_r = MoltskinCanvasNoiseDelta(hash);
+-      const int delta_g = MoltskinCanvasNoiseDelta(hash >> 8);
+-      const int delta_b = MoltskinCanvasNoiseDelta(hash >> 16);
+-      const int alpha = pixel[3];
+-      int r = pixel[0] + delta_r;
+-      int g = pixel[1] + delta_g;
+-      int b = pixel[2] + delta_b;
+-      r = r < 0 ? 0 : (r > 255 ? 255 : r);
+-      g = g < 0 ? 0 : (g > 255 ? 255 : g);
+-      b = b < 0 ? 0 : (b > 255 ? 255 : b);
+-      if (premultiplied) {
+-        r = r > alpha ? alpha : r;
+-        g = g > alpha ? alpha : g;
+-        b = b > alpha ? alpha : b;
++          seed ^ (static_cast<uint32_t>(canvas_x) * 0x9e3779b1U) ^
++          (static_cast<uint32_t>(canvas_y) * 0x85ebca77U) ^
++          (rgba * 0xc2b2ae35U));
++
++      // Perturb about one quarter of the edge pixels, one channel at a time.
++      if ((hash & 3U) != 0U) {
++        continue;
+       }
+-      pixel[0] = static_cast<uint8_t>(r);
+-      pixel[1] = static_cast<uint8_t>(g);
+-      pixel[2] = static_cast<uint8_t>(b);
++      const uint32_t channel = (hash >> 2) % 3U;
++      int delta = ((hash >> 4) & 1U) ? 1 : -1;
++      const int max_value = premultiplied ? pixel.a : 255;
++      uint8_t* value = channel == 0 ? &pixel.r : channel == 1 ? &pixel.g
++                                                              : &pixel.b;
++      int candidate = static_cast<int>(*value) + delta;
++      if (candidate < 0 || candidate > max_value) {
++        delta = -delta;
++        candidate = static_cast<int>(*value) + delta;
++      }
++      if (candidate < 0 || candidate > max_value) {
++        continue;
++      }
++      *value = static_cast<uint8_t>(candidate);
++      WritePixel(*pixmap, x, y, pixel);
+     }
+   }
+ }
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -1445,7 +1445,9 @@
+     if (!data_buffer)
+       return String("data:,");
+ 
+-    data_buffer->ApplyCanvasNoise();
++    if (context_ && context_->ShouldApplyMoltskinCanvasNoise()) {
++      data_buffer->ApplyCanvasNoise(&context_->MoltskinRawPutRegion());
++    }
+     String data_url = data_buffer->ToDataURL(encoding_mime_type, quality);
+     base::TimeDelta elapsed_time = base::TimeTicks::Now() - start_time;
+     float sqrt_pixels =
+@@ -1554,6 +1556,10 @@
+   }
+ 
+   if (async_creator) {
++    if (context_ && context_->ShouldApplyMoltskinCanvasNoise()) {
++      async_creator->SetMoltskinCanvasNoise(true,
++                                           context_->MoltskinRawPutRegion());
++    }
+     async_creator->ScheduleAsyncBlobCreation(quality);
+   } else {
+     GetDocument()
+--- a/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.h
++++ b/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.h
+@@ -21,6 +21,7 @@
+ #include "third_party/blink/renderer/platform/image-encoders/image_encoder.h"
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
++#include "third_party/skia/include/core/SkRegion.h"
+ 
+ namespace blink {
+ 
+@@ -48,6 +49,12 @@
+ 
+   void ScheduleAsyncBlobCreation(const double& quality);
+ 
++  // Applies first, then encodes, so toBlob/toDataURL match getImageData.
++  void SetMoltskinCanvasNoise(bool enabled, const SkRegion& excluded_region) {
++    moltskin_canvas_noise_enabled_ = enabled;
++    moltskin_excluded_region_ = excluded_region;
++  }
++
+   CanvasAsyncBlobCreator(scoped_refptr<StaticBitmapImage>,
+                          const ImageEncodeOptions* options,
+                          ToBlobFunctionType function_type,
+@@ -107,6 +114,8 @@
+ 
+   ImageEncodingMimeType mime_type_;
+   ToBlobFunctionType function_type_;
++  bool moltskin_canvas_noise_enabled_ = false;
++  SkRegion moltskin_excluded_region_;
+ 
+   // Chrome metrics use
+   base::TimeTicks start_time_;
+--- a/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
++++ b/third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
+@@ -262,7 +262,6 @@
+   if (!buffer) {
+     return false;
+   }
+-  buffer->ApplyCanvasNoise();
+   return buffer->EncodeImage(mime_type, quality, encoded_image);
+ }
+ 
+@@ -305,7 +304,7 @@
+   // is not busy.
+   bool use_idle_encoding =
+       IsMainThread() && (mime_type_ != kMimeTypeWebp) &&
+-      GetMoltskinCanvasNoiseSeed() == 0 &&
++      GetMoltskinCanvasNoiseSeed() == 0 && !moltskin_canvas_noise_enabled_ &&
+       (enforce_idle_encoding_for_test_ ||
+        !RuntimeEnabledFeatures::NoIdleEncodingForWebTestsEnabled());
+ 
+@@ -318,7 +317,12 @@
+       // we do not need to use background task runner to reduce load on main.
+       // So we just directly encode images on the worker thread.
+       Vector<unsigned char> encoded_image;
+-      if (!EncodeImage(ImageDataBuffer::Create(src_data_), mime_type_, quality,
++      std::unique_ptr<ImageDataBuffer> buffer =
++          ImageDataBuffer::Create(src_data_);
++      if (buffer && moltskin_canvas_noise_enabled_) {
++        buffer->ApplyCanvasNoise(&moltskin_excluded_region_);
++      }
++      if (!EncodeImage(std::move(buffer), mime_type_, quality,
+                        &encoded_image)) {
+         context_->GetTaskRunner(TaskType::kCanvasBlobSerialization)
+             ->PostTask(
+@@ -337,12 +341,16 @@
+     } else {
+       // Off-thread case, see (2a) in function comment.
+ 
++      std::unique_ptr<ImageDataBuffer> buffer =
++          ImageDataBuffer::Create(src_data_);
++      if (buffer && moltskin_canvas_noise_enabled_) {
++        buffer->ApplyCanvasNoise(&moltskin_excluded_region_);
++      }
+       worker_pool::PostTask(
+           FROM_HERE, CrossThreadBindOnce(
+                          &CanvasAsyncBlobCreator::EncodeImageOnEncoderThread,
+                          MakeCrossThreadHandle(this), parent_frame_task_runner_,
+-                         skia_image_, ImageDataBuffer::Create(src_data_),
+-                         mime_type_, quality));
++                         skia_image_, std::move(buffer), mime_type_, quality));
+     }
+   } else {
+     // Progressive encoding case, see (1) in function comment.
+--- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
++++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+@@ -578,6 +578,10 @@
+     auto* async_creator = MakeGarbageCollected<CanvasAsyncBlobCreator>(
+         image_bitmap, options, function_type, start_time, execution_context,
+         resolver);
++    if (context_->ShouldApplyMoltskinCanvasNoise()) {
++      async_creator->SetMoltskinCanvasNoise(true,
++                                           context_->MoltskinRawPutRegion());
++    }
+     async_creator->ScheduleAsyncBlobCreation(options->quality());
+     return resolver->Promise();
+   }
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h
+@@ -776,6 +776,9 @@
+ 
+     ScopedRGBEmulationColorMask emulation_color_mask(this, color_mask_.data(),
+                                                      drawing_buffer_.get());
++    // MarkContextChanged() can skip DidDraw when the buffer is already dirty;
++    // record the draw type directly so readPixels/toDataURL enable noise.
++    SetMoltskinNoiseEligible(true);
+     OnBeforeDrawCall(draw_type);
+     draw_func();
+     if (!has_been_drawn_to_) {
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -3026,6 +3026,12 @@
+       mask |= GL_STENCIL_BUFFER_BIT;
+     }
+     ContextGL()->Clear(mask);
++  }
++  if ((mask & GL_COLOR_BUFFER_BIT) && !scissor_enabled_ &&
++      !framebuffer_binding_) {
++    // A full-screen clear is a flat colour probe until a draw call adds
++    // geometry. Keep its readback byte-identical to an unpatched renderer.
++    ResetMoltskinNoiseState();
+   }
+   MarkContextChanged(kCanvasChanged,
+                      CanvasPerformanceMonitor::DrawType::kOther);
+@@ -5478,13 +5484,24 @@
+     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
+   }
+ 
+-  if (data && format == GL_RGBA && type == GL_UNSIGNED_BYTE && width > 0 &&
+-      height > 0) {
++  if (data && ShouldApplyMoltskinCanvasNoise() &&
++      GetMoltskinCanvasNoiseSeed() != 0 && format == GL_RGBA &&
++      type == GL_UNSIGNED_BYTE && width > 0 && height > 0) {
+     SkPixmap pixmap(
+         SkImageInfo::Make(width, height, kRGBA_8888_SkColorType,
+                           kUnpremul_SkAlphaType),
+         data, static_cast<size_t>(width) * 4);
+-    ApplyMoltskinCanvasNoise(&pixmap, x, y);
++    MoltskinCanvasNoiseOptions options;
++    options.origin_x = x;
++    options.origin_y = y;
++    options.flip_y = true;
++    // readPixels is bottom-up while toDataURL is top-down. Align the hash
++    // coordinates with the canvas surface so both exports perturb the same
++    // pixel.
++    options.surface_height = framebuffer_binding_
++                                 ? height
++                                 : GetDrawingBuffer()->Size().height();
++    ApplyMoltskinCanvasNoise(&pixmap, options);
+   }
+ }
+ 

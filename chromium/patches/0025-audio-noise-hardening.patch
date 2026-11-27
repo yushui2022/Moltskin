@@ -1,0 +1,259 @@
+--- a/third_party/blink/renderer/modules/webaudio/moltskin_audio_noise.h
++++ b/third_party/blink/renderer/modules/webaudio/moltskin_audio_noise.h
+@@ -6,6 +6,7 @@
+ #define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_MOLTSKIN_AUDIO_NOISE_H_
+ 
+ #include <algorithm>
++#include <cmath>
+ #include <cstdint>
+ 
+ #include "base/command_line.h"
+@@ -46,52 +47,83 @@
+       (domain * 0x85ebca77U));
+ }
+ 
+-// A -80 dBFS perturbation is inaudible but changes float samples and quantized
+-// fingerprint hashes.
+-inline float MoltskinAudioNoiseDelta(uint32_t hash) {
+-  constexpr float kAmplitude = 1.0e-4f;
+-  return static_cast<float>(static_cast<int>(hash % 3U) - 1) * kAmplitude;
++// Continuous [-1, 1] perturbation instead of the old {-1, 0, +1} step.
++inline float MoltskinAudioSignedUnit(uint32_t hash) {
++  return static_cast<float>(hash & 0xFFFFU) / 32767.5f - 1.0f;
+ }
+ 
++// Pure silence and constant DC (ConstantSourceNode, leading silence) contain no
++// renderer-specific floating point variation and must stay exact.
++inline bool MoltskinAudioHasDynamicSignal(base::span<const float> samples) {
++  bool seen = false;
++  float min_value = 0.0f;
++  float max_value = 0.0f;
++  float max_abs = 0.0f;
++  for (float value : samples) {
++    if (!std::isfinite(value)) {
++      continue;
++    }
++    if (!seen) {
++      min_value = max_value = value;
++      seen = true;
++    } else {
++      min_value = std::min(min_value, value);
++      max_value = std::max(max_value, value);
++    }
++    max_abs = std::max(max_abs, std::fabs(value));
++  }
++  return seen && max_abs > 1.0e-7f && (max_value - min_value) > 1.0e-7f;
++}
++
+ inline void AddMoltskinAudioNoise(base::span<float> samples,
+                                   unsigned channel_index) {
+   const uint32_t seed = GetMoltskinAudioNoiseSeed();
+-  if (seed == 0) {
++  if (seed == 0 || !MoltskinAudioHasDynamicSignal(samples)) {
+     return;
+   }
+   for (size_t i = 0; i < samples.size(); ++i) {
++    const float value = samples[i];
++    if (!std::isfinite(value) || std::fabs(value) <= 1.0e-7f) {
++      // Keep exact digital silence exact.
++      continue;
++    }
+     const uint32_t hash = MoltskinAudioNoiseHash(seed, i, channel_index);
+-    samples[i] = std::clamp(samples[i] + MoltskinAudioNoiseDelta(hash), -1.0f,
+-                            1.0f);
++    const float scale = std::min(1.0e-5f, std::fabs(value) * 1.5e-5f);
++    const float delta = MoltskinAudioSignedUnit(hash) * scale;
++    samples[i] = std::clamp(value + delta, -1.0f, 1.0f);
+   }
+ }
+ 
+-inline void AddMoltskinAnalyserFloatNoise(base::span<float> values,
+-                                          float amplitude) {
+-  const uint32_t seed = GetMoltskinAudioNoiseSeed();
+-  if (seed == 0) {
+-    return;
++// Shared by GetFloatFrequencyData and GetByteFrequencyData. Both APIs must use
++// the same perturbed decibel value or their quantized results contradict each
++// other.
++inline double MoltskinPerturbAnalyserDb(double db_magnitude,
++                                        float linear_value,
++                                        double min_decibels,
++                                        size_t index,
++                                        uint32_t seed) {
++  if (seed == 0 || linear_value <= 0.0f || !std::isfinite(db_magnitude) ||
++      db_magnitude <= min_decibels) {
++    return db_magnitude;
+   }
+-  for (size_t i = 0; i < values.size(); ++i) {
+-    const uint32_t hash = MoltskinAudioNoiseHash(seed, i, 0x100U);
+-    const float delta =
+-        static_cast<float>(static_cast<int>(hash % 3U) - 1) * amplitude;
+-    values[i] += delta;
+-  }
++  const uint32_t hash = MoltskinAudioNoiseHash(seed, index, 0x100U);
++  return db_magnitude + static_cast<double>(MoltskinAudioSignedUnit(hash)) *
++                            0.015;
+ }
+ 
+-inline void AddMoltskinAnalyserByteNoise(base::span<unsigned char> values) {
+-  const uint32_t seed = GetMoltskinAudioNoiseSeed();
+-  if (seed == 0) {
+-    return;
++// Shared by GetFloatTimeDomainData and GetByteTimeDomainData. The byte API
++// quantizes this exact float value instead of adding noise independently.
++inline float MoltskinPerturbAnalyserTimeSample(float value,
++                                               size_t index,
++                                               uint32_t seed,
++                                               bool has_signal) {
++  if (seed == 0 || !has_signal || !std::isfinite(value) ||
++      std::fabs(value) <= 1.0e-7f) {
++    return value;
+   }
+-  for (size_t i = 0; i < values.size(); ++i) {
+-    const uint32_t hash = MoltskinAudioNoiseHash(seed, i, 0x101U);
+-    const int value =
+-        static_cast<int>(values[i]) + static_cast<int>(hash % 3U) - 1;
+-    values[i] = static_cast<unsigned char>(
+-        value < 0 ? 0 : (value > 255 ? 255 : value));
+-  }
++  const uint32_t hash = MoltskinAudioNoiseHash(seed, index, 0x102U);
++  const float delta = MoltskinAudioSignedUnit(hash) * 1.5e-4f;
++  return std::clamp(value + delta, -1.0f, 1.0f);
+ }
+ 
+ }  // namespace blink
+--- a/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
++++ b/third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+@@ -125,13 +125,14 @@
+   const size_t source_length = magnitude_buffer_.size();
+   const size_t len = std::min(source_length, destination_array->length());
+   if (len > 0) {
++    const uint32_t seed = GetMoltskinAudioNoiseSeed();
+     base::span<float> destination = destination_array->AsSpan();
+     for (unsigned i = 0; i < len; ++i) {
+       const float linear_value = magnitude_buffer_[i];
+       const double db_mag = audio_utilities::LinearToDecibels(linear_value);
+-      destination[i] = static_cast<float>(db_mag);
++      destination[i] = static_cast<float>(MoltskinPerturbAnalyserDb(
++          db_mag, linear_value, min_decibels_, i, seed));
+     }
+-    AddMoltskinAnalyserFloatNoise(destination.first(len), 0.01f);
+   }
+ }
+ 
+@@ -159,21 +160,25 @@
+                                        : 1.0 / (max_decibels_ - min_decibels_);
+     const double min_decibels = min_decibels_;
+ 
++    const uint32_t seed = GetMoltskinAudioNoiseSeed();
+     base::span<unsigned char> destination = destination_array->AsSpan();
+     for (unsigned i = 0; i < len; ++i) {
+       const float linear_value = magnitude_buffer_[i];
+       const double db_mag = audio_utilities::LinearToDecibels(linear_value);
++      const float noisy_db = static_cast<float>(MoltskinPerturbAnalyserDb(
++          db_mag, linear_value, min_decibels_, i, seed));
+ 
+       // The range m_minDecibels to m_maxDecibels will be scaled to byte values
+-      // from 0 to UCHAR_MAX.
++      // from 0 to UCHAR_MAX. Quantize the same float value returned by
++      // getFloatFrequencyData so the two APIs stay mathematically consistent.
+       const double scaled_value =
+-          UCHAR_MAX * (db_mag - min_decibels) * range_scale_factor;
++          UCHAR_MAX * (static_cast<double>(noisy_db) - min_decibels) *
++          range_scale_factor;
+ 
+       // Clip to valid range.
+       destination[i] =
+           static_cast<unsigned char>(ClampTo(scaled_value, 0, UCHAR_MAX));
+     }
+-    AddMoltskinAnalyserByteNoise(destination.first(len));
+   }
+ }
+ 
+@@ -191,16 +196,37 @@
+ 
+     const unsigned write_index = GetWriteIndex();
+ 
++    bool seen = false;
++    float min_value = 0.0f;
++    float max_value = 0.0f;
++    float max_abs = 0.0f;
++    for (unsigned i = 0; i < len; ++i) {
++      const float value =
++          input_buffer_[(i + write_index - fft_size + kInputBufferSize) %
++                        kInputBufferSize];
++      if (!seen) {
++        min_value = max_value = value;
++        seen = true;
++      } else {
++        min_value = std::min(min_value, value);
++        max_value = std::max(max_value, value);
++      }
++      max_abs = std::max(max_abs, std::fabs(value));
++    }
++    const bool has_signal =
++        seen && max_abs > 1.0e-7f && (max_value - min_value) > 1.0e-7f;
++    const uint32_t seed = GetMoltskinAudioNoiseSeed();
++
+     base::span<float> destination = destination_array->AsSpan();
+     for (unsigned i = 0; i < len; ++i) {
+       // Buffer access is protected due to modulo operation.
+-      float value =
++      const float value =
+           input_buffer_[(i + write_index - fft_size + kInputBufferSize) %
+                         kInputBufferSize];
+ 
+-      destination[i] = value;
++      destination[i] =
++          MoltskinPerturbAnalyserTimeSample(value, i, seed, has_signal);
+     }
+-    AddMoltskinAnalyserFloatNoise(destination.first(len), 1.0e-4f);
+   }
+ }
+ 
+@@ -217,13 +243,35 @@
+ 
+     const unsigned write_index = GetWriteIndex();
+ 
+-    base::span<unsigned char> destination = destination_array->AsSpan();
++    bool seen = false;
++    float min_value = 0.0f;
++    float max_value = 0.0f;
++    float max_abs = 0.0f;
+     for (unsigned i = 0; i < len; ++i) {
+-      // Buffer access is protected due to modulo operation.
+       const float value =
+           input_buffer_[(i + write_index - fft_size + kInputBufferSize) %
+                         kInputBufferSize];
++      if (!seen) {
++        min_value = max_value = value;
++        seen = true;
++      } else {
++        min_value = std::min(min_value, value);
++        max_value = std::max(max_value, value);
++      }
++      max_abs = std::max(max_abs, std::fabs(value));
++    }
++    const bool has_signal =
++        seen && max_abs > 1.0e-7f && (max_value - min_value) > 1.0e-7f;
++    const uint32_t seed = GetMoltskinAudioNoiseSeed();
+ 
++    base::span<unsigned char> destination = destination_array->AsSpan();
++    for (unsigned i = 0; i < len; ++i) {
++      // Buffer access is protected due to modulo operation.
++      const float value = MoltskinPerturbAnalyserTimeSample(
++          input_buffer_[(i + write_index - fft_size + kInputBufferSize) %
++                        kInputBufferSize],
++          i, seed, has_signal);
++
+       // Scale from nominal -1 -> +1 to unsigned byte.
+       const double scaled_value = 128 * (value + 1);
+ 
+@@ -231,7 +279,6 @@
+       destination[i] =
+           static_cast<unsigned char>(ClampTo(scaled_value, 0, UCHAR_MAX));
+     }
+-    AddMoltskinAnalyserByteNoise(destination.first(len));
+   }
+ }
+ 

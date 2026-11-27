@@ -150,12 +150,91 @@ AUDIO_PROBE = """async () => {
       context.resume();
     });
     await context.startRendering();
+    let floatByteMismatches = 0;
+    let timeByteMismatches = 0;
+    for (let i = 0; i < floatFrequency.length; ++i) {
+      const quantized = Math.max(0, Math.min(255, Math.trunc(
+        255 * (floatFrequency[i] - analyser.minDecibels) /
+        (analyser.maxDecibels - analyser.minDecibels))));
+      if (quantized !== byteFrequency[i]) ++floatByteMismatches;
+    }
+    for (let i = 0; i < floatTime.length; ++i) {
+      const quantized = Math.max(0, Math.min(255, Math.trunc(128 * (floatTime[i] + 1))));
+      if (quantized !== byteTime[i]) ++timeByteMismatches;
+    }
     return {
       floatFrequency: Array.from(floatFrequency.slice(0, 64)),
       byteFrequency: Array.from(byteFrequency.slice(0, 64)),
       floatTime: Array.from(floatTime.slice(0, 64)),
       byteTime: Array.from(byteTime.slice(0, 64)),
       hashes: [hash(floatFrequency), hash(byteFrequency), hash(floatTime), hash(byteTime)],
+      floatByteMismatches,
+      timeByteMismatches,
+    };
+  };
+
+  const silence = async () => {
+    const context = new OfflineAudioContext(1, 2048, 44100);
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    const oscillator = context.createOscillator();
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    const buffer = await context.startRendering();
+    const samples = Array.from(buffer.getChannelData(0));
+    return {
+      nonzero: samples.filter(value => value !== 0).length,
+      first: samples.slice(0, 4),
+    };
+  };
+
+  const leadingSilence = async () => {
+    const context = new OfflineAudioContext(1, 4096, 44100);
+    const oscillator = context.createOscillator();
+    oscillator.frequency.value = 440;
+    oscillator.connect(context.destination);
+    oscillator.start(0.02);
+    const buffer = await context.startRendering();
+    const samples = Array.from(buffer.getChannelData(0));
+    return {
+      zeros: samples.slice(0, 800).filter(value => value === 0).length,
+      after: samples.slice(1000, 1004),
+    };
+  };
+
+  const dc = async () => {
+    const context = new OfflineAudioContext(1, 2048, 44100);
+    const source = context.createConstantSource();
+    source.offset.value = 0.5;
+    source.connect(context.destination);
+    source.start();
+    const buffer = await context.startRendering();
+    return { values: Array.from(new Set(buffer.getChannelData(0))) };
+  };
+
+  const silentAnalyser = async () => {
+    const context = new OfflineAudioContext(1, 44100, 44100);
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.connect(context.destination);
+    const floatFrequency = new Float32Array(analyser.frequencyBinCount);
+    const byteFrequency = new Uint8Array(analyser.frequencyBinCount);
+    const floatTime = new Float32Array(analyser.fftSize);
+    const byteTime = new Uint8Array(analyser.fftSize);
+    context.suspend(0.1).then(() => {
+      analyser.getFloatFrequencyData(floatFrequency);
+      analyser.getByteFrequencyData(byteFrequency);
+      analyser.getFloatTimeDomainData(floatTime);
+      analyser.getByteTimeDomainData(byteTime);
+      context.resume();
+    });
+    await context.startRendering();
+    return {
+      floatFrequencyInfinite: floatFrequency.every(value => value === -Infinity),
+      byteFrequencyZero: byteFrequency.every(value => value === 0),
+      floatTimeZero: floatTime.every(value => value === 0),
+      byteTime128: byteTime.every(value => value === 128),
     };
   };
 
@@ -163,11 +242,15 @@ AUDIO_PROBE = """async () => {
   const decoded = await decode();
   const analyser = await analyse();
   return {
-    rendered: rendered.slice(0, 128),
+    rendered: rendered.slice(1000, 1128),
     renderedHash: hash(rendered),
     decoded: decoded.slice(0, 64),
     decodedHash: hash(decoded),
     analyser,
+    silence: await silence(),
+    leadingSilence: await leadingSilence(),
+    dc: await dc(),
+    silentAnalyser: await silentAnalyser(),
   };
 }"""
 
@@ -207,11 +290,11 @@ def test_native_audio_noise_is_stable():
     assert noisy["decodedHash"] != other["decodedHash"]
 
     for original, changed in zip(baseline["rendered"], noisy["rendered"]):
-        assert abs(original - changed) <= 2.0e-4
+        assert abs(original - changed) <= 2.0e-5
     assert baseline["rendered"] != noisy["rendered"]
 
     for original, changed in zip(baseline["decoded"], noisy["decoded"]):
-        assert abs(original - changed) <= 2.0e-4
+        assert abs(original - changed) <= 2.0e-5
     assert baseline["decoded"] != noisy["decoded"]
 
     analyser = noisy["analyser"]
@@ -231,3 +314,17 @@ def test_native_audio_noise_is_stable():
     for original, changed in zip(base_analyser["byteTime"], analyser["byteTime"]):
         assert abs(original - changed) <= 1
     assert base_analyser["hashes"] != analyser["hashes"]
+    assert analyser["floatByteMismatches"] == 0
+    assert analyser["timeByteMismatches"] == 0
+
+    assert noisy["silence"]["nonzero"] == 0
+    assert noisy["silence"]["first"] == [0, 0, 0, 0]
+    assert noisy["leadingSilence"]["zeros"] == 800
+    assert any(value != 0 for value in noisy["leadingSilence"]["after"])
+    assert noisy["dc"]["values"] == [0.5]
+    assert noisy["silentAnalyser"] == {
+        "floatFrequencyInfinite": True,
+        "byteFrequencyZero": True,
+        "floatTimeZero": True,
+        "byteTime128": True,
+    }

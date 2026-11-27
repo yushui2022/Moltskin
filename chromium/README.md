@@ -74,9 +74,9 @@ Chromium 窗口可在「WebGL 显卡型号」选择 Apple、Intel、NVIDIA 或 A
 - Canvas 2D `getImageData()`、`toDataURL()` 和 `toBlob()`
 - WebGL `readPixels()` 和 WebGL 画布导出
 
-颜色通道加入确定性的 `-1`、`0` 或 `+1` 扰动，Alpha 通道保持不变。同一环境每次启动得到相同图案；复制或重新导入的环境会获得新的环境 ID，因此噪声图案不同。裁剪读取使用画布绝对坐标，和整图读取的对应像素一致。单像素读取不施加噪声，以避开常见的读数噪声探针；正常尺寸的 Canvas 指纹仍会得到稳定扰动。
+只有文字、路径、渐变、阴影、滤镜和抗锯齿边缘会得到稀疏的单通道 `±1` 扰动，Alpha 通道保持不变。纯色 `fillRect`、已知像素网格、单像素探针和 `putImageData` 写入区域保持逐字节原样；纯色 `gl.clear()` 也不会被加噪，只有 `drawArrays` / `drawElements` 之后才启用 WebGL 噪声。这样既避开 CreepJS 一类已知像素检测，又保留真实 Canvas 指纹的渲染差异。
 
-噪声只在读取时应用，不改写画布内部像素，所以页面上的绘制结果和后续 `drawImage()` 不会累积误差。开启后 `toBlob()` 会跳过渐进式编码，以统一应用噪声。选择「限制 Canvas 像素读取」时，读取本身会被拒绝，噪声设置不会绕过限制。[实机回归](../tests/test_chromium_canvas_noise.py)
+噪声使用画布绝对坐标，裁剪读取、整图读取、`toDataURL`、`toBlob` 和 `OffscreenCanvas` 导出在解码后逐像素一致；macOS 的 BGRA 读回与 RGBA `getImageData` 使用相同的逻辑通道顺序，导出前统一为 unpremultiplied 像素；半透明像素在 PNG 与预乘画布往返中可能产生 ±1 舍入差，因此保持原样，不透明抗锯齿边缘仍会得到扰动。WebGL `readPixels` 的 bottom-up 原点会换算成 top-down 画布坐标，翻转后与 `toDataURL` 完全一致。噪声只在读取时应用，不改写画布内部像素，后续 `drawImage()` 不会累积误差；从已加噪画布复制时会重新判定目标画布，而从图片或 `toDataURL` 解码结果绘制时不会二次加噪。开启后 `toBlob()` 会跳过渐进式编码，以统一应用噪声。选择「限制 Canvas 像素读取」时，读取本身会被拒绝，噪声设置不会绕过限制。[实机回归](../tests/test_chromium_canvas_noise.py)
 
 ### AudioContext 指纹噪声
 
@@ -87,7 +87,7 @@ Chromium 窗口可在「WebGL 显卡型号」选择 Apple、Intel、NVIDIA 或 A
 - `AnalyserNode.getFloatFrequencyData()` / `getByteFrequencyData()`
 - `AnalyserNode.getFloatTimeDomainData()` / `getByteTimeDomainData()`
 
-渲染和解码样本的扰动幅度为 `±0.0001`，约 -80 dBFS；`AnalyserNode` 浮点频域扰动为 `±0.01 dB`，字节读数为 `±1`。这些变化听感不可闻，但会改变浮点样本和量化后的指纹哈希。同一环境每次启动得到相同图案；不同环境以及同一环境的 Canvas 噪声使用不同种子。采样率、输出延迟和声道数仍来自真实音频设备。[实机回归](../tests/test_chromium_audio_noise.py)
+渲染和解码样本使用与信号幅值成比例的连续扰动，单样本最大约 `±1e-5`；纯静音、前导/尾随静音和 `ConstantSourceNode` 直流信号保持精确原值。`AnalyserNode` 浮点频域与时域先计算一次共享扰动，字节读数再量化同一浮点值，因此 `getByteFrequencyData` / `getByteTimeDomainData` 与对应浮点读数严格一致；静音时频域为 `-Infinity`、字节频域为 0、时域为 0/128。这些变化听感不可闻，但会改变浮点样本和量化后的指纹哈希。同一环境每次启动得到相同图案；不同环境以及同一环境的 Canvas 噪声使用不同种子。采样率、输出延迟和声道数仍来自真实音频设备。[实机回归](../tests/test_chromium_audio_noise.py)
 
 ### 自动化标记与 WebRTC
 

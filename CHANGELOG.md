@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0-alpha.3 — 2026-11-27
+
+### Added
+
+- Chromium 内核补丁 `0024-canvas-noise-hardening`：Canvas 噪声改为边缘/渐变感知，只扰动文字、路径、不透明抗锯齿、阴影和滤镜像素；纯色块、单像素探针、`putImageData` 区域和纯色 `gl.clear()` 保持原样。`getImageData`、裁剪读取、`toDataURL`、`toBlob`、`OffscreenCanvas` 与 WebGL 导出共享画布绝对坐标和 unpremultiplied 像素，解码后逐像素一致；半透明像素因 PNG 与预乘画布往返会产生舍入差，保持原样。
+- Chromium 内核补丁 `0025-audio-noise-hardening`：音频噪声改为与信号幅值成比例的连续微扰，纯静音、前导静音和 `ConstantSourceNode` 直流信号保持精确值；`AnalyserNode` 浮点与字节频域/时域共用同一扰动值，字节读数严格等于浮点读数的量化结果。
+
+### Fixed
+
+- 修复 macOS 上 BGRA 像素读回把 R/B 噪声通道写反的问题。
+- 统一 `toDataURL` 与 `toBlob` 的 unpremultiplied 编码路径，避免同一画布出现两套量化结果。
+- 修复 WebGL `readPixels` bottom-up 原点与 `toDataURL` top-down 坐标错位的问题。
+
 ## 0.5.0-alpha.2 — 2026-11-27
 
 ### Security
