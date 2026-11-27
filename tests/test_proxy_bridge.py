@@ -122,3 +122,67 @@ def test_upstream_failure_returns_proxy_error():
         client.close()
     finally:
         bridge.close()
+
+
+def test_socks5_authentication_and_target_forwarding():
+    seen = {}
+    server = socket.socket()
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    port = server.getsockname()[1]
+
+    def recv_exact(client, size):
+        data = b""
+        while len(data) < size:
+            chunk = client.recv(size - len(data))
+            if not chunk:
+                raise AssertionError("short read")
+            data += chunk
+        return data
+
+    def serve():
+        client, _ = server.accept()
+        greeting = recv_exact(client, 4)
+        assert greeting[:2] == b"\x05\x02"
+        client.sendall(b"\x05\x02")
+        auth = recv_exact(client, 2)
+        seen["username"] = recv_exact(client, auth[1]).decode()
+        plen = recv_exact(client, 1)[0]
+        seen["password"] = recv_exact(client, plen).decode()
+        client.sendall(b"\x01\x00")
+        request = recv_exact(client, 4)
+        assert request[:3] == b"\x05\x01\x00"
+        if request[3] == 3:
+            length = recv_exact(client, 1)[0]
+            seen["host"] = recv_exact(client, length).decode()
+        elif request[3] == 1:
+            seen["host"] = socket.inet_ntoa(recv_exact(client, 4))
+        else:
+            seen["host"] = socket.inet_ntop(socket.AF_INET6, recv_exact(client, 16))
+        seen["target_port"] = int.from_bytes(recv_exact(client, 2), "big")
+        client.sendall(b"\x05\x00\x00\x01" + b"\x00" * 4 + b"\x00\x00")
+        while True:
+            data = client.recv(4096)
+            if not data:
+                break
+            client.sendall(b"echo:" + data)
+        client.close()
+        server.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    bridge = ProxyBridge({
+        "protocol": "socks5", "host": "127.0.0.1", "port": port,
+        "username": "user", "password": "secret",
+    }).start()
+    try:
+        client = socket.create_connection(("127.0.0.1", bridge.port), timeout=5)
+        client.sendall(b"CONNECT example.test:8443 HTTP/1.1\r\nHost: example.test:8443\r\n\r\n")
+        assert client.recv(4096).startswith(b"HTTP/1.1 200")
+        client.sendall(b"ping")
+        assert client.recv(4096) == b"echo:ping"
+        client.close()
+    finally:
+        bridge.close()
+    assert seen == {"username": "user", "password": "secret",
+                    "host": "example.test", "target_port": 8443}
