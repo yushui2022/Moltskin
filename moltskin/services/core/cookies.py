@@ -1,22 +1,43 @@
-"""环境 Cookie 的读写。
+"""环境 Cookie 的读写（支持 Camoufox 与 Chromium）。
 
-持久 Cookie 写入 Firefox 的 ``cookies.sqlite``；会话 Cookie 在下次启动时交给浏览器。
+Camoufox 持久 Cookie 写入 Firefox 的 ``cookies.sqlite``；会话 Cookie 在下次启动时交给浏览器。
+Chromium 持久 Cookie 写入 ``Default/Network/Cookies``（v24 明文迁移兼容格式）并同步加密保存
+``moltskin-portable-cookies.enc`` 便携快照，实现跨机器备份恢复与环境间复制。
 写入前必须确保环境已关闭。
 """
 
 from __future__ import annotations
 
-import json
-import math
-import sqlite3
-import time
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from ipaddress import IPv6Address
+import json
+import math
+import os
 from pathlib import Path
+import sqlite3
+import time
 from typing import Any
 
+from . import secret_store
+
 SESSION_FILENAME = "moltskin-session-cookies.sqlite"
+CHROMIUM_PORTABLE_FILENAME = "moltskin-portable-cookies.enc"
+CHROMIUM_EPOCH_DELTA = 11644473600
+
+CHROMIUM_SAME_SITE_TO_INT = {
+    "unspecified": -1,
+    "none": 0,
+    "no_restriction": 0,
+    "lax": 1,
+    "strict": 2,
+}
+CHROMIUM_INT_TO_SAME_SITE = {
+    -1: "unspecified",
+    0: "no_restriction",
+    1: "lax",
+    2: "strict",
+}
 
 SAME_SITE_TO_INT = {
     "unspecified": 256,
@@ -74,7 +95,11 @@ def _connect(user_data_dir: str | Path, writable: bool = False) -> sqlite3.Conne
     return conn
 
 
-def read_cookies(user_data_dir: str | Path, domain: str = "") -> list[dict[str, Any]]:
+def read_cookies(
+    user_data_dir: str | Path, domain: str = "", *, engine: str = "camoufox"
+) -> list[dict[str, Any]]:
+    if engine == "chromium":
+        return read_chromium_cookies(user_data_dir, domain)
     path = cookies_path(user_data_dir)
     if not path.exists():
         return []
@@ -179,11 +204,15 @@ def write_cookies(
     user_data_dir: str | Path,
     cookies: Iterable[dict[str, Any]],
     mode: str = "merge",
+    *,
+    engine: str = "camoufox",
 ) -> dict[str, int | str]:
     """把浏览器格式的 Cookie 写入环境。
 
     mode="replace" 会先清空；"merge" 则按 (name, host, path) 覆盖同名 Cookie。
     """
+    if engine == "chromium":
+        return write_chromium_cookies(user_data_dir, cookies, mode=mode)
     items = [_normalize(raw) for raw in cookies]
     conn = _connect(user_data_dir, writable=True)
     inserted = 0
@@ -503,3 +532,268 @@ def parse_payload(payload: Any) -> tuple[list[dict[str, Any]], str]:
         else:
             break
     raise CookieImportError("无法识别此 Cookie 导出文件")
+
+
+CHROMIUM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta(
+  key LONGVARCHAR NOT NULL UNIQUE PRIMARY KEY,
+  value LONGVARCHAR
+);
+CREATE TABLE IF NOT EXISTS cookies(
+  creation_utc INTEGER NOT NULL,
+  host_key TEXT NOT NULL,
+  top_frame_site_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  value TEXT NOT NULL,
+  encrypted_value BLOB NOT NULL,
+  path TEXT NOT NULL,
+  expires_utc INTEGER NOT NULL,
+  is_secure INTEGER NOT NULL,
+  is_httponly INTEGER NOT NULL,
+  last_access_utc INTEGER NOT NULL,
+  has_expires INTEGER NOT NULL,
+  is_persistent INTEGER NOT NULL,
+  priority INTEGER NOT NULL,
+  samesite INTEGER NOT NULL,
+  source_scheme INTEGER NOT NULL,
+  source_port INTEGER NOT NULL,
+  last_update_utc INTEGER NOT NULL,
+  source_type INTEGER NOT NULL,
+  has_cross_site_ancestor INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS cookies_unique_index
+ON cookies(host_key, top_frame_site_key, has_cross_site_ancestor, name, path, source_scheme, source_port);
+"""
+
+
+def chromium_cookies_path(user_data_dir: str | Path) -> Path:
+    base = Path(user_data_dir)
+    network_path = base / "Default" / "Network" / "Cookies"
+    legacy_path = base / "Default" / "Cookies"
+    if network_path.exists() or not legacy_path.exists():
+        return network_path
+    return legacy_path
+
+
+def _chromium_now_utc() -> int:
+    return round((time.time() + CHROMIUM_EPOCH_DELTA) * 1_000_000)
+
+
+def _unix_to_chromium_utc(unix_sec: float) -> int:
+    if unix_sec <= 0:
+        return 0
+    return round((unix_sec + CHROMIUM_EPOCH_DELTA) * 1_000_000)
+
+
+def _chromium_utc_to_unix(chrome_us: int) -> float:
+    if not chrome_us or chrome_us <= 0:
+        return -1
+    return max(0.0, chrome_us / 1_000_000 - CHROMIUM_EPOCH_DELTA)
+
+
+def save_portable_chromium_cookies(
+    user_data_dir: str | Path,
+    cookies: Iterable[dict[str, Any]],
+    *,
+    key: bytes | None = None,
+) -> int:
+    base = Path(user_data_dir)
+    base.mkdir(mode=0o700, parents=True, exist_ok=True)
+    normalized: list[dict[str, Any]] = []
+    for raw in cookies:
+        try:
+            normalized.append(_normalize(raw))
+        except CookieImportError:
+            continue
+    target = base / CHROMIUM_PORTABLE_FILENAME
+    if not normalized:
+        target.unlink(missing_ok=True)
+        return 0
+    encoded = secret_store.encrypt(json.dumps(normalized, ensure_ascii=False), key=key)
+    assert encoded is not None
+    target.write_text(encoded, encoding="utf-8")
+    try:
+        os.chmod(target, 0o600)
+    except OSError:
+        pass
+    return len(normalized)
+
+
+def _read_portable_chromium_cookies(
+    user_data_dir: str | Path, *, key: bytes | None = None
+) -> list[dict[str, Any]]:
+    path = Path(user_data_dir) / CHROMIUM_PORTABLE_FILENAME
+    if not path.is_file() or path.is_symlink():
+        return []
+    try:
+        raw_text = secret_store.decrypt(path.read_text(encoding="utf-8").strip(), key=key)
+        if not raw_text:
+            return []
+        parsed = json.loads(raw_text)
+        if not isinstance(parsed, list):
+            return []
+        return [_normalize(item) for item in parsed if isinstance(item, dict)]
+    except (OSError, ValueError, json.JSONDecodeError, CookieImportError):
+        return []
+
+
+def read_chromium_cookies(user_data_dir: str | Path, domain: str = "") -> list[dict[str, Any]]:
+    base = Path(user_data_dir)
+    merged: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for item in _read_portable_chromium_cookies(base):
+        merged[(item["domain"], item["path"], item["name"])] = item
+
+    for candidate in (base / "Default" / "Network" / "Cookies", base / "Default" / "Cookies"):
+        if not candidate.is_file() or candidate.is_symlink():
+            continue
+        uri = candidate.resolve().as_uri() + "?mode=ro"
+        conn = None
+        try:
+            conn = sqlite3.connect(uri, uri=True, timeout=5)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT host_key, name, value, encrypted_value, path, expires_utc, "
+                "is_secure, is_httponly, has_expires, is_persistent, samesite "
+                "FROM cookies WHERE top_frame_site_key=''"
+            ).fetchall()
+            for row in rows:
+                val = row["value"] or ""
+                enc = row["encrypted_value"] or b""
+                # Only overwrite/insert from SQLite when plaintext is available.
+                if enc and not val:
+                    continue
+                is_session = not row["has_expires"] or not row["is_persistent"]
+                expires = -1 if is_session else _chromium_utc_to_unix(int(row["expires_utc"] or 0))
+                key = (row["host_key"], row["path"] or "/", row["name"])
+                merged[key] = {
+                    "name": row["name"],
+                    "value": val,
+                    "domain": row["host_key"],
+                    "path": row["path"] or "/",
+                    "expires": expires,
+                    "secure": bool(row["is_secure"]),
+                    "httpOnly": bool(row["is_httponly"]),
+                    "sameSite": CHROMIUM_INT_TO_SAME_SITE.get(row["samesite"], "unspecified"),
+                }
+        except sqlite3.Error:
+            continue
+        finally:
+            if conn is not None:
+                conn.close()
+
+    needle = domain.lower().lstrip(".") if domain else ""
+    items = [
+        item
+        for item in merged.values()
+        if not needle or needle in item["domain"].lower()
+    ]
+    return sorted(items, key=lambda item: (item["domain"], item["name"], item["path"]))
+
+
+def _write_chromium_sqlite(
+    db_path: Path, items: list[dict[str, Any]], *, replace_all: bool
+) -> None:
+    db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for suffix in ("-wal", "-shm"):
+        Path(str(db_path) + suffix).unlink(missing_ok=True)
+    conn = sqlite3.connect(db_path, timeout=10)
+    try:
+        conn.execute("PRAGMA journal_mode=DELETE")
+        conn.execute("BEGIN IMMEDIATE")
+        conn.executescript(CHROMIUM_SCHEMA)
+        for meta_key, meta_val in (
+            ("mmap_status", "-1"),
+            ("version", "24"),
+            ("last_compatible_version", "24"),
+        ):
+            conn.execute(
+                "INSERT OR IGNORE INTO meta(key, value) VALUES (?, ?)",
+                (meta_key, meta_val),
+            )
+        if replace_all:
+            conn.execute("DELETE FROM cookies")
+        now_utc = _chromium_now_utc()
+        for cookie in items:
+            conn.execute(
+                "DELETE FROM cookies WHERE host_key=? AND path=? AND name=? AND top_frame_site_key=''",
+                (cookie["domain"], cookie["path"], cookie["name"]),
+            )
+            is_persistent = 1 if cookie["expires"] != -1 else 0
+            expires_utc = _unix_to_chromium_utc(cookie["expires"]) if is_persistent else 0
+            source_scheme = 2 if cookie["secure"] else 1
+            source_port = 443 if cookie["secure"] else 80
+            conn.execute(
+                "INSERT INTO cookies ("
+                "creation_utc, host_key, top_frame_site_key, name, value, encrypted_value, "
+                "path, expires_utc, is_secure, is_httponly, last_access_utc, has_expires, "
+                "is_persistent, priority, samesite, source_scheme, source_port, "
+                "last_update_utc, source_type, has_cross_site_ancestor"
+                ") VALUES (?, ?, '', ?, ?, X'', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 1, 0)",
+                (
+                    now_utc,
+                    cookie["domain"],
+                    cookie["name"],
+                    cookie["value"],
+                    cookie["path"],
+                    expires_utc,
+                    int(cookie["secure"]),
+                    int(cookie["httpOnly"]),
+                    now_utc,
+                    is_persistent,
+                    is_persistent,
+                    CHROMIUM_SAME_SITE_TO_INT[cookie["sameSite"]],
+                    source_scheme,
+                    source_port,
+                    now_utc,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def write_chromium_cookies(
+    user_data_dir: str | Path,
+    cookies: Iterable[dict[str, Any]],
+    mode: str = "merge",
+) -> dict[str, int | str]:
+    base = Path(user_data_dir)
+    items = [_normalize(raw) for raw in cookies]
+    replace_all = mode == "replace"
+    if replace_all:
+        legacy = base / "Default" / "Cookies"
+        if legacy.exists():
+            legacy.unlink(missing_ok=True)
+            Path(str(legacy) + "-journal").unlink(missing_ok=True)
+    db_path = chromium_cookies_path(base)
+    _write_chromium_sqlite(db_path, items, replace_all=replace_all)
+
+    if replace_all:
+        portable = items
+    else:
+        by_key = {(c["domain"], c["path"], c["name"]): c for c in _read_portable_chromium_cookies(base)}
+        for c in items:
+            by_key[(c["domain"], c["path"], c["name"])] = c
+        portable = list(by_key.values())
+    save_portable_chromium_cookies(base, portable)
+    return {"applied": len(items), "mode": mode}
+
+
+def hydrate_portable_chromium_cookies(
+    user_data_dir: str | Path, *, backup_key: bytes | None = None
+) -> int:
+    """Re-encrypt portable Chromium cookies after backup restore and materialize
+    plaintext v24 SQLite rows so cross-machine restores work without the source
+    machine's OS Keychain/DPAPI secret.
+    """
+    base = Path(user_data_dir)
+    portable_path = base / CHROMIUM_PORTABLE_FILENAME
+    if not portable_path.is_file() or portable_path.is_symlink():
+        return 0
+    items = _read_portable_chromium_cookies(base, key=backup_key)
+    if not items:
+        return 0
+    save_portable_chromium_cookies(base, items)
+    db_path = chromium_cookies_path(base)
+    _write_chromium_sqlite(db_path, items, replace_all=False)
+    return len(items)

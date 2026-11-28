@@ -37,6 +37,8 @@ def settings() -> dict:
         "chromium_js_heap_mb": 256,
         "chromium_mute_audio": True,
         "chromium_renderer_limit": 4,
+        "chromium_hardware_concurrency": 8,
+        "chromium_device_memory": 4,
         "browser_language": "en-US",
         "browser_timezone": "UTC",
         "browser_window_size": "1440x900",
@@ -82,13 +84,13 @@ def test_all_settings_survive_duplicate_export_and_import(api):
     assert_settings(duplicated.json()["data"], expected)
 
     exported = api.get("/api/v1/export/profiles").raise_for_status().json()
-    assert exported["version"] == 15
+    assert exported["version"] == 16
     item = next(item for item in exported["profiles"] if item["name"] == "contract source")
     for key, value in expected.items():
         assert item[key] == value, (key, item.get(key), value)
 
     restored_item = {**item, "name": "contract restored"}
-    imported = api.post("/api/v1/import/profiles", json={"version": 15, "profiles": [restored_item]})
+    imported = api.post("/api/v1/import/profiles", json={"version": 16, "profiles": [restored_item]})
     assert imported.status_code == 200, imported.text
     assert imported.json()["data"]["created"] == 1
     profiles = api.get("/api/v1/profiles").raise_for_status().json()["data"]["items"]
@@ -99,10 +101,12 @@ def test_all_settings_survive_duplicate_export_and_import(api):
 def test_profile_migration_adds_current_columns(api):
     with db.session() as conn:
         for column in ("chromium_screen", "chromium_platform", "chromium_webgl",
-                       "chromium_canvas_noise", "chromium_audio_noise"):
+                       "chromium_canvas_noise", "chromium_audio_noise",
+                       "chromium_hardware_concurrency", "chromium_device_memory"):
             conn.execute(f"ALTER TABLE profiles DROP COLUMN {column}")
     db.init_db()
     with db.session() as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(profiles)")}
     assert {"chromium_screen", "chromium_platform", "chromium_webgl",
-            "chromium_canvas_noise", "chromium_audio_noise"} <= columns
+            "chromium_canvas_noise", "chromium_audio_noise",
+            "chromium_hardware_concurrency", "chromium_device_memory"} <= columns

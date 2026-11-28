@@ -1514,7 +1514,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <header class="page-head">
         <div class="page-title">
           <h1>扩展中心</h1>
-          <p>上传 Firefox 扩展（.xpi / .zip），按环境分配，启动时自动加载</p>
+          <p>上传浏览器扩展（.crx / .zip / .xpi），按环境分配，启动时自动挂载</p>
         </div>
         <div class="head-actions">
           <button class="btn icon" id="refreshExtensions" title="刷新"><svg class="i"><use href="#i-refresh"/></svg></button>
@@ -1526,14 +1526,14 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <div class="empty" id="extEmpty" style="display:none">
           <div class="empty-ico"><svg class="i"><use href="#i-puzzle"/></svg></div>
           <div class="empty-title">还没有扩展</div>
-          <p>上传解压后的 .xpi / .zip，然后在环境详情里勾选启用。</p>
+          <p>支持 Chrome 扩展（.crx / MV3 .zip）与 Firefox 扩展（.xpi / .zip），上传后在环境详情里勾选启用。</p>
           <button class="btn primary" id="emptyExtAdd"><svg class="i"><use href="#i-plus"/></svg>上传扩展</button>
         </div>
         <div class="panel" style="margin-top:12px">
           <div class="panel-head">说明</div>
           <div class="panel-body" style="padding:12px 16px;color:var(--muted);font-size:12.5px;line-height:1.7">
             扩展存储在本机 <span class="mono">data/extensions/</span>，不会上传到任何服务。<br>
-            Camoufox 每次启动会把这些目录作为临时扩展加载；环境运行时修改扩展需要重启窗口生效。
+            Chromium 与 Camoufox 环境均可独立挂载扩展，扩展本地设置（如钱包状态、翻译配置）随环境目录持久化；修改分配后需重启该窗口生效。
           </div>
         </div>
       </div>
@@ -1686,9 +1686,9 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
                   <button class="btn small" id="backupBtn">导出备份</button>
                   <button class="btn small" id="restoreBtn">恢复备份</button>
                 </div>
-                <div class="hint">备份包含数据库、扩展和两种内核的环境配置。要一并备份 Camoufox 环境的 Cookie 和本地存储，请先关闭所有环境。</div>
+                <div class="hint">备份包含数据库、扩展和两种内核的环境配置。勾选下方选项将一并轻量打包 Chromium 与 Camoufox 环境的 Cookie、LocalStorage、IndexedDB 与扩展本地状态（需先关闭所有环境）。</div>
                 <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-top:4px">
-                  <input type="checkbox" id="backupProfiles"> 包含 Camoufox 登录态
+                  <input type="checkbox" id="backupProfiles"> 包含环境登录态（Chromium / Camoufox）
                 </label>
               </div>
               <div class="field"><label>数据目录</label>
@@ -1829,6 +1829,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <details class="editor-section" id="profileHardware" data-engine="chromium" name="profile-sections" hidden>
           <summary><strong>硬件与高级</strong><span class="editor-summary" id="fHardwareSummary"></span><svg class="i"><use href="#i-chev"/></svg></summary>
           <div class="editor-fields">
+            <div class="field"><label for="fHardwareConcurrency">逻辑处理器数量</label><select class="select" id="fHardwareConcurrency"><option value="0">由 Chromium 分配</option></select></div>
+            <div class="field"><label for="fDeviceMemory">设备内存容量</label><select class="select" id="fDeviceMemory"><option value="0">由 Chromium 分配</option></select></div>
             <div class="field full"><label for="fHardwareReporting">网页可读取的硬件信息</label>
               <select class="select" id="fHardwareReporting" aria-describedby="fHardwareReportingHint"><option value="standard">Chromium 默认</option><option value="limited">限制读数上限</option></select>
               <span class="hint" id="fHardwareReportingHint"></span>
@@ -1904,6 +1906,8 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="field" data-engine="chromium" hidden><label for="bChromiumScreen">屏幕分辨率与像素比</label><select class="select" id="bChromiumScreen"><option value="">跟随系统</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bChromiumPlatform">运行平台与架构</label><select class="select" id="bChromiumPlatform"><option value="">跟随系统</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bChromiumWebgl">WebGL 显卡型号</label><select class="select" id="bChromiumWebgl"><option value="">跟随系统</option></select></div>
+      <div class="field" data-engine="chromium" hidden><label for="bHardwareConcurrency">逻辑处理器数量</label><select class="select" id="bHardwareConcurrency"><option value="0">由 Chromium 分配</option></select></div>
+      <div class="field" data-engine="chromium" hidden><label for="bDeviceMemory">设备内存容量</label><select class="select" id="bDeviceMemory"><option value="0">由 Chromium 分配</option></select></div>
       <div class="field full" data-engine="chromium" hidden><label for="bHardwareReporting">网页可读取的硬件信息</label>
         <select class="select" id="bHardwareReporting" aria-describedby="bHardwareReportingHint"><option value="standard">Chromium 默认</option><option value="limited">限制读数上限</option></select>
         <span class="hint" id="bHardwareReportingHint"></span>
@@ -2171,21 +2175,21 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
           </div>
         </details>
       </section>
-      <section class="section" data-engine="camoufox">
+      <section class="section">
         <h3>扩展<button class="btn small" id="reloadExtBtn">刷新</button></h3>
         <div id="detailExtensions" class="ext-picker"><span class="muted">加载中…</span></div>
       </section>
 
-      <section class="section" data-engine="camoufox">
+      <section class="section">
         <h3>环境同步<button class="btn small" id="stateSizeRefresh">刷新</button></h3>
-        <p class="hint">把另一个环境的 Cookie、localStorage、IndexedDB 覆盖到当前环境（两个环境都要先关闭）。</p>
+        <p class="hint">把另一个同内核环境的 Cookie、LocalStorage、IndexedDB 覆盖到当前环境（两个环境都要先关闭）。</p>
         <div class="field-row">
           <button class="btn small" id="syncStateBtn">从其他环境同步</button>
         </div>
         <div class="hint" id="stateSize" style="margin-top:6px">统计中…</div>
       </section>
 
-      <section class="section" data-engine="camoufox">
+      <section class="section">
         <h3>Cookie<button class="btn small" id="cookieRefresh">刷新</button></h3>
         <div id="cookieSummary" class="hint">加载中…</div>
         <div class="field-row" style="flex-wrap:wrap">
@@ -2250,7 +2254,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
 </dialog>
 
 <input type="file" id="importFile" accept="application/json,.json" hidden>
-<input type="file" id="extFile" accept=".xpi,.zip,application/zip,application/x-xpinstall" hidden>
+<input type="file" id="extFile" accept=".crx,.zip,.xpi,application/x-chrome-extension,application/zip,application/x-xpinstall" hidden>
 <input type="file" id="restoreFile" accept=".zip,application/zip" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -2776,14 +2780,18 @@ const chromiumPrivacyFields = [
     description: "限制网页通过 WebGL 调试扩展读取显卡厂商和型号。3D 绘图仍可使用。" },
 ];
 const chromiumResourceFields = [
+  {control: "HardwareConcurrency", key: "chromium_hardware_concurrency", options: "chromium_hardware_concurrency_values", unit: "核"},
+  {control: "DeviceMemory", key: "chromium_device_memory", options: "chromium_device_memory_values", unit: "GiB"},
   {control: "RendererLimit", key: "chromium_renderer_limit", options: "chromium_renderer_limits", unit: "个进程"},
   {control: "HeapLimit", key: "chromium_js_heap_mb", options: "chromium_js_heap_limits", unit: "MiB"},
 ];
 const regionNames = {
   "zh-CN": "简体中文", "en-US": "英语（美国）", "en-GB": "英语（英国）", "ja-JP": "日语",
-  "de-DE": "德语", "fr-FR": "法语", "Asia/Shanghai": "上海", "Asia/Tokyo": "东京",
-  "Europe/London": "伦敦", "Europe/Berlin": "柏林", "Europe/Paris": "巴黎",
-  "America/New_York": "纽约", "America/Los_Angeles": "洛杉矶",
+  "de-DE": "德语", "fr-FR": "法语", "Asia/Shanghai": "上海", "Asia/Singapore": "新加坡",
+  "Asia/Tokyo": "东京", "Asia/Seoul": "首尔", "Asia/Hong_Kong": "香港", "Asia/Taipei": "台北",
+  "Europe/London": "伦敦", "Europe/Berlin": "柏林", "Europe/Paris": "巴黎", "Europe/Moscow": "莫斯科",
+  "America/New_York": "纽约", "America/Chicago": "芝加哥", "America/Los_Angeles": "洛杉矶",
+  "America/Toronto": "多伦多", "America/Sao_Paulo": "圣保罗", "Australia/Sydney": "悉尼",
 };
 function regionLabel(value) {
   if (/^\d+x\d+$/.test(value)) return value.replace("x", " × ");
@@ -2836,6 +2844,8 @@ function rowHtml(p, index) {
       "字体" + fontsLabel(p), p.media_capture === "blocked" && "音视频采集已阻止", p.geolocation === "blocked" && "位置已阻止",
       p.canvas_readback === "blocked" && "Canvas 读取受限", p.webgl_debug_info === "blocked" && "WebGL 显卡信息受限",
       p.chromium_canvas_noise && "像素噪声", p.chromium_audio_noise && "音频噪声",
+      p.chromium_hardware_concurrency && p.chromium_hardware_concurrency + " 核",
+      p.chromium_device_memory && p.chromium_device_memory + " GiB",
       p.hardware_reporting === "limited" && "硬件读数受限", p.chromium_mute_audio && "静音", p.chromium_renderer_limit && p.chromium_renderer_limit + " 个渲染进程"].filter(Boolean).join(" · ");
   } else if (preview) {
     const os = { macos: "macOS", linux: "Linux", windows: "Win" }[preview.os];
@@ -4412,11 +4422,16 @@ function openDetail(id, initialFocus = null) {
       <div class="kv"><div class="k">摄像头和麦克风</div><div class="v">${p.media_capture === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
       <div class="kv"><div class="k">地理位置</div><div class="v">${p.geolocation === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
       <div class="kv"><div class="k">启动方式</div><div class="v">${p.headless ? "无头（后台）" : "有头（显示窗口）"}</div></div>
+      <div class="kv"><div class="k">逻辑处理器数量</div><div class="v">${p.chromium_hardware_concurrency ? esc(p.chromium_hardware_concurrency) + " 核" : "由 Chromium 分配"}</div></div>
+      <div class="kv"><div class="k">设备内存容量</div><div class="v">${p.chromium_device_memory ? esc(p.chromium_device_memory) + " GiB" : "由 Chromium 分配"}</div></div>
       <div class="kv"><div class="k">网页可读取的硬件信息</div><div class="v">${p.hardware_reporting === "limited" ? "最多 4 个逻辑处理器、4 GiB 近似设备内存" : "Chromium 默认"}</div></div>
       <div class="kv"><div class="k">渲染进程上限</div><div class="v">${p.chromium_renderer_limit ? esc(p.chromium_renderer_limit) + " 个进程" : "由 Chromium 分配"}</div></div>
       <div class="kv"><div class="k">JS 老生代堆上限</div><div class="v">${p.chromium_js_heap_mb ? esc(p.chromium_js_heap_mb) + " MiB" : "由 Chromium 分配"}</div></div>
       <div class="kv"><div class="k">静音播放</div><div class="v">${p.chromium_mute_audio ? "开启" : "关闭"}</div></div>`;
-    openModal("detailMask");
+    openModal("detailMask", initialFocus);
+    loadDetailExtensions(id);
+    loadCookieSummary(id);
+    loadStateSize(id);
     return;
   }
   const preview = p.fingerprint_preview;
@@ -5251,7 +5266,7 @@ function renderExtensions() {
       <div class="ext-icon">${e.icon ? `<img src="${e.icon}" alt="">` : icon("puzzle")}</div>
       <div class="ext-body">
         <div class="ext-name" title="${esc(e.name)}">${esc(e.name)}</div>
-        <div class="ext-meta">${e.version ? `v${esc(e.version)} · ` : ""}${size} · ${e.profiles} 个环境在用</div>
+        <div class="ext-meta">${e.version ? `v${esc(e.version)} · ` : ""}${e.manifest_version ? `MV${esc(e.manifest_version)} · ` : ""}${size} · ${e.profiles} 个环境在用</div>
         ${e.description ? `<div class="ext-meta ellipsis" title="${esc(e.description)}">${esc(e.description)}</div>` : ""}
         <div class="ext-actions">
           <button class="btn small" data-ext-assign="${e.id}">分配环境</button>
@@ -5322,7 +5337,7 @@ $("extGrid").addEventListener("click", async (e) => {
     const res = await askChoose({
       title: "分配到环境",
       label: "选择环境（会覆盖该环境原有的扩展选择）",
-      options: [{ value: "", label: "不分配" }, ...state.profiles.filter((p) => p.engine !== "chromium").map((p) => ({ value: p.id, label: p.name }))],
+      options: [{ value: "", label: "不分配" }, ...state.profiles.filter((p) => !Array.isArray(ext?.engines) || ext.engines.includes(p.engine || "camoufox")).map((p) => ({ value: p.id, label: `${p.name} · ${engineName(p)}` }))],
     });
     if (!res || !res.value) return;
     try {
@@ -5394,8 +5409,10 @@ $("stateSizeRefresh").onclick = () => detailId && loadStateSize(detailId);
 
 $("syncStateBtn").onclick = async () => {
   if (!detailId) return;
-  const others = state.profiles.filter((p) => p.id !== detailId && p.engine !== "chromium");
-  if (!others.length) return toast("没有其他环境", true);
+  const currentProfile = state.profiles.find((p) => p.id === detailId);
+  const currentEngine = currentProfile?.engine || "camoufox";
+  const others = state.profiles.filter((p) => p.id !== detailId && (p.engine || "camoufox") === currentEngine);
+  if (!others.length) return toast("没有其他同内核环境", true);
   const source = await askChoose({
     title: "同步登录态",
     label: "源环境（会覆盖当前环境的 Cookie 与本地存储）",

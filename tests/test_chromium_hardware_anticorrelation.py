@@ -43,6 +43,59 @@ def test_hardware_seed_is_stable_and_distinct():
     assert first != chromium.audio_noise_seed("pf_alpha")
 
 
+def test_editor_exposes_hardware_concurrency_and_memory_fields():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text(encoding="utf-8")
+    for control_id in ("fHardwareConcurrency", "bHardwareConcurrency", "fDeviceMemory", "bDeviceMemory"):
+        assert f'id="{control_id}"' in html
+
+
+def test_profile_hardware_fields_and_iana_timezone_persist_and_export(data_dir):
+    from fastapi.testclient import TestClient
+    from moltskin.services.core import main
+    from moltskin.services.core.security import get_token
+
+    headers = {"Authorization": f"Bearer {get_token()}"}
+    with TestClient(main.app) as client:
+        created = client.post(
+            "/api/v1/profiles",
+            headers=headers,
+            json={
+                "name": "hw-profile",
+                "engine": "chromium",
+                "headless": True,
+                "chromium_hardware_concurrency": 8,
+                "chromium_device_memory": 4,
+                "browser_timezone": "Asia/Singapore",
+            },
+        )
+        assert created.status_code == 201, created.text
+        profile = created.json()["data"]
+        assert profile["chromium_hardware_concurrency"] == 8
+        assert profile["chromium_device_memory"] == 4
+        assert profile["browser_timezone"] == "Asia/Singapore"
+
+        exported = client.get("/api/v1/export/profiles", headers=headers)
+        assert exported.status_code == 200
+        assert exported.json()["version"] == 16
+        assert exported.json()["profiles"][0]["chromium_hardware_concurrency"] == 8
+        assert exported.json()["profiles"][0]["chromium_device_memory"] == 4
+
+        bad_tz = client.post(
+            "/api/v1/profiles",
+            headers=headers,
+            json={"name": "bad-tz", "engine": "chromium", "browser_timezone": "Mars/Olympus"},
+        )
+        assert bad_tz.status_code == 422
+
+        bad_camoufox = client.post(
+            "/api/v1/profiles",
+            headers=headers,
+            json={"name": "cf-hw", "engine": "camoufox", "chromium_hardware_concurrency": 8},
+        )
+        assert bad_camoufox.status_code == 422
+
+
 class _Site(http.server.BaseHTTPRequestHandler):
     headers_seen = []
 

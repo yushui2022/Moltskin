@@ -107,3 +107,26 @@ def test_native_speech_voices_follow_language():
     assert all(voice["local"] is True for voice in voices)
     assert [voice["default"] for voice in voices] == [True, False, False]
     assert all("Microsoft" in voice["uri"] for voice in voices)
+
+
+@pytest.mark.skipif(
+    os.getenv("MOLTSKIN_TEST_NATIVE_BROWSERS") != "1",
+    reason="needs the installed Chromium build",
+)
+def test_native_locale_alone_keeps_host_voices():
+    binary, _, capabilities = probe_capabilities(default_binary())
+    assert SPEECH_VOICES_CAPABILITY in capabilities
+    with sync_playwright() as driver:
+        browser = driver.chromium.launch(
+            executable_path=str(binary),
+            headless=True,
+            args=["--moltskin-locale=en-US"],
+        )
+        try:
+            page = browser.new_page()
+            page.set_content("<html><body>speech probe</body></html>")
+            voices = page.evaluate(VOICES)
+        finally:
+            browser.close()
+
+    assert not any(voice["name"].startswith("Microsoft ") for voice in voices)

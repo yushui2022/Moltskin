@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Chromium 扩展生态（`.crx` / `.zip` MV2 & MV3）**：支持直接上传 `.crx`（解析 CRX2/CRX3 二进制头并保留官方扩展公钥与 32 位 `chrome.runtime.id`）及 `.zip` 扩展，支持 `_locales` 多语言清单解析、按 Chromium 环境独立挂载与跨目录/重启状态持久化。
+- **Chromium 登录态轻量备份、跨机恢复与同步**：`include_profiles=True` 覆盖 Chromium 环境的 `Default/Network/Cookies`、SQLite `LocalStorage`/`SessionStorage`、`IndexedDB`、`WebStorage` 与扩展本地存储，自动剔除缓存与锁文件；停止环境时自动保存加密便携 Cookie 快照，支持跨机器恢复水合及环境间 Cookie/存储同步。
+- **无痕页面级 MCP 操控与 SDK**：新增私有回环 `DevToolsActivePort` 客户端（硬性禁止 `Runtime.enable` / `Debugger.enable` / `Console.enable`），基于 `Page.createIsolatedWorld` 与 `Input` 可信事件提供标签页管理、`navigate_page`、`snapshot_page`、`click_page`、`fill_page`、`press_key`、`evaluate_page` 与 `screenshot_page` 工具。
+- **Chromium 硬件参数面板与全量 IANA 时区**：面板、API、数据库迁移与导入导出（`PROFILE_FORMAT_VERSION = 16`）接入 `chromium_hardware_concurrency` 与 `chromium_device_memory`，扩展时区选项并校验系统全量 IANA 时区。
+- **内核补丁 `0030-cdp-stealth`**：根级屏蔽 `--moltskin-hide-webdriver` 下的 `AutomationControlled` 运行态特性与自动化受控提示条，修复跨系统 Windows 画像下 `WEBGL_debug_shaders` 返回 HLSL 着色器源码。
+
+### Changed
+
+- **`asyncio` 高性能流式本地代理桥**：重构 `ProxyBridge` 为单后台事件循环线程，支持高并发 `CONNECT` 隧道、`TCP_NODELAY` 与分块请求体流式转发，上游异常严格返回 `502` 不回退直连。
+
+### Fixed
+
+- **内核补丁 `0029-webgl2-d3d11-and-speech-fix`**：对齐 Windows ANGLE D3D11 FL11_0 WebGL2 限制参数与扩展白名单；修复非跨系统环境下仅设置 `--moltskin-locale` 误触发虚拟 Windows 语音列表的问题。
+- **渲染器稳定性**：`chromium/args.gn` 显式设置 `dcheck_always_on = false`，消除 Release 非官方构建在复杂字体/反欺诈站点触发上游 Blink `DCHECK` 导致的页面崩溃。
+
 ## 0.8.0-alpha.2 — 2026-11-28
 
 ### Fixed

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path, PureWindowsPath
 from typing import Literal, get_args
+from zoneinfo import available_timezones
 
 # moltskin/services/core/config.py -> 项目根目录
 ROOT = Path(__file__).resolve().parents[3]
@@ -92,9 +93,16 @@ CHROMIUM_WEBGL_PRESETS = (
     "AMD Radeon RX 6600|Google Inc. (AMD)|ANGLE (AMD, AMD Radeon RX 6600 (0x00000073) Direct3D11 vs_5_0 ps_5_0, D3D11)",
 )
 CHROMIUM_BROWSER_TIMEZONES = (
-    "Asia/Shanghai", "Asia/Tokyo", "Europe/London", "Europe/Berlin", "Europe/Paris",
-    "America/New_York", "America/Los_Angeles", "UTC",
+    "Asia/Shanghai", "Asia/Singapore", "Asia/Tokyo", "Asia/Seoul", "Asia/Hong_Kong", "Asia/Taipei",
+    "Europe/London", "Europe/Berlin", "Europe/Paris", "Europe/Moscow",
+    "America/New_York", "America/Chicago", "America/Los_Angeles", "America/Toronto", "America/Sao_Paulo",
+    "Australia/Sydney", "UTC",
 )
+_IANA_TIMEZONES = frozenset(available_timezones()) | frozenset(CHROMIUM_BROWSER_TIMEZONES)
+
+
+def valid_browser_timezone(value: str) -> bool:
+    return value in _IANA_TIMEZONES
 
 # Docker / server 部署：强制无头、不自动打开管理页
 FORCE_HEADLESS = os.environ.get("MOLTSKIN_HEADLESS", "").strip().lower() in ("1", "true", "yes", "on")

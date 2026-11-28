@@ -118,6 +118,23 @@ def test_native_webgl_info_is_consistent():
                   };
                 }"""
             )
+            webgl2 = page.evaluate(
+                """() => {
+                  const gl2 = document.createElement('canvas').getContext('webgl2');
+                  if (!gl2) return null;
+                  return {
+                    varyingVectors: gl2.getParameter(gl2.MAX_VARYING_VECTORS),
+                    fragUniformVectors: gl2.getParameter(gl2.MAX_FRAGMENT_UNIFORM_VECTORS),
+                    uboBindings: gl2.getParameter(gl2.MAX_UNIFORM_BUFFER_BINDINGS),
+                    uboBlockSize: gl2.getParameter(gl2.MAX_UNIFORM_BLOCK_SIZE),
+                    uboAlignment: gl2.getParameter(gl2.UNIFORM_BUFFER_OFFSET_ALIGNMENT),
+                    combinedVertexUniforms: gl2.getParameter(gl2.MAX_COMBINED_VERTEX_UNIFORM_COMPONENTS),
+                    combinedFragmentUniforms: gl2.getParameter(gl2.MAX_COMBINED_FRAGMENT_UNIFORM_COMPONENTS),
+                    pls: Boolean(gl2.getExtension('WEBGL_shader_pixel_local_storage')),
+                    plsSupported: gl2.getSupportedExtensions().includes('WEBGL_shader_pixel_local_storage'),
+                  };
+                }"""
+            )
         finally:
             browser.close()
     assert values["vendor"] == "Google Inc. (Apple)"
@@ -128,3 +145,13 @@ def test_native_webgl_info_is_consistent():
     assert values["viewportDims"] == [32767, 32767]
     assert values["astc"] is False
     assert values["astcSupported"] is False
+    if webgl2 is not None:
+        assert webgl2["varyingVectors"] == 30
+        assert webgl2["fragUniformVectors"] == 1024
+        assert webgl2["uboBindings"] == 24
+        assert webgl2["uboBlockSize"] == 65536
+        assert webgl2["uboAlignment"] == 256
+        assert webgl2["combinedVertexUniforms"] == 212992
+        assert webgl2["combinedFragmentUniforms"] == 200704
+        assert webgl2["pls"] is False
+        assert webgl2["plsSupported"] is False

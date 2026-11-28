@@ -37,7 +37,7 @@ from pydantic import AfterValidator, BaseModel, Field, ValidationError, model_va
 from chromium import native as chromium_native
 
 from . import backup as backup_store
-from . import config, db, extensions, geoip, jobs, launcher, observation, proxy_checker, scheduler, selftest, state_sync
+from . import cdp, config, db, extensions, geoip, jobs, launcher, observation, proxy_checker, scheduler, selftest, state_sync
 from . import platform_preview, recycle, workbench_location
 from . import cookies as cookie_store
 from .proxy_settings import chromium_proxy_server, normalize_host
@@ -53,7 +53,7 @@ Engine = Literal["camoufox", "chromium"]
 FontPolicy = Literal["standard", "restricted"]
 AccessPolicy = Literal["standard", "blocked"]
 StartupPage = Literal["default", "dashboard", "blank"]
-PROFILE_FORMAT_VERSION = 15
+PROFILE_FORMAT_VERSION = 16
 
 
 class PlatformPreviewSettings(BaseModel):
@@ -73,6 +73,8 @@ class ChromiumWindowSettings(PlatformPreviewSettings):
     chromium_js_heap_mb: int = Field(default=0, strict=True)
     chromium_mute_audio: bool = Field(default=False, strict=True)
     chromium_renderer_limit: int = Field(default=0, strict=True)
+    chromium_hardware_concurrency: int = Field(default=0, strict=True)
+    chromium_device_memory: int = Field(default=0, strict=True)
     browser_language: str = ""
     browser_timezone: str = ""
     browser_window_size: str = ""
@@ -330,6 +332,8 @@ def serialize_profile(row: sqlite3.Row) -> dict[str, Any]:
         "chromium_js_heap_mb": row["chromium_js_heap_mb"],
         "chromium_mute_audio": bool(row["chromium_mute_audio"]),
         "chromium_renderer_limit": row["chromium_renderer_limit"],
+        "chromium_hardware_concurrency": row["chromium_hardware_concurrency"],
+        "chromium_device_memory": row["chromium_device_memory"],
         "browser_language": row["browser_language"],
         "browser_timezone": row["browser_timezone"],
         "browser_window_size": row["browser_window_size"],
@@ -449,19 +453,24 @@ def _check_engine_options(engine: str, local_fonts: str, fingerprint: Any, windo
         message = "硬件信息限制仅支持 Chromium 环境"
     elif engine == "camoufox" and (window.canvas_readback != "standard" or window.webgl_debug_info != "standard"):
         message = "Canvas 读取和 WebGL 调试信息设置仅支持 Chromium 环境"
-    elif engine == "camoufox" and (window.chromium_mute_audio or window.chromium_renderer_limit or window.chromium_js_heap_mb):
-        message = "窗口静音、渲染进程数量和 JavaScript 堆内存设置仅支持 Chromium 环境"
+    elif engine == "camoufox" and (window.chromium_mute_audio or window.chromium_renderer_limit or window.chromium_js_heap_mb
+                                   or window.chromium_hardware_concurrency or window.chromium_device_memory):
+        message = "窗口静音、渲染进程数量、JavaScript 堆内存和硬件参数设置仅支持 Chromium 环境"
     elif window.chromium_js_heap_mb and window.chromium_js_heap_mb not in config.CHROMIUM_JS_HEAP_LIMITS:
         message = "不支持的 JavaScript 堆内存设置"
     elif window.chromium_renderer_limit and window.chromium_renderer_limit not in config.CHROMIUM_RENDERER_LIMITS:
         message = "不支持的渲染进程数量"
+    elif window.chromium_hardware_concurrency and window.chromium_hardware_concurrency not in config.CHROMIUM_HARDWARE_CONCURRENCY_VALUES:
+        message = "不支持的逻辑处理器数量"
+    elif window.chromium_device_memory and window.chromium_device_memory not in config.CHROMIUM_DEVICE_MEMORY_VALUES:
+        message = "不支持的设备内存容量"
     elif engine == "camoufox" and (window.browser_language or window.browser_timezone or window.browser_window_size
                                    or window.chromium_screen or window.chromium_platform or window.chromium_webgl
                                    or window.chromium_canvas_noise or window.chromium_audio_noise):
         message = "这些语言、时区、启动窗口大小、屏幕、平台、显卡和噪声选项仅支持 Chromium 环境"
     elif window.browser_language and window.browser_language not in config.CHROMIUM_BROWSER_LANGUAGES:
         message = "不支持的 Chromium 语言"
-    elif window.browser_timezone and window.browser_timezone not in config.CHROMIUM_BROWSER_TIMEZONES:
+    elif window.browser_timezone and not config.valid_browser_timezone(window.browser_timezone):
         message = "不支持的 Chromium 时区"
     elif window.browser_window_size and window.browser_window_size not in config.CHROMIUM_BROWSER_WINDOW_SIZES:
         message = "不支持的 Chromium 启动窗口大小"
@@ -490,6 +499,9 @@ def _check_engine_options(engine: str, local_fonts: str, fingerprint: Any, windo
                 raise ValueError("当前内核缺少 moltskin-canvas-noise 补丁，请更新内核以使用像素噪声")
             if window.chromium_audio_noise and chromium_native.AUDIO_NOISE_CAPABILITY not in build.capabilities:
                 raise ValueError("当前内核缺少 moltskin-audio-noise 补丁，请更新内核以使用音频噪声")
+            if ((window.chromium_hardware_concurrency or window.chromium_device_memory)
+                    and chromium_native.HARDWARE_PROFILE_CAPABILITY not in build.capabilities):
+                raise ValueError("当前内核缺少 moltskin-hardware-profile 补丁，请更新内核以配置硬件参数")
         except ValueError as exc:
             message = str(exc)
         else:
@@ -787,6 +799,8 @@ def _profile_export(ids: list[str] | None = None):
             "chromium_js_heap_mb": row["chromium_js_heap_mb"],
             "chromium_mute_audio": bool(row["chromium_mute_audio"]),
             "chromium_renderer_limit": row["chromium_renderer_limit"],
+            "chromium_hardware_concurrency": row["chromium_hardware_concurrency"],
+            "chromium_device_memory": row["chromium_device_memory"],
             "browser_language": row["browser_language"],
             "browser_timezone": row["browser_timezone"],
             "browser_window_size": row["browser_window_size"],
@@ -810,7 +824,9 @@ def _profile_export(ids: list[str] | None = None):
         })
     # Older importers ignore unknown fields; require a reader that preserves the selected settings.
     version = 1
-    if any(item["chromium_audio_noise"] for item in items):
+    if any(item["chromium_hardware_concurrency"] or item["chromium_device_memory"] for item in items):
+        version = 16
+    elif any(item["chromium_audio_noise"] for item in items):
         version = 15
     elif any(item["chromium_canvas_noise"] for item in items):
         version = 14
@@ -922,14 +938,16 @@ def _store_import_profile(item: ImportedProfile) -> str:
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, fingerprint, "
                 "user_data_dir, headless, status, created_at, updated_at, engine, chromium_version, local_fonts, media_capture, "
                 "geolocation, startup_page, block_images, chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
+                "chromium_hardware_concurrency, chromium_device_memory, "
                 "browser_language, browser_timezone, browser_window_size, chromium_screen, chromium_platform, chromium_webgl, chromium_canvas_noise, chromium_audio_noise, chromium_user_agent, "
                 "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info, hardware_reporting) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (profile_id, name, group_id, proxy_id, json.dumps(item.tags, ensure_ascii=False), item.remark,
                  item.os, json.dumps(item.fingerprint, ensure_ascii=False), str(user_data_dir),
                  int(item.headless), ts, ts, item.engine, item.chromium_version, item.local_fonts, item.media_capture, item.geolocation,
                  item.startup_page, int(item.block_images), item.chromium_js_heap_mb, int(item.chromium_mute_audio),
-                 item.chromium_renderer_limit, item.browser_language, item.browser_timezone, item.browser_window_size,
+                 item.chromium_renderer_limit, item.chromium_hardware_concurrency, item.chromium_device_memory,
+                 item.browser_language, item.browser_timezone, item.browser_window_size,
                  item.chromium_screen, item.chromium_platform, item.chromium_webgl, int(item.chromium_canvas_noise), int(item.chromium_audio_noise), item.chromium_user_agent, item.preview_platform, item.preview_platform_version, item.preview_architecture,
                  item.canvas_readback, item.webgl_debug_info, item.hardware_reporting),
             )
@@ -1066,6 +1084,8 @@ def engine():
                          "preview_architectures": config.PREVIEW_ARCHITECTURES,
                          "chromium_js_heap_limits": config.CHROMIUM_JS_HEAP_LIMITS,
                          "chromium_renderer_limits": config.CHROMIUM_RENDERER_LIMITS,
+                         "chromium_hardware_concurrency_values": config.CHROMIUM_HARDWARE_CONCURRENCY_VALUES,
+                         "chromium_device_memory_values": config.CHROMIUM_DEVICE_MEMORY_VALUES,
                          "browser_languages": config.CHROMIUM_BROWSER_LANGUAGES,
                          "host_os": _host_os_label(), "host_arch": host_platform.host_arch(),
                          "browser_timezones": config.CHROMIUM_BROWSER_TIMEZONES,
@@ -1268,16 +1288,19 @@ def create_profile(payload: NewProfile):
                     "fingerprint, user_data_dir, headless, status, created_at, updated_at, "
                     "engine, chromium_version, local_fonts, media_capture, geolocation, startup_page, block_images, "
                     "chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
+                    "chromium_hardware_concurrency, chromium_device_memory, "
                     "browser_language, browser_timezone, browser_window_size, chromium_screen, chromium_platform, chromium_webgl, chromium_canvas_noise, chromium_audio_noise, chromium_user_agent, "
                     "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info, hardware_reporting) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (profile_id, payload.name.strip(), payload.group_id or None, payload.proxy_id or None,
                      json.dumps(payload.tags, ensure_ascii=False), payload.remark,
                      "native" if payload.engine == "chromium" else payload.os,
                      json.dumps(fingerprint, ensure_ascii=False), str(user_data_dir), int(payload.headless),
                      ts, ts, payload.engine, payload.chromium_version, payload.local_fonts, payload.media_capture, payload.geolocation,
                      payload.startup_page, int(payload.block_images), payload.chromium_js_heap_mb,
-                     int(payload.chromium_mute_audio), payload.chromium_renderer_limit, payload.browser_language,
+                     int(payload.chromium_mute_audio), payload.chromium_renderer_limit,
+                     payload.chromium_hardware_concurrency, payload.chromium_device_memory,
+                     payload.browser_language,
                      payload.browser_timezone, payload.browser_window_size, payload.chromium_screen, payload.chromium_platform, payload.chromium_webgl, int(payload.chromium_canvas_noise), int(payload.chromium_audio_noise), payload.chromium_user_agent,
                      payload.preview_platform, payload.preview_platform_version, payload.preview_architecture,
                      payload.canvas_readback, payload.webgl_debug_info, payload.hardware_reporting),
@@ -1313,6 +1336,7 @@ def update_profile(profile_id: str, payload: ProfileUpdate):
         raise HTTPException(422, detail={"code": "ENGINE_OPTIONS", "message": "Chromium 使用本机操作系统"})
     fields: dict[str, Any] = {}
     runtime_fields = ("chromium_version", "chromium_user_agent", "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
+                      "chromium_hardware_concurrency", "chromium_device_memory",
                       "local_fonts", "media_capture", "geolocation", "canvas_readback", "webgl_debug_info", "hardware_reporting",
                       "browser_language", "browser_timezone", "browser_window_size", "chromium_screen", "chromium_platform", "chromium_webgl",
                       "chromium_canvas_noise", "chromium_audio_noise",
@@ -1445,14 +1469,16 @@ def duplicate_profile(profile_id: str):
                 "INSERT INTO profiles(id, name, group_id, proxy_id, tags, remark, os, "
                 "fingerprint, user_data_dir, headless, status, created_at, updated_at, engine, chromium_version, local_fonts, media_capture, "
                 "geolocation, startup_page, block_images, chromium_js_heap_mb, chromium_mute_audio, chromium_renderer_limit, "
+                "chromium_hardware_concurrency, chromium_device_memory, "
                 "browser_language, browser_timezone, browser_window_size, chromium_screen, chromium_platform, chromium_webgl, chromium_canvas_noise, chromium_audio_noise, chromium_user_agent, "
                 "preview_platform, preview_platform_version, preview_architecture, canvas_readback, webgl_debug_info, hardware_reporting) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (new_profile_id, name, row["group_id"], row["proxy_id"], row["tags"], row["remark"], row["os"],
                  json.dumps(duplicated_fp, ensure_ascii=False), str(user_data_dir), row["headless"], ts, ts,
                  row["engine"], row["chromium_version"], row["local_fonts"], row["media_capture"], row["geolocation"],
                  row["startup_page"], row["block_images"], row["chromium_js_heap_mb"], row["chromium_mute_audio"],
-                 row["chromium_renderer_limit"], row["browser_language"], row["browser_timezone"], row["browser_window_size"],
+                 row["chromium_renderer_limit"], row["chromium_hardware_concurrency"], row["chromium_device_memory"],
+                 row["browser_language"], row["browser_timezone"], row["browser_window_size"],
                  row["chromium_screen"], row["chromium_platform"], row["chromium_webgl"], row["chromium_canvas_noise"], row["chromium_audio_noise"], row["chromium_user_agent"], row["preview_platform"], row["preview_platform_version"], row["preview_architecture"],
                  row["canvas_readback"], row["webgl_debug_info"], row["hardware_reporting"]),
             )
@@ -2076,31 +2102,49 @@ def _cookie_write_target(profile_id: str, action: str):
     # Launch reserves the profile in the same database before starting the browser.
     with db.session() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        row = camoufox_profile(profile_id)
-        if row["status"] == "running":
+        row = get_profile_row(profile_id)
+        if row["status"] == "running" or launcher._active_session(conn, profile_id):
             raise HTTPException(
                 409, detail={"code": "PROFILE_RUNNING", "message": f"请先关闭环境再{action} Cookie"}
             )
-        yield row["user_data_dir"]
+        directory = (
+            str(config.stored_profile_directory(row["id"], row["user_data_dir"]))
+            if row["engine"] == "chromium"
+            else row["user_data_dir"]
+        )
+        yield directory, row["engine"]
+
+
+def _read_profile_cookies(row: sqlite3.Row, domain: str = "") -> list[dict[str, Any]]:
+    if row["engine"] == "chromium" and row["status"] == "running":
+        try:
+            live = cdp.export_live_cookies(
+                config.stored_profile_directory(row["id"], row["user_data_dir"])
+            )
+            cookie_store.save_portable_chromium_cookies(row["user_data_dir"], live)
+            if domain:
+                needle = domain.lower().lstrip(".")
+                return [c for c in live if needle in c["domain"].lower()]
+            return live
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        return cookie_store.read_cookies(row["user_data_dir"], domain, engine=row["engine"])
+    except FileNotFoundError:
+        return []
 
 
 @app.get("/api/v1/profiles/{profile_id}/cookies")
 def list_cookies(profile_id: str, domain: str = ""):
-    row = camoufox_profile(profile_id)
-    try:
-        items = cookie_store.read_cookies(row["user_data_dir"], domain)
-    except FileNotFoundError:
-        items = []
+    row = get_profile_row(profile_id)
+    items = _read_profile_cookies(row, domain)
     return {"data": {"cookies": items, "total": len(items)}}
 
 
 @app.get("/api/v1/profiles/{profile_id}/cookies/export")
 def export_cookies(profile_id: str, format: str = "json"):
-    row = camoufox_profile(profile_id)
-    try:
-        items = cookie_store.read_cookies(row["user_data_dir"])
-    except FileNotFoundError:
-        items = []
+    row = get_profile_row(profile_id)
+    items = _read_profile_cookies(row)
     safe_name = re.sub(r"[^\w\-.]+", "_", row["name"])[:40] or profile_id
     if format == "netscape":
         try:
@@ -2124,7 +2168,7 @@ def export_cookies(profile_id: str, format: str = "json"):
 
 @app.put("/api/v1/profiles/{profile_id}/cookies")
 def import_cookies(profile_id: str, payload: CookiePayload):
-    with _cookie_write_target(profile_id, "导入") as directory:
+    with _cookie_write_target(profile_id, "导入") as (directory, engine):
         raw = payload.cookies if payload.cookies is not None else payload.text
         if raw is None:
             raise HTTPException(422, detail={"code": "EMPTY_PAYLOAD", "message": "没有 Cookie 内容"})
@@ -2132,27 +2176,27 @@ def import_cookies(profile_id: str, payload: CookiePayload):
         if not items:
             raise HTTPException(422, detail={"code": "NO_COOKIES", "message": "文件中没有 Cookie。如需清空，请使用清除操作"})
         mode = "replace" if payload.mode == "replace" else "merge"
-        result = cookie_store.write_cookies(directory, items, mode)
+        result = cookie_store.write_cookies(directory, items, mode, engine=engine)
     db.log("profile.cookies_import", profile_id, {"count": result["applied"], "mode": mode, "source": source})
     return {"data": {**result, "parsed": len(items), "source": source}}
 
 
 @app.post("/api/v1/profiles/{profile_id}/cookies/copy-from/{source_id}")
 def copy_cookies(profile_id: str, source_id: str, mode: str = "merge"):
-    with _cookie_write_target(profile_id, "导入") as directory:
-        source = camoufox_profile(source_id)
-        items = cookie_store.read_cookies(source["user_data_dir"])
+    with _cookie_write_target(profile_id, "导入") as (directory, target_engine):
+        source = get_profile_row(source_id)
+        items = cookie_store.read_cookies(source["user_data_dir"], engine=source["engine"])
         if not items:
             raise HTTPException(422, detail={"code": "NO_COOKIES", "message": "源环境没有 Cookie"})
-        result = cookie_store.write_cookies(directory, items, mode)
+        result = cookie_store.write_cookies(directory, items, mode, engine=target_engine)
     db.log("profile.cookies_copy", profile_id, {"from": source_id, "count": result["applied"]})
     return {"data": result}
 
 
 @app.delete("/api/v1/profiles/{profile_id}/cookies")
 def clear_cookies(profile_id: str):
-    with _cookie_write_target(profile_id, "清除") as directory:
-        result = cookie_store.write_cookies(directory, [], mode="replace")
+    with _cookie_write_target(profile_id, "清除") as (directory, engine):
+        result = cookie_store.write_cookies(directory, [], mode="replace", engine=engine)
     db.log("profile.cookies_clear", profile_id, {})
     return {"data": result}
 
@@ -2163,6 +2207,7 @@ def clear_cookies(profile_id: str):
 
 
 def _serialize_extension(row: sqlite3.Row) -> dict[str, Any]:
+    meta = extensions.metadata(row["id"], row["filename"])
     return {
         "id": row["id"],
         "name": row["name"],
@@ -2174,6 +2219,7 @@ def _serialize_extension(row: sqlite3.Row) -> dict[str, Any]:
         "created_at": row["created_at"],
         "icon": extensions.icon_data_url(row["id"]),
         "profiles": row["profiles"] if "profiles" in row.keys() else 0,
+        **meta,
     }
 
 
@@ -2242,7 +2288,7 @@ def delete_extension(ext_id: str):
 
 @app.get("/api/v1/profiles/{profile_id}/extensions")
 def profile_extensions(profile_id: str):
-    camoufox_profile(profile_id)
+    get_profile_row(profile_id)
     with db.session() as conn:
         ids = [
             row["ext_id"]
@@ -2255,13 +2301,18 @@ def profile_extensions(profile_id: str):
 
 @app.put("/api/v1/profiles/{profile_id}/extensions")
 def set_profile_extensions(profile_id: str, payload: dict[str, Any]):
-    row = camoufox_profile(profile_id)
+    row = get_profile_row(profile_id)
     if row["status"] == "running":
         raise HTTPException(
             409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改扩展"}
         )
     ids = [str(x) for x in (payload.get("ids") or [])]
     with db.session() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if launcher._active_session(conn, profile_id):
+            raise HTTPException(
+                409, detail={"code": "PROFILE_RUNNING", "message": "请先关闭环境再修改扩展"}
+            )
         valid = {
             item["id"]
             for item in conn.execute(
@@ -2449,17 +2500,19 @@ def run_schedule_now(schedule_id: str):
 
 @app.get("/api/v1/profiles/{profile_id}/state-size")
 def profile_state_size(profile_id: str):
-    row = camoufox_profile(profile_id)
-    return {"data": state_sync.size_of(row["user_data_dir"])}
+    row = get_profile_row(profile_id)
+    return {"data": state_sync.size_of(row["user_data_dir"], engine=row["engine"])}
 
 
 @app.post("/api/v1/profiles/{profile_id}/sync-from/{source_id}")
 def sync_profile_state(profile_id: str, source_id: str, parts: str = "cookies,storage"):
     """把源环境的 Cookie / localStorage 覆盖到目标环境（两个都要先关闭）。"""
-    target = camoufox_profile(profile_id)
-    source = camoufox_profile(source_id)
+    target = get_profile_row(profile_id)
+    source = get_profile_row(source_id)
     if profile_id == source_id:
         raise HTTPException(422, detail={"code": "SAME_PROFILE", "message": "不能从自己同步"})
+    if target["engine"] != source["engine"]:
+        raise HTTPException(422, detail={"code": "ENGINE_MISMATCH", "message": "只能在同一浏览器内核的环境之间同步存储状态"})
     for row, label in ((target, "目标"), (source, "源")):
         if row["status"] == "running":
             raise HTTPException(
@@ -2469,7 +2522,17 @@ def sync_profile_state(profile_id: str, source_id: str, parts: str = "cookies,st
     wanted = [part.strip() for part in (parts or "").split(",") if part.strip()]
     if not wanted:
         wanted = ["cookies"]
-    result = state_sync.sync(target["user_data_dir"], source["user_data_dir"], wanted)
+    target_dir = (
+        str(config.stored_profile_directory(target["id"], target["user_data_dir"]))
+        if target["engine"] == "chromium"
+        else target["user_data_dir"]
+    )
+    source_dir = (
+        str(config.stored_profile_directory(source["id"], source["user_data_dir"]))
+        if source["engine"] == "chromium"
+        else source["user_data_dir"]
+    )
+    result = state_sync.sync(target_dir, source_dir, wanted, engine=target["engine"])
     db.log("profile.sync", profile_id, {"from": source_id, **result})
     return {"data": result}
 
@@ -2529,3 +2592,184 @@ def restore_backup(file: UploadFile = File(...)):
     ensure_presets()
     db.log("backup.restore", None, {"profiles": result["profiles"]})
     return {"data": result}
+
+
+# ---------------------------------------------------------------------------
+# 页面级控制（运行中的 Chromium 会话）
+# ---------------------------------------------------------------------------
+
+
+def _running_chromium_dir(profile_id: str) -> Path:
+    launcher.reap_stale()
+    row = get_profile_row(profile_id)
+    if row["engine"] != "chromium":
+        raise HTTPException(
+            422, detail={"code": "ENGINE_UNSUPPORTED", "message": "页面级控制目前仅支持 Chromium 环境"}
+        )
+    with db.session() as conn:
+        session = launcher._active_session(conn, profile_id)
+    if session is None or session["state"] != "running":
+        raise HTTPException(
+            409, detail={"code": "NOT_RUNNING", "message": "该环境尚未启动，请先启动环境"}
+        )
+    try:
+        return config.stored_profile_directory(row["id"], row["user_data_dir"])
+    except (ValueError, OSError, RuntimeError) as exc:
+        raise HTTPException(
+            409, detail={"code": "INVALID_PROFILE_DIRECTORY", "message": "环境目录异常"}
+        ) from exc
+
+
+def _raise_cdp_error(exc: cdp.CDPError):
+    raise HTTPException(exc.status, detail={"code": exc.code, "message": exc.message}) from exc
+
+
+@app.get("/api/v1/profiles/{profile_id}/pages")
+def list_profile_pages(profile_id: str):
+    directory = _running_chromium_dir(profile_id)
+    try:
+        return {"data": {"pages": cdp.list_pages(directory)}}
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.post("/api/v1/profiles/{profile_id}/pages", status_code=201)
+def create_profile_page(profile_id: str, payload: dict[str, Any] | None = None):
+    directory = _running_chromium_dir(profile_id)
+    url = str((payload or {}).get("url") or "about:blank")
+    try:
+        return {"data": cdp.new_page(directory, url=url)}
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.delete("/api/v1/profiles/{profile_id}/pages/{target_id}")
+def close_profile_page(profile_id: str, target_id: str):
+    directory = _running_chromium_dir(profile_id)
+    try:
+        return {"data": cdp.close_page(directory, target_id)}
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.post("/api/v1/profiles/{profile_id}/pages/navigate")
+def navigate_profile_page(profile_id: str, payload: dict[str, Any]):
+    directory = _running_chromium_dir(profile_id)
+    try:
+        return {
+            "data": cdp.navigate(
+                directory,
+                str(payload.get("url") or ""),
+                target_id=str(payload.get("target_id") or ""),
+                wait_until=str(payload.get("wait_until") or "load"),
+                timeout=float(payload.get("timeout") or 30.0),
+            )
+        }
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.post("/api/v1/profiles/{profile_id}/pages/snapshot")
+def snapshot_profile_page(profile_id: str, payload: dict[str, Any] | None = None):
+    directory = _running_chromium_dir(profile_id)
+    body = payload or {}
+    try:
+        return {
+            "data": cdp.snapshot(
+                directory,
+                target_id=str(body.get("target_id") or ""),
+                max_elements=int(body.get("max_elements") or 120),
+                include_text=bool(body.get("include_text", True)),
+            )
+        }
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.post("/api/v1/profiles/{profile_id}/pages/click")
+def click_profile_page(profile_id: str, payload: dict[str, Any]):
+    directory = _running_chromium_dir(profile_id)
+    selector = payload.get("selector")
+    x = payload.get("x")
+    y = payload.get("y")
+    try:
+        return {
+            "data": cdp.click(
+                directory,
+                str(selector) if selector is not None else None,
+                x=float(x) if x is not None else None,
+                y=float(y) if y is not None else None,
+                target_id=str(payload.get("target_id") or ""),
+                button=str(payload.get("button") or "left"),
+                click_count=int(payload.get("click_count") or 1),
+            )
+        }
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.post("/api/v1/profiles/{profile_id}/pages/fill")
+def fill_profile_page(profile_id: str, payload: dict[str, Any]):
+    directory = _running_chromium_dir(profile_id)
+    try:
+        return {
+            "data": cdp.fill(
+                directory,
+                str(payload.get("selector") or ""),
+                str(payload.get("value") if payload.get("value") is not None else ""),
+                target_id=str(payload.get("target_id") or ""),
+                clear=bool(payload.get("clear", True)),
+                submit=bool(payload.get("submit", False)),
+            )
+        }
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.post("/api/v1/profiles/{profile_id}/pages/press")
+def press_profile_page(profile_id: str, payload: dict[str, Any]):
+    directory = _running_chromium_dir(profile_id)
+    try:
+        return {
+            "data": cdp.press_key(
+                directory,
+                str(payload.get("key") or ""),
+                target_id=str(payload.get("target_id") or ""),
+            )
+        }
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.post("/api/v1/profiles/{profile_id}/pages/evaluate")
+def evaluate_profile_page(profile_id: str, payload: dict[str, Any]):
+    directory = _running_chromium_dir(profile_id)
+    try:
+        return {
+            "data": cdp.evaluate(
+                directory,
+                str(payload.get("expression") or ""),
+                target_id=str(payload.get("target_id") or ""),
+                isolated=bool(payload.get("isolated", False)),
+                await_promise=bool(payload.get("await_promise", True)),
+            )
+        }
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)
+
+
+@app.post("/api/v1/profiles/{profile_id}/pages/screenshot")
+def screenshot_profile_page(profile_id: str, payload: dict[str, Any] | None = None):
+    directory = _running_chromium_dir(profile_id)
+    body = payload or {}
+    try:
+        return {
+            "data": cdp.screenshot(
+                directory,
+                target_id=str(body.get("target_id") or ""),
+                full_page=bool(body.get("full_page", False)),
+                image_format=str(body.get("format") or "png"),
+            )
+        }
+    except cdp.CDPError as exc:
+        _raise_cdp_error(exc)

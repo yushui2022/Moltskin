@@ -44,10 +44,10 @@ def _request(method: str, path: str, **kwargs: Any) -> Any:
 mcp = MCPServer(
     "moltskin",
     instructions=(
-        "Moltskin manages isolated browser profiles built on Camoufox. "
-        "Use these tools to list, create, launch and stop profiles, manage proxies, "
-        "run consistency checks and fingerprint self-tests. "
-        "A profile must be stopped before deleting it or running a self-test."
+        "Moltskin manages isolated anti-detect browser profiles built on patched Chromium and Camoufox. "
+        "Use these tools to create/launch/stop profiles, manage proxies and extensions, "
+        "and perform stealth page-level automation (navigate_page, snapshot_page, click_page, "
+        "fill_page, press_key, evaluate_page, screenshot_page) on running Chromium profiles."
     ),
 )
 
@@ -84,25 +84,25 @@ def get_profile(profile_id: str) -> dict[str, Any]:
 @mcp.tool()
 def create_profile(
     name: str,
+    engine: str = "chromium",
     os: str = "windows",
     proxy_id: str | None = None,
     tags: list[str] | None = None,
     remark: str = "",
     headless: bool = False,
 ) -> dict[str, Any]:
-    """Create an isolated profile. A stable fingerprint preset is generated automatically."""
-    return _request(
-        "POST",
-        "/profiles",
-        json={
-            "name": name,
-            "os": os,
-            "proxy_id": proxy_id,
-            "tags": tags or [],
-            "remark": remark,
-            "headless": headless,
-        },
-    )
+    """Create an isolated browser profile (engine: 'chromium' or 'camoufox')."""
+    body: dict[str, Any] = {
+        "name": name,
+        "engine": engine,
+        "proxy_id": proxy_id,
+        "tags": tags or [],
+        "remark": remark,
+        "headless": headless,
+    }
+    if engine == "camoufox":
+        body["os"] = os
+    return _request("POST", "/profiles", json=body)
 
 
 @mcp.tool()
@@ -291,8 +291,154 @@ def batch_profiles(
 
 @mcp.tool()
 def engine_info() -> dict[str, Any]:
-    """Camoufox / Playwright versions and installed browser builds."""
+    """Chromium / Camoufox / Playwright versions and installed browser builds."""
     return _request("GET", "/engine")
+
+
+@mcp.tool()
+def list_pages(profile_id: str) -> list[dict[str, Any]]:
+    """List open tabs in a running Chromium profile."""
+    return _request("GET", f"/profiles/{profile_id}/pages")["pages"]
+
+
+@mcp.tool()
+def new_page(profile_id: str, url: str = "about:blank") -> dict[str, Any]:
+    """Open a new tab in a running Chromium profile."""
+    return _request("POST", f"/profiles/{profile_id}/pages", json={"url": url})
+
+
+@mcp.tool()
+def close_page(profile_id: str, target_id: str) -> dict[str, Any]:
+    """Close a tab by target_id in a running Chromium profile."""
+    return _request("DELETE", f"/profiles/{profile_id}/pages/{target_id}")
+
+
+@mcp.tool()
+def navigate_page(
+    profile_id: str,
+    url: str,
+    target_id: str = "",
+    wait_until: str = "load",
+) -> dict[str, Any]:
+    """Navigate a tab in a running Chromium profile (wait_until: none|domcontentloaded|load)."""
+    return _request(
+        "POST",
+        f"/profiles/{profile_id}/pages/navigate",
+        json={"url": url, "target_id": target_id, "wait_until": wait_until},
+    )
+
+
+@mcp.tool()
+def snapshot_page(
+    profile_id: str,
+    target_id: str = "",
+    max_elements: int = 120,
+    include_text: bool = True,
+) -> dict[str, Any]:
+    """Inspect a running Chromium tab in an isolated world (returns visible text and interactive selectors)."""
+    return _request(
+        "POST",
+        f"/profiles/{profile_id}/pages/snapshot",
+        json={
+            "target_id": target_id,
+            "max_elements": max_elements,
+            "include_text": include_text,
+        },
+    )
+
+
+@mcp.tool()
+def click_page(
+    profile_id: str,
+    selector: str = "",
+    x: float | None = None,
+    y: float | None = None,
+    target_id: str = "",
+    button: str = "left",
+    click_count: int = 1,
+) -> dict[str, Any]:
+    """Click an element by CSS/text= selector or (x, y) coordinates using trusted input events."""
+    return _request(
+        "POST",
+        f"/profiles/{profile_id}/pages/click",
+        json={
+            "selector": selector or None,
+            "x": x,
+            "y": y,
+            "target_id": target_id,
+            "button": button,
+            "click_count": click_count,
+        },
+    )
+
+
+@mcp.tool()
+def fill_page(
+    profile_id: str,
+    selector: str,
+    value: str,
+    target_id: str = "",
+    clear: bool = True,
+    submit: bool = False,
+) -> dict[str, Any]:
+    """Focus and type text into an input/textarea/select in a running Chromium tab."""
+    return _request(
+        "POST",
+        f"/profiles/{profile_id}/pages/fill",
+        json={
+            "selector": selector,
+            "value": value,
+            "target_id": target_id,
+            "clear": clear,
+            "submit": submit,
+        },
+    )
+
+
+@mcp.tool()
+def press_key(profile_id: str, key: str, target_id: str = "") -> dict[str, Any]:
+    """Press a keyboard key (e.g. Enter, Tab, Escape, ArrowDown) in a running Chromium tab."""
+    return _request(
+        "POST",
+        f"/profiles/{profile_id}/pages/press",
+        json={"key": key, "target_id": target_id},
+    )
+
+
+@mcp.tool()
+def evaluate_page(
+    profile_id: str,
+    expression: str,
+    target_id: str = "",
+    isolated: bool = False,
+    await_promise: bool = True,
+) -> dict[str, Any]:
+    """Evaluate JavaScript in a running Chromium tab without enabling Runtime.enable."""
+    return _request(
+        "POST",
+        f"/profiles/{profile_id}/pages/evaluate",
+        json={
+            "expression": expression,
+            "target_id": target_id,
+            "isolated": isolated,
+            "await_promise": await_promise,
+        },
+    )
+
+
+@mcp.tool()
+def screenshot_page(
+    profile_id: str,
+    target_id: str = "",
+    full_page: bool = False,
+    format: str = "png",
+) -> dict[str, Any]:
+    """Capture a base64 PNG/JPEG screenshot of a running Chromium tab."""
+    return _request(
+        "POST",
+        f"/profiles/{profile_id}/pages/screenshot",
+        json={"target_id": target_id, "full_page": full_page, "format": format},
+    )
 
 
 if __name__ == "__main__":

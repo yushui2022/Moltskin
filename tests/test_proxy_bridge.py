@@ -1,9 +1,9 @@
-"""The loopback bridge performs upstream proxy authentication."""
+"""The loopback bridge performs upstream proxy authentication over asyncio."""
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import socket
 import threading
-import time
 
 from moltskin.services.core.proxy_bridge import ProxyBridge
 
@@ -12,10 +12,11 @@ class FakeProxy:
     def __init__(self, *, response=b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"):
         self.response = response
         self.requests = []
+        self.lock = threading.Lock()
         self.sock = socket.socket()
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("127.0.0.1", 0))
-        self.sock.listen(4)
+        self.sock.listen(128)
         self.port = self.sock.getsockname()[1]
         self.thread = threading.Thread(target=self._serve, daemon=True)
         self.thread.start()
@@ -33,18 +34,43 @@ class FakeProxy:
         while b"\r\n\r\n" not in data:
             chunk = client.recv(4096)
             if not chunk:
+                client.close()
                 return
             data += chunk
-        self.requests.append(data)
-        line = data.split(b"\r\n", 1)[0]
+        head, _, rest = data.partition(b"\r\n\r\n")
+        line = head.split(b"\r\n", 1)[0]
         if line.startswith(b"CONNECT"):
+            with self.lock:
+                self.requests.append(head + b"\r\n\r\n")
             client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            if rest:
+                client.sendall(b"echo:" + rest)
             while True:
-                chunk = client.recv(4096)
+                chunk = client.recv(65536)
                 if not chunk:
                     break
                 client.sendall(b"echo:" + chunk)
         else:
+            headers = {}
+            for raw_line in head.split(b"\r\n")[1:]:
+                k, _, v = raw_line.partition(b":")
+                headers[k.decode("latin-1").strip().lower()] = v.decode("latin-1").strip()
+            body = bytearray(rest)
+            if "content-length" in headers:
+                total = int(headers["content-length"])
+                while len(body) < total:
+                    chunk = client.recv(65536)
+                    if not chunk:
+                        break
+                    body.extend(chunk)
+            elif "chunked" in headers.get("transfer-encoding", "").lower():
+                while not body.endswith(b"0\r\n\r\n"):
+                    chunk = client.recv(65536)
+                    if not chunk:
+                        break
+                    body.extend(chunk)
+            with self.lock:
+                self.requests.append(head + b"\r\n\r\n" + bytes(body))
             client.sendall(self.response)
         client.close()
 
@@ -186,3 +212,78 @@ def test_socks5_authentication_and_target_forwarding():
         bridge.close()
     assert seen == {"username": "user", "password": "secret",
                     "host": "example.test", "target_port": 8443}
+
+
+def test_high_concurrency_parallel_tunnels_use_single_event_loop_thread():
+    upstream = FakeProxy()
+    bridge = ProxyBridge({
+        "protocol": "http", "host": "127.0.0.1", "port": upstream.port,
+        "username": "u", "password": "p",
+    }).start()
+
+    def worker(idx: int) -> bytes:
+        with socket.create_connection(("127.0.0.1", bridge.port), timeout=10) as client:
+            # Send pipelined payload right after CONNECT headers to verify zero byte loss.
+            payload = f"hello-{idx}".encode("ascii")
+            client.sendall(
+                b"CONNECT stream.test:443 HTTP/1.1\r\nHost: stream.test:443\r\n\r\n" + payload
+            )
+            received = b""
+            expected_suffix = b"echo:" + payload
+            while expected_suffix not in received:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                received += chunk
+            return received
+
+    try:
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            results = list(pool.map(worker, range(64)))
+        bridge_threads = [t for t in threading.enumerate() if t.name == "moltskin-proxy-bridge"]
+        assert len(bridge_threads) == 1
+    finally:
+        bridge.close()
+        upstream.close()
+
+    assert len(results) == 64
+    for idx, res in enumerate(results):
+        assert res.startswith(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+        assert res.endswith(f"echo:hello-{idx}".encode("ascii"))
+
+
+def test_streaming_chunked_and_large_body_http_forwarding():
+    large_resp = b"X" * (256 * 1024)
+    upstream = FakeProxy(
+        response=(
+            f"HTTP/1.1 200 OK\r\nContent-Length: {len(large_resp)}\r\n\r\n".encode("latin-1")
+            + large_resp
+        )
+    )
+    bridge = ProxyBridge({
+        "protocol": "http", "host": "127.0.0.1", "port": upstream.port,
+        "username": "user", "password": "secret",
+    }).start()
+    try:
+        with socket.create_connection(("127.0.0.1", bridge.port), timeout=10) as client:
+            client.sendall(
+                b"POST http://upload.test/chunked HTTP/1.1\r\n"
+                b"Host: upload.test\r\n"
+                b"Transfer-Encoding: chunked\r\n\r\n"
+                b"5\r\nhello\r\n6\r\n-world\r\n0\r\n\r\n"
+            )
+            data = bytearray()
+            while True:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                data.extend(chunk)
+    finally:
+        bridge.close()
+        upstream.close()
+
+    _, _, body = bytes(data).partition(b"\r\n\r\n")
+    assert len(body) == len(large_resp)
+    assert body == large_resp
+    forwarded = upstream.requests[0]
+    assert b"5\r\nhello\r\n6\r\n-world\r\n0\r\n\r\n" in forwarded

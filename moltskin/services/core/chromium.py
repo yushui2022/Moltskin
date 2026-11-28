@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import hashlib
 import os
 import re
@@ -48,7 +49,8 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    chromium_webgl: str = "", canvas_noise_seed: int = 0,
                    audio_noise_seed: int = 0,
                    hardware_concurrency: int = 0, device_memory: int = 0,
-                   hardware_seed: int = 0) -> tuple[list[str], str]:
+                   hardware_seed: int = 0,
+                   extension_dirs: Iterable[str | Path] = ()) -> tuple[list[str], str]:
     if not host_platform.supports_chromium:
         raise ValueError(host_platform.unsupported_chromium_message)
     if local_fonts not in ("standard", "restricted"):
@@ -193,6 +195,19 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append(f"--{CANVAS_NOISE_CAPABILITY}={canvas_noise_seed}")
     if audio_noise_seed:
         args.append(f"--{AUDIO_NOISE_CAPABILITY}={audio_noise_seed}")
+    resolved_extensions: list[str] = []
+    for ext_dir in extension_dirs:
+        ext_path = Path(ext_dir).resolve()
+        if not ext_path.is_dir() or not (ext_path / "manifest.json").is_file():
+            raise ValueError("扩展目录不存在或缺少 manifest.json")
+        ext_str = str(ext_path)
+        if any(ch in ext_str for ch in (",", "\r", "\n", "\x00")):
+            raise ValueError("扩展目录路径包含 Chromium 不支持的分隔字符")
+        resolved_extensions.append(ext_str)
+    if resolved_extensions:
+        args.append("--load-extension=" + ",".join(resolved_extensions))
+    # Bind a private loopback DevTools listener writing DevToolsActivePort inside profile_dir (0700).
+    args.append("--remote-debugging-port=0")
     if headless:
         args.append("--headless")
     if workbench_button_url:
@@ -290,7 +305,7 @@ def check_profile_version(profile_dir: Path, version: str, last_launched: str | 
 def launch_environment(browser_timezone: str) -> dict[str, str] | None:
     if not browser_timezone:
         return None
-    if browser_timezone not in config.CHROMIUM_BROWSER_TIMEZONES:
+    if not config.valid_browser_timezone(browser_timezone):
         raise ValueError("未知的浏览器时区")
     # Each window owns a Chromium process tree. The manager and other windows retain their TZ.
     return host_platform.launch_environment(browser_timezone)

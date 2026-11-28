@@ -50,8 +50,8 @@ moltskin/services/core/main.py       FastAPI、环境 CRUD、导入导出、API
   - 屏幕预设、平台预设、WebGL 显卡预设
   - 字体、媒体、定位、Canvas、WebGL 调试信息
   - Canvas/Audio 噪声
-  - 硬件报告上限、渲染进程、JS 堆
-- 导入导出格式当前为 **15**。
+  - 硬件并发数/设备内存、硬件报告上限、渲染进程、JS 堆
+- 导入导出格式当前为 **16**。
 - 修改环境字段必须同步检查：
   1. `main.py` 模型
   2. `db.py` 新库 schema 和迁移
@@ -113,8 +113,13 @@ moltskin-workbench-button
 | `0024-canvas-noise-hardening` | 纯色探针、putImageData 与跨 API 像素一致 |
 | `0025-audio-noise-hardening` | 静音/直流保护与 Analyser Float/Byte 一致 |
 | `0026-web-font-filter` | 保留远程 Web Font，只过滤本地系统字体 |
+| `0027-chrome-brand-and-gpu-profile` | Chrome 品牌/Client Hints、WebGPU、WebGL2 画像 |
+| `0028-hardware-and-anticorrelation` | 可配置硬件并发/内存与 Quota/Battery/Audio/MediaDevices 防关联 |
+| `0029-webgl2-d3d11-and-speech-fix` | 补齐 D3D11 WebGL2 参数/扩展白名单并修复同系统语音串味 |
 | `0027-chrome-brand-and-gpu-profile` | Chrome 品牌、WebGPU 与 WebGL2 画像 |
 | `0028-hardware-and-anticorrelation` | 硬件参数、配额、电池、音频与设备防关联 |
+| `0029-webgl2-d3d11-and-speech-fix` | Windows D3D11 WebGL2 参数/扩展对齐与本机语音修复 |
+| `0030-cdp-stealth` | CDP 反检测隐身、自动化提示条屏蔽与 D3D11 HLSL 调试着色器 |
 
 ### 2.3 平台差异边界
 

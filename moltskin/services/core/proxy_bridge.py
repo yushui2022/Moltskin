@@ -3,14 +3,15 @@
 Chromium cannot take proxy credentials on its command line without exposing
 them. Each profile gets a private listener on 127.0.0.1; Chromium points at
 that listener, and this process performs HTTP CONNECT or SOCKS5 authentication
-upstream. A failed upstream connection is returned to the browser as a proxy
-error, never as a direct connection.
+upstream over an asyncio streaming event loop. A failed upstream connection is
+returned to the browser as a 502 proxy error, never as a direct connection.
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
-import select
+from concurrent.futures import Future
 import socket
 import ssl
 import struct
@@ -19,7 +20,9 @@ from urllib.parse import urlsplit
 
 BUFFER_SIZE = 64 * 1024
 HEADER_LIMIT = 64 * 1024
-CONNECT_TIMEOUT = 20
+CONNECT_TIMEOUT = 20.0
+HEADER_TIMEOUT = 30.0
+IDLE_TIMEOUT = 300.0
 
 
 class ProxyBridgeError(RuntimeError):
@@ -33,143 +36,13 @@ def _basic_auth(proxy: dict) -> str:
     return f"Proxy-Authorization: Basic {token}\r\n"
 
 
-def _read_headers(sock: socket.socket) -> tuple[bytes, str, dict[str, str]]:
-    data = b""
-    while b"\r\n\r\n" not in data:
-        chunk = sock.recv(BUFFER_SIZE)
-        if not chunk:
-            raise ProxyBridgeError("上游代理提前关闭连接")
-        data += chunk
-        if len(data) > HEADER_LIMIT:
-            raise ProxyBridgeError("代理响应头过大")
-    head, _, rest = data.partition(b"\r\n\r\n")
-    lines = head.split(b"\r\n")
-    status_parts = lines[0].decode("latin-1").split()
-    status = status_parts[1] if len(status_parts) > 1 else ""
-    headers: dict[str, str] = {}
-    for line in lines[1:]:
-        key, _, value = line.partition(b":")
-        headers[key.decode("latin-1").strip().lower()] = value.decode("latin-1").strip()
-    return rest, status, headers
-
-
-def _read_chunked(sock: socket.socket, initial: bytes) -> bytes:
-    data = bytearray(initial)
-    body = bytearray()
-    while True:
-        while b"\r\n" not in data:
-            chunk = sock.recv(BUFFER_SIZE)
-            if not chunk:
-                raise ProxyBridgeError("请求体不完整")
-            data.extend(chunk)
-        line, _, data = bytes(data).partition(b"\r\n")
+def _set_nodelay(writer: asyncio.StreamWriter) -> None:
+    sock = writer.get_extra_info("socket")
+    if sock is not None:
         try:
-            size = int(line.split(b";", 1)[0], 16)
-        except ValueError as exc:
-            raise ProxyBridgeError("请求体分块格式无效") from exc
-        if size == 0:
-            return bytes(body)
-        while len(data) < size + 2:
-            chunk = sock.recv(BUFFER_SIZE)
-            if not chunk:
-                raise ProxyBridgeError("请求体不完整")
-            data += chunk
-        body.extend(data[:size])
-        data = bytearray(data[size + 2:])
-
-
-def _read_request_body(client: socket.socket, headers: dict[str, str], initial: bytes) -> bytes:
-    length = headers.get("content-length")
-    if length:
-        try:
-            remaining = int(length)
-        except ValueError as exc:
-            raise ProxyBridgeError("请求体长度无效") from exc
-        body = bytearray(initial)
-        while len(body) < remaining:
-            chunk = client.recv(BUFFER_SIZE)
-            if not chunk:
-                break
-            body.extend(chunk)
-        return bytes(body[:remaining])
-    if headers.get("transfer-encoding", "").lower() == "chunked":
-        return _read_chunked(client, initial)
-    return b""
-
-
-def _connect_upstream(proxy: dict) -> socket.socket:
-    host = proxy["host"].strip("[]")
-    port = int(proxy["port"])
-    sock = socket.create_connection((host, port), timeout=CONNECT_TIMEOUT)
-    if proxy["protocol"] == "https":
-        context = ssl.create_default_context()
-        sock = context.wrap_socket(sock, server_hostname=host)
-    return sock
-
-
-def _socks5_connect(proxy: dict, host: str, port: int) -> socket.socket:
-    sock = socket.create_connection((proxy["host"].strip("[]"), int(proxy["port"])),
-                                    timeout=CONNECT_TIMEOUT)
-    username = proxy.get("username") or ""
-    password = proxy.get("password") or ""
-    methods = b"\x00\x02" if username else b"\x00"
-    sock.sendall(b"\x05" + bytes([len(methods)]) + methods)
-    reply = sock.recv(2)
-    if len(reply) != 2 or reply[0] != 5:
-        raise ProxyBridgeError("SOCKS5 握手失败")
-    if reply[1] == 2:
-        if len(username.encode()) > 255 or len(password.encode()) > 255:
-            raise ProxyBridgeError("SOCKS5 凭据过长")
-        sock.sendall(b"\x01" + bytes([len(username)]) + username.encode() +
-                     bytes([len(password)]) + password.encode())
-        auth_reply = sock.recv(2)
-        if len(auth_reply) != 2 or auth_reply[1] != 0:
-            raise ProxyBridgeError("SOCKS5 认证失败")
-    elif reply[1] != 0:
-        raise ProxyBridgeError("SOCKS5 代理不支持所选认证方式")
-
-    try:
-        ip = socket.inet_pton(socket.AF_INET, host)
-        address = b"\x01" + ip
-    except OSError:
-        try:
-            ip = socket.inet_pton(socket.AF_INET6, host)
-            address = b"\x04" + ip
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         except OSError:
-            encoded = host.encode("idna")
-            if len(encoded) > 255:
-                raise ProxyBridgeError("SOCKS5 主机名过长")
-            address = b"\x03" + bytes([len(encoded)]) + encoded
-    sock.sendall(b"\x05\x01\x00" + address + struct.pack("!H", port))
-    head = sock.recv(4)
-    if len(head) != 4 or head[0] != 5 or head[1] != 0:
-        raise ProxyBridgeError("SOCKS5 连接目标失败")
-    if head[3] == 1:
-        sock.recv(4)
-    elif head[3] == 4:
-        sock.recv(16)
-    elif head[3] == 3:
-        length = sock.recv(1)
-        if length:
-            sock.recv(length[0])
-    sock.recv(2)
-    return sock
-
-
-def _upstream_tunnel(proxy: dict, host: str, port: int) -> socket.socket:
-    if proxy["protocol"] == "socks5":
-        return _socks5_connect(proxy, host, port)
-    sock = _connect_upstream(proxy)
-    request = (f"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n"
-               f"Proxy-Connection: keep-alive\r\n")
-    if proxy.get("username") or proxy.get("password"):
-        request += _basic_auth(proxy)
-    sock.sendall((request + "\r\n").encode("latin-1"))
-    _, status, _ = _read_headers(sock)
-    if status != "200":
-        sock.close()
-        raise ProxyBridgeError(f"上游代理拒绝 CONNECT（{status or '无响应'}）")
-    return sock
+            pass
 
 
 def _split_host_port(target: str, default_port: int) -> tuple[str, int]:
@@ -186,92 +59,367 @@ def _split_host_port(target: str, default_port: int) -> tuple[str, int]:
     return target, default_port
 
 
-def _relay(client: socket.socket, upstream: socket.socket) -> None:
-    sockets = [client, upstream]
+async def _close_writer(writer: asyncio.StreamWriter | None) -> None:
+    if writer is None:
+        return
+    try:
+        writer.close()
+        await asyncio.wait_for(writer.wait_closed(), timeout=1.0)
+    except (OSError, asyncio.TimeoutError, ssl.SSLError):
+        pass
+
+
+async def _read_http_head(reader: asyncio.StreamReader, timeout: float) -> tuple[str, dict[str, str]]:
+    try:
+        raw = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=timeout)
+    except asyncio.LimitOverrunError as exc:
+        raise ProxyBridgeError("HTTP 头部超过大小限制") from exc
+    except asyncio.IncompleteReadError as exc:
+        raise ProxyBridgeError("连接在完整 HTTP 头部到达前关闭") from exc
+    except asyncio.TimeoutError as exc:
+        raise ProxyBridgeError("读取 HTTP 头部超时") from exc
+
+    if len(raw) > HEADER_LIMIT:
+        raise ProxyBridgeError("HTTP 头部超过大小限制")
+
+    head = raw[:-4]
+    lines = head.split(b"\r\n")
+    first_line = lines[0].decode("latin-1")
+    headers: dict[str, str] = {}
+    for line in lines[1:]:
+        if not line:
+            continue
+        key, sep, value = line.partition(b":")
+        if not sep:
+            continue
+        headers[key.decode("latin-1").strip().lower()] = value.decode("latin-1").strip()
+    return first_line, headers
+
+
+async def _connect_upstream(proxy: dict) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    host = proxy["host"].strip("[]")
+    port = int(proxy["port"])
+    ssl_ctx = ssl.create_default_context() if proxy["protocol"] == "https" else None
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(
+                host,
+                port,
+                ssl=ssl_ctx,
+                server_hostname=host if ssl_ctx else None,
+                limit=HEADER_LIMIT,
+            ),
+            timeout=CONNECT_TIMEOUT,
+        )
+    except (OSError, asyncio.TimeoutError, ssl.SSLError) as exc:
+        raise ProxyBridgeError(f"连接上游代理失败：{exc}") from exc
+    _set_nodelay(writer)
+    return reader, writer
+
+
+async def _socks5_connect(
+    proxy: dict, host: str, port: int
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    upstream_host = proxy["host"].strip("[]")
+    upstream_port = int(proxy["port"])
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(upstream_host, upstream_port, limit=HEADER_LIMIT),
+            timeout=CONNECT_TIMEOUT,
+        )
+    except (OSError, asyncio.TimeoutError) as exc:
+        raise ProxyBridgeError(f"连接 SOCKS5 代理失败：{exc}") from exc
+
+    _set_nodelay(writer)
+    try:
+        async with asyncio.timeout(CONNECT_TIMEOUT):
+            username = proxy.get("username") or ""
+            password = proxy.get("password") or ""
+            user_bytes = username.encode("utf-8")
+            pass_bytes = password.encode("utf-8")
+            methods = b"\x00\x02" if (username or password) else b"\x00"
+            writer.write(b"\x05" + bytes([len(methods)]) + methods)
+            await writer.drain()
+
+            reply = await reader.readexactly(2)
+            if reply[0] != 5:
+                raise ProxyBridgeError("SOCKS5 握手失败")
+            if reply[1] == 2:
+                if len(user_bytes) > 255 or len(pass_bytes) > 255:
+                    raise ProxyBridgeError("SOCKS5 凭据过长")
+                writer.write(
+                    b"\x01" + bytes([len(user_bytes)]) + user_bytes
+                    + bytes([len(pass_bytes)]) + pass_bytes
+                )
+                await writer.drain()
+                auth_reply = await reader.readexactly(2)
+                if auth_reply[1] != 0:
+                    raise ProxyBridgeError("SOCKS5 认证失败")
+            elif reply[1] != 0:
+                raise ProxyBridgeError("SOCKS5 代理不支持所选认证方式")
+
+            clean_host = host.strip("[]")
+            try:
+                address = b"\x01" + socket.inet_pton(socket.AF_INET, clean_host)
+            except OSError:
+                try:
+                    address = b"\x04" + socket.inet_pton(socket.AF_INET6, clean_host)
+                except OSError:
+                    encoded = clean_host.encode("idna")
+                    if len(encoded) > 255:
+                        raise ProxyBridgeError("SOCKS5 主机名过长")
+                    address = b"\x03" + bytes([len(encoded)]) + encoded
+
+            writer.write(b"\x05\x01\x00" + address + struct.pack("!H", port))
+            await writer.drain()
+
+            head = await reader.readexactly(4)
+            if head[0] != 5 or head[1] != 0:
+                raise ProxyBridgeError("SOCKS5 连接目标失败")
+            if head[3] == 1:
+                await reader.readexactly(4)
+            elif head[3] == 4:
+                await reader.readexactly(16)
+            elif head[3] == 3:
+                length = (await reader.readexactly(1))[0]
+                if length:
+                    await reader.readexactly(length)
+            else:
+                raise ProxyBridgeError("SOCKS5 地址类型未知")
+            await reader.readexactly(2)
+    except (asyncio.IncompleteReadError, asyncio.TimeoutError, OSError, UnicodeError) as exc:
+        await _close_writer(writer)
+        raise ProxyBridgeError(f"SOCKS5 隧道建立失败：{exc}") from exc
+    except BaseException:
+        await _close_writer(writer)
+        raise
+    return reader, writer
+
+
+async def _upstream_tunnel(
+    proxy: dict, host: str, port: int
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    if proxy["protocol"] == "socks5":
+        return await _socks5_connect(proxy, host, port)
+
+    reader, writer = await _connect_upstream(proxy)
+    try:
+        authority = f"[{host}]:{port}" if ":" in host and not host.startswith("[") else f"{host}:{port}"
+        request = (
+            f"CONNECT {authority} HTTP/1.1\r\n"
+            f"Host: {authority}\r\n"
+            f"Proxy-Connection: keep-alive\r\n"
+        )
+        if proxy.get("username") or proxy.get("password"):
+            request += _basic_auth(proxy)
+        writer.write((request + "\r\n").encode("latin-1"))
+        await asyncio.wait_for(writer.drain(), timeout=CONNECT_TIMEOUT)
+
+        status_line, _ = await _read_http_head(reader, CONNECT_TIMEOUT)
+        parts = status_line.split()
+        status = parts[1] if len(parts) > 1 else ""
+        if status != "200":
+            raise ProxyBridgeError(f"上游代理拒绝 CONNECT（{status or '无响应'}）")
+    except BaseException:
+        await _close_writer(writer)
+        raise
+    return reader, writer
+
+
+async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     try:
         while True:
-            readable, _, _ = select.select(sockets, [], [], 60)
-            if not readable:
-                continue
-            for source in readable:
-                target = upstream if source is client else client
-                data = source.recv(BUFFER_SIZE)
-                if not data:
-                    return
-                target.sendall(data)
+            chunk = await asyncio.wait_for(reader.read(BUFFER_SIZE), timeout=IDLE_TIMEOUT)
+            if not chunk:
+                if writer.can_write_eof():
+                    try:
+                        writer.write_eof()
+                    except OSError:
+                        pass
+                return
+            writer.write(chunk)
+            await writer.drain()
+    except (OSError, asyncio.TimeoutError, ssl.SSLError):
+        return
+
+
+async def _relay_bidirectional(
+    client_reader: asyncio.StreamReader,
+    client_writer: asyncio.StreamWriter,
+    upstream_reader: asyncio.StreamReader,
+    upstream_writer: asyncio.StreamWriter,
+) -> None:
+    c2u = asyncio.create_task(_pipe(client_reader, upstream_writer))
+    u2c = asyncio.create_task(_pipe(upstream_reader, client_writer))
+    try:
+        await asyncio.gather(c2u, u2c)
     finally:
+        for task in (c2u, u2c):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(c2u, u2c, return_exceptions=True)
+
+
+async def _stream_fixed_body(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, length: int
+) -> None:
+    remaining = length
+    while remaining > 0:
+        chunk = await asyncio.wait_for(
+            reader.read(min(BUFFER_SIZE, remaining)),
+            timeout=IDLE_TIMEOUT,
+        )
+        if not chunk:
+            raise ProxyBridgeError("请求体提前结束")
+        writer.write(chunk)
+        await writer.drain()
+        remaining -= len(chunk)
+
+
+async def _stream_chunked_body(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+) -> None:
+    while True:
         try:
-            upstream.close()
-        except OSError:
-            pass
+            line = await asyncio.wait_for(reader.readuntil(b"\r\n"), timeout=IDLE_TIMEOUT)
+        except (asyncio.IncompleteReadError, asyncio.LimitOverrunError) as exc:
+            raise ProxyBridgeError("分块请求体不完整") from exc
+        try:
+            size = int(line[:-2].split(b";", 1)[0].strip(), 16)
+        except ValueError as exc:
+            raise ProxyBridgeError("请求体分块格式无效") from exc
+        writer.write(line)
+        if size == 0:
+            # Forward trailing headers until CRLF.
+            while True:
+                trailer = await asyncio.wait_for(reader.readuntil(b"\r\n"), timeout=IDLE_TIMEOUT)
+                writer.write(trailer)
+                if trailer == b"\r\n":
+                    await writer.drain()
+                    return
+        remaining = size + 2
+        while remaining > 0:
+            chunk = await asyncio.wait_for(reader.read(min(BUFFER_SIZE, remaining)), timeout=IDLE_TIMEOUT)
+            if not chunk:
+                raise ProxyBridgeError("分块请求体提前关闭")
+            writer.write(chunk)
+            await writer.drain()
+            remaining -= len(chunk)
 
 
 class ProxyBridge:
     def __init__(self, proxy: dict):
         self.proxy = dict(proxy)
-        self._server: socket.socket | None = None
-        self._thread: threading.Thread | None = None
-        self._closed = threading.Event()
         self.port = 0
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._server: asyncio.AbstractServer | None = None
+        self._thread: threading.Thread | None = None
+        self._tasks: set[asyncio.Task[None]] = set()
+        self._lock = threading.Lock()
+        self._closed = False
 
     @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
 
     def start(self) -> "ProxyBridge":
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind(("127.0.0.1", 0))
-        server.listen(64)
-        server.settimeout(1.0)
-        self._server = server
-        self.port = server.getsockname()[1]
-        self._thread = threading.Thread(target=self._serve, name="moltskin-proxy-bridge",
-                                        daemon=True)
+        ready: Future[int] = Future()
+        loop = asyncio.new_event_loop()
+        self._loop = loop
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            args=(loop, ready),
+            name="moltskin-proxy-bridge",
+            daemon=True,
+        )
         self._thread.start()
+        self.port = ready.result(timeout=5.0)
         return self
 
-    def _serve(self) -> None:
-        assert self._server is not None
-        while not self._closed.is_set():
-            try:
-                client, _ = self._server.accept()
-            except socket.timeout:
-                continue
-            except OSError:
-                return
-            threading.Thread(target=self._handle, args=(client,), daemon=True).start()
-
-    def _handle(self, client: socket.socket) -> None:
-        upstream = None
+    def _run_loop(self, loop: asyncio.AbstractEventLoop, ready: Future[int]) -> None:
+        asyncio.set_event_loop(loop)
         try:
-            client.settimeout(30)
-            data = b""
-            while b"\r\n\r\n" not in data:
-                chunk = client.recv(BUFFER_SIZE)
-                if not chunk:
-                    return
-                data += chunk
-                if len(data) > HEADER_LIMIT:
-                    return
-            head, _, rest = data.partition(b"\r\n\r\n")
-            lines = head.split(b"\r\n")
-            request_line = lines[0].decode("latin-1").split()
-            if len(request_line) < 3:
+            server = loop.run_until_complete(
+                asyncio.start_server(
+                    self._on_client,
+                    host="127.0.0.1",
+                    port=0,
+                    backlog=512,
+                    reuse_address=True,
+                    limit=HEADER_LIMIT,
+                )
+            )
+            self._server = server
+            sockets = server.sockets or ()
+            if not sockets:
+                raise ProxyBridgeError("本地代理桥未能绑定端口")
+            ready.set_result(sockets[0].getsockname()[1])
+        except BaseException as exc:
+            if not ready.done():
+                ready.set_exception(exc)
+            loop.close()
+            return
+
+        try:
+            loop.run_forever()
+        finally:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+            loop.close()
+
+    async def _shutdown(self) -> None:
+        if self._server is not None:
+            self._server.close()
+            if hasattr(self._server, "abort_clients"):
+                self._server.abort_clients()
+        pending = list(self._tasks)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        if self._server is not None:
+            try:
+                await asyncio.wait_for(self._server.wait_closed(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass
+        asyncio.get_running_loop().stop()
+
+    def _on_client(
+        self, client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter
+    ) -> None:
+        if self._closed:
+            client_writer.close()
+            return
+        task = asyncio.create_task(self._handle_client(client_reader, client_writer))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _handle_client(
+        self, client_reader: asyncio.StreamReader, client_writer: asyncio.StreamWriter
+    ) -> None:
+        _set_nodelay(client_writer)
+        upstream_writer: asyncio.StreamWriter | None = None
+        tunnel_established = False
+        try:
+            try:
+                request_line, headers = await _read_http_head(client_reader, HEADER_TIMEOUT)
+            except ProxyBridgeError:
                 return
-            method, target, version = request_line
-            headers = {}
-            for line in lines[1:]:
-                key, _, value = line.partition(b":")
-                headers[key.decode("latin-1").strip().lower()] = value.decode("latin-1").strip()
+            parts = request_line.split()
+            if len(parts) < 3:
+                return
+            method, target, version = parts[0], parts[1], parts[2]
 
             if method.upper() == "CONNECT":
                 host, port = _split_host_port(target, 443)
-                upstream = _upstream_tunnel(self.proxy, host, port)
-                client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                if rest:
-                    upstream.sendall(rest)
-                _relay(client, upstream)
+                if not host:
+                    raise ProxyBridgeError("CONNECT 缺少目标主机")
+                upstream_reader, upstream_writer = await _upstream_tunnel(self.proxy, host, port)
+                client_writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                await client_writer.drain()
+                tunnel_established = True
+                await _relay_bidirectional(
+                    client_reader, client_writer, upstream_reader, upstream_writer
+                )
                 return
 
             absolute = target.startswith("http://") or target.startswith("https://")
@@ -283,63 +431,87 @@ class ProxyBridge:
                 if parsed.query:
                     path += "?" + parsed.query
             else:
-                host = headers.get("host", "")
-                host, port = _split_host_port(host, 80)
-                path = target
+                host, port = _split_host_port(headers.get("host", ""), 80)
+                path = target or "/"
+
+            if not host:
+                raise ProxyBridgeError("HTTP 请求缺少目标主机")
 
             if self.proxy["protocol"] == "socks5":
-                upstream = _socks5_connect(self.proxy, host, port)
+                upstream_reader, upstream_writer = await _socks5_connect(self.proxy, host, port)
                 request_target = path
                 extra = ""
             else:
-                upstream = _connect_upstream(self.proxy)
+                upstream_reader, upstream_writer = await _connect_upstream(self.proxy)
                 request_target = target if absolute else f"http://{host}:{port}{path}"
-                extra = _basic_auth(self.proxy) if (
-                    self.proxy.get("username") or self.proxy.get("password")) else ""
+                extra = (
+                    _basic_auth(self.proxy)
+                    if (self.proxy.get("username") or self.proxy.get("password"))
+                    else ""
+                )
 
-            body = _read_request_body(client, headers, rest)
-            forward_headers = []
+            content_length: int | None = None
+            if "content-length" in headers:
+                try:
+                    content_length = int(headers["content-length"])
+                    if content_length < 0:
+                        raise ValueError
+                except ValueError as exc:
+                    raise ProxyBridgeError("请求体长度无效") from exc
+            is_chunked = "chunked" in headers.get("transfer-encoding", "").lower()
+
+            forward_headers: list[str] = []
             for key, value in headers.items():
-                if key in ("proxy-authorization", "proxy-connection", "connection",
-                           "content-length", "transfer-encoding"):
+                if key in ("proxy-authorization", "proxy-connection", "connection"):
                     continue
                 forward_headers.append(f"{key}: {value}\r\n")
-            if body:
-                forward_headers.append(f"Content-Length: {len(body)}\r\n")
             forward_headers.append("Connection: close\r\n")
-            request = (f"{method} {request_target} {version}\r\n" +
-                       "".join(forward_headers) + extra + "\r\n")
-            upstream.sendall(request.encode("latin-1") + body)
-            while True:
-                chunk = upstream.recv(BUFFER_SIZE)
-                if not chunk:
-                    break
-                client.sendall(chunk)
-        except (OSError, ProxyBridgeError, ValueError):
-            try:
-                client.sendall(b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n")
-            except OSError:
-                pass
-        finally:
-            try:
-                client.close()
-            except OSError:
-                pass
-            if upstream is not None:
+            outbound_head = (
+                f"{method} {request_target} {version}\r\n"
+                + "".join(forward_headers)
+                + extra
+                + "\r\n"
+            )
+            upstream_writer.write(outbound_head.encode("latin-1"))
+            await upstream_writer.drain()
+
+            if is_chunked:
+                await _stream_chunked_body(client_reader, upstream_writer)
+            elif content_length:
+                await _stream_fixed_body(client_reader, upstream_writer, content_length)
+
+            tunnel_established = True
+            await _pipe(upstream_reader, client_writer)
+        except (OSError, ProxyBridgeError, ValueError, asyncio.TimeoutError, ssl.SSLError):
+            if not tunnel_established:
                 try:
-                    upstream.close()
+                    client_writer.write(
+                        b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"
+                    )
+                    await client_writer.drain()
                 except OSError:
                     pass
+        except asyncio.CancelledError:
+            raise
+        finally:
+            await _close_writer(upstream_writer)
+            await _close_writer(client_writer)
 
     def close(self) -> None:
-        self._closed.set()
-        server = self._server
-        self._server = None
-        if server is not None:
-            try:
-                server.close()
-            except OSError:
-                pass
-        if self._thread is not None:
-            self._thread.join(timeout=2)
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            loop = self._loop
+            thread = self._thread
+            self._loop = None
             self._thread = None
+
+        if loop is not None and loop.is_running():
+            try:
+                fut = asyncio.run_coroutine_threadsafe(self._shutdown(), loop)
+                fut.result(timeout=2.0)
+            except Exception:  # noqa: BLE001
+                loop.call_soon_threadsafe(loop.stop)
+        if thread is not None:
+            thread.join(timeout=2.0)

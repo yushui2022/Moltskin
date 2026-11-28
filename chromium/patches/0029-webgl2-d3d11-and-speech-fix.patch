@@ -1,0 +1,176 @@
+diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.cc b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+index 841ddf500a..7f1a50b8a0 100644
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+@@ -89,8 +89,6 @@ std::optional<std::string> GetMoltskinSpeechLanguage() {
+   if (command_line->HasSwitch(switches::kMoltskinSpeechVoices)) {
+     language =
+         command_line->GetSwitchValueASCII(switches::kMoltskinSpeechVoices);
+-  } else if (command_line->HasSwitch(switches::kMoltskinLocale)) {
+-    language = command_line->GetSwitchValueASCII(switches::kMoltskinLocale);
+   }
+   if (language.empty()) {
+     return std::nullopt;
+diff --git a/third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h b/third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h
+deleted file mode 100644
+index f6729916b8..0000000000
+--- a/third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h
++++ /dev/null
+@@ -1,142 +0,0 @@
+-// Copyright 2026 The Chromium Authors
+-// Use of this source code is governed by a BSD-style license that can be
+-// found in the LICENSE file.
+-
+-#ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGL_MOLTSKIN_WEBGL_PARAMS_H_
+-#define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGL_MOLTSKIN_WEBGL_PARAMS_H_
+-
+-#include <array>
+-#include <optional>
+-
+-#include "base/command_line.h"
+-#include "third_party/angle/include/GLES2/gl2.h"
+-#include "third_party/angle/include/GLES2/gl2ext.h"
+-#include "third_party/angle/include/GLES3/gl3.h"
+-#include "third_party/blink/public/common/moltskin_switches.h"
+-#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+-
+-namespace blink {
+-
+-inline bool IsMoltskinWebglProfileEnabled() {
+-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+-      switches::kMoltskinWebglProfile);
+-}
+-
+-inline std::optional<int> GetMoltskinWebglIntParameter(GLenum pname) {
+-  if (!IsMoltskinWebglProfileEnabled()) {
+-    return std::nullopt;
+-  }
+-  switch (pname) {
+-    case GL_MAX_TEXTURE_SIZE:
+-      return 16384;
+-    case GL_MAX_CUBE_MAP_TEXTURE_SIZE:
+-      return 16384;
+-    case GL_MAX_RENDERBUFFER_SIZE:
+-      return 16384;
+-    case GL_MAX_VERTEX_ATTRIBS:
+-      return 16;
+-    case GL_MAX_VERTEX_UNIFORM_VECTORS:
+-      return 4096;
+-    case GL_MAX_VARYING_VECTORS:
+-      return 31;
+-    case GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS:
+-      return 32;
+-    case GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS:
+-      return 32;
+-    case GL_MAX_TEXTURE_IMAGE_UNITS:
+-      return 16;
+-    case GL_MAX_FRAGMENT_UNIFORM_VECTORS:
+-      return 4096;
+-    case GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT:
+-      return 16;
+-    // WebGL2 limits on Windows ANGLE/D3D11.
+-    case GL_MAX_3D_TEXTURE_SIZE:
+-      return 2048;
+-    case GL_MAX_ARRAY_TEXTURE_LAYERS:
+-      return 2048;
+-    case GL_MAX_COLOR_ATTACHMENTS:
+-      return 8;
+-    case GL_MAX_DRAW_BUFFERS:
+-      return 8;
+-    case GL_MAX_SAMPLES:
+-      return 4;
+-    case GL_MAX_UNIFORM_BUFFER_BINDINGS:
+-      return 72;
+-    case GL_MAX_VERTEX_UNIFORM_BLOCKS:
+-      return 12;
+-    case GL_MAX_FRAGMENT_UNIFORM_BLOCKS:
+-      return 12;
+-    case GL_MAX_COMBINED_UNIFORM_BLOCKS:
+-      return 36;
+-    case GL_MAX_VERTEX_UNIFORM_COMPONENTS:
+-      return 16384;
+-    case GL_MAX_FRAGMENT_UNIFORM_COMPONENTS:
+-      return 16384;
+-    case GL_MAX_VARYING_COMPONENTS:
+-      return 124;
+-    case GL_MAX_VERTEX_OUTPUT_COMPONENTS:
+-      return 124;
+-    case GL_MAX_FRAGMENT_INPUT_COMPONENTS:
+-      return 124;
+-    default:
+-      return std::nullopt;
+-  }
+-}
+-
+-inline std::optional<std::array<int, 2>> GetMoltskinWebglInt2Parameter(
+-    GLenum pname) {
+-  if (!IsMoltskinWebglProfileEnabled()) {
+-    return std::nullopt;
+-  }
+-  if (pname == GL_MAX_VIEWPORT_DIMS) {
+-    return std::array<int, 2>{32767, 32767};
+-  }
+-  return std::nullopt;
+-}
+-
+-inline std::optional<std::array<float, 2>> GetMoltskinWebglFloat2Parameter(
+-    GLenum pname) {
+-  if (!IsMoltskinWebglProfileEnabled()) {
+-    return std::nullopt;
+-  }
+-  if (pname == GL_ALIASED_LINE_WIDTH_RANGE) {
+-    return std::array<float, 2>{1.0f, 1.0f};
+-  }
+-  if (pname == GL_ALIASED_POINT_SIZE_RANGE) {
+-    return std::array<float, 2>{1.0f, 1024.0f};
+-  }
+-  return std::nullopt;
+-}
+-
+-inline std::optional<std::array<GLint, 3>> GetMoltskinShaderPrecision(
+-    GLenum precision_type) {
+-  if (!IsMoltskinWebglProfileEnabled()) {
+-    return std::nullopt;
+-  }
+-  switch (precision_type) {
+-    case GL_LOW_FLOAT:
+-    case GL_MEDIUM_FLOAT:
+-    case GL_HIGH_FLOAT:
+-      return std::array<GLint, 3>{127, 127, 23};
+-    case GL_LOW_INT:
+-    case GL_MEDIUM_INT:
+-    case GL_HIGH_INT:
+-      return std::array<GLint, 3>{31, 30, 0};
+-    default:
+-      return std::nullopt;
+-  }
+-}
+-
+-inline bool IsMoltskinWebglExtensionAllowed(const String& name) {
+-  if (!IsMoltskinWebglProfileEnabled()) {
+-    return true;
+-  }
+-  return name != "WEBGL_compressed_texture_astc" &&
+-         name != "WEBGL_compressed_texture_etc" &&
+-         name != "WEBGL_compressed_texture_etc1" &&
+-         name != "WEBGL_compressed_texture_pvrtc";
+-}
+-
+-}  // namespace blink
+-
+-#endif  // THIRD_PARTY_BLINK_RENDERER_MODULES_WEBGL_MOLTSKIN_WEBGL_PARAMS_H_
+diff --git a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+index a63869b752..b4c8303d08 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl2_rendering_context_base.cc
+@@ -4842,6 +4842,10 @@ ScriptValue WebGL2RenderingContextBase::getParameter(ScriptState* script_state,
+   if (const std::optional<int> value = GetMoltskinWebglIntParameter(pname)) {
+     return WebGLAny(script_state, *value);
+   }
++  if (const std::optional<int64_t> value =
++          GetMoltskinWebglInt64Parameter(pname)) {
++    return WebGLAny(script_state, *value);
++  }
+   if (const std::optional<std::array<int, 2>> value =
+           GetMoltskinWebglInt2Parameter(pname)) {
+     return WebGLAny(script_state, base::span<const int>(*value));

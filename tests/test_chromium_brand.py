@@ -142,12 +142,12 @@ def test_native_chrome_brand_codecs_and_gpu_profile():
     assert result["h264"] == "probably" and result["aac"] == "probably"
     assert result["mse"] is True
     assert result["webgl2"]["samples"] == 4
-    assert result["webgl2"]["ubo"] == 72
+    assert result["webgl2"]["ubo"] == 24
     assert result["webgl2"]["point"] == [1.0, 1024.0]
     assert result["webgl2"]["highInt"] == [31, 30, 0]
     assert result["webgl2"]["lowFloat"] == [127, 127, 23]
     assert result["webgl2"]["vertexComponents"] == 16384
-    assert result["webgl2"]["fragmentComponents"] == 16384
+    assert result["webgl2"]["fragmentComponents"] == 4096
     if "gpu" in result:
         assert result["gpu"]["vendor"] == "nvidia"
         assert result["gpu"]["architecture"] == "ampere"

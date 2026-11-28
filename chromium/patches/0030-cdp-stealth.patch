@@ -1,0 +1,116 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 48617a1479..05b6d4cffe 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -454,6 +454,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+       puts("moltskin-hardware-profile");
+       puts("moltskin-locale");
+       puts("moltskin-hide-webdriver");
++      puts("moltskin-cdp-stealth");
+       puts("moltskin-platform");
+       puts("moltskin-screen-metrics");
+       puts("moltskin-screen-avail");
+diff --git a/chrome/browser/ui/startup/infobar_utils.cc b/chrome/browser/ui/startup/infobar_utils.cc
+index 94d977bdfc..ac733fbeb9 100644
+--- a/chrome/browser/ui/startup/infobar_utils.cc
++++ b/chrome/browser/ui/startup/infobar_utils.cc
+@@ -70,6 +70,7 @@
+ #include "chrome/browser/startup/startup_launch_manager.h"  // nogncheck
+ #include "chrome/browser/ui/startup/startup_launch_infobar_manager_impl.h"  // nogncheck
+ #endif
++#include "third_party/blink/public/common/moltskin_switches.h"
+ 
+ namespace {
+ bool ShouldShowBadFlagsSecurityWarnings() {
+@@ -94,8 +95,11 @@ bool ShouldShowBadFlagsSecurityWarnings() {
+ // This is a separate function to avoid accidentally reading the switch from
+ // `startup_command_line`.
+ bool IsAutomationEnabled() {
+-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+-      switches::kEnableAutomation);
++  const auto* cmd = base::CommandLine::ForCurrentProcess();
++  if (cmd->HasSwitch(blink::switches::kMoltskinHideWebdriver)) {
++    return false;
++  }
++  return cmd->HasSwitch(switches::kEnableAutomation);
+ }
+ 
+ // This is a separate function to avoid accidentally reading the switch from
+diff --git a/content/child/runtime_features.cc b/content/child/runtime_features.cc
+index 6a3c4650a0..b4fe6614c9 100644
+--- a/content/child/runtime_features.cc
++++ b/content/child/runtime_features.cc
+@@ -41,6 +41,7 @@
+ #include "third_party/blink/public/common/features.h"
+ #include "third_party/blink/public/common/features_generated.h"
+ #include "third_party/blink/public/common/loader/referrer_utils.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/public/common/switches.h"
+ #include "third_party/blink/public/platform/web_runtime_features.h"
+ #include "ui/accessibility/accessibility_features.h"
+@@ -399,6 +400,10 @@ void SetRuntimeFeaturesFromCommandLine(const base::CommandLine& command_line) {
+       WebRuntimeFeatures::EnableAutomationControlled(true);
+     }
+   }
++
++  if (command_line.HasSwitch(blink::switches::kMoltskinHideWebdriver)) {
++    WebRuntimeFeatures::EnableAutomationControlled(false);
++  }
+ }
+ 
+ // Sets blink runtime features that depend on a combination
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_debug_shaders.cc b/third_party/blink/renderer/modules/webgl/webgl_debug_shaders.cc
+index 0bd94e997d..c5818b5616 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_debug_shaders.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_debug_shaders.cc
+@@ -26,6 +26,7 @@
+ #include "third_party/blink/renderer/modules/webgl/webgl_debug_shaders.h"
+ 
+ #include "third_party/blink/renderer/modules/webgl/gl_string_query.h"
++#include "third_party/blink/renderer/modules/webgl/moltskin_webgl_params.h"
+ #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
+ #include "third_party/blink/renderer/modules/webgl/webgl_shader.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+@@ -51,8 +52,41 @@ String WebGLDebugShaders::getTranslatedShaderSource(WebGLShader* shader) {
+                                              shader))
+     return "";
+   GLStringQuery query(scoped.Context()->ContextGL());
+-  return query.Run<GLStringQuery::TranslatedShaderSourceANGLE>(
++  String translated = query.Run<GLStringQuery::TranslatedShaderSourceANGLE>(
+       shader->Object());
++  if (!translated.empty() && IsMoltskinWebglProfileEnabled() &&
++      translated.FindIgnoringAsciiCase("cbuffer DriverConstants") ==
++          kNotFound) {
++    if (shader->GetType() == GL_VERTEX_SHADER) {
++      return "// INITIAL HLSL END\n\n"
++             "cbuffer DriverConstants : register(b1)\n{\n"
++             "    float4 dx_ViewAdjust : packoffset(c1);\n"
++             "    float2 dx_ViewCoords : packoffset(c2);\n"
++             "    float2 dx_ViewScale  : packoffset(c3);\n"
++             "};\n\n"
++             "struct VS_OUTPUT\n{\n"
++             "    float4 gl_Position : SV_Position;\n"
++             "};\n\n"
++             "VS_OUTPUT main()\n{\n"
++             "    VS_OUTPUT output;\n"
++             "    output.gl_Position = float4(0.0, 0.0, 0.0, 1.0);\n"
++             "    return output;\n"
++             "}\n";
++    }
++    return "// INITIAL HLSL END\n\n"
++           "cbuffer DriverConstants : register(b1)\n{\n"
++           "    float3 dx_DepthRange : packoffset(c0);\n"
++           "};\n\n"
++           "struct PS_OUTPUT\n{\n"
++           "    float4 gl_Color0 : SV_Target0;\n"
++           "};\n\n"
++           "PS_OUTPUT main()\n{\n"
++           "    PS_OUTPUT output;\n"
++           "    output.gl_Color0 = float4(0.0, 0.0, 0.0, 1.0);\n"
++           "    return output;\n"
++           "}\n";
++  }
++  return translated;
+ }
+ 
+ bool WebGLDebugShaders::Supported(WebGLRenderingContextBase* context) {

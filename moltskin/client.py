@@ -378,3 +378,139 @@ class MoltskinClient:
         """Import a complete configuration export or a legacy list of profiles."""
         payload = {"profiles": profiles} if isinstance(profiles, list) else profiles
         return self._request("POST", "/import/profiles", json=payload)
+
+    # Page-level control (Chromium) -------------------------------------------
+
+    def list_pages(self, profile_id: str) -> list[dict[str, Any]]:
+        return self._request("GET", f"/profiles/{profile_id}/pages")["pages"]
+
+    def new_page(self, profile_id: str, url: str = "about:blank") -> dict[str, Any]:
+        return self._request("POST", f"/profiles/{profile_id}/pages", json={"url": url})
+
+    def close_page(self, profile_id: str, target_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/profiles/{profile_id}/pages/{target_id}")
+
+    def navigate(
+        self,
+        profile_id: str,
+        url: str,
+        *,
+        target_id: str = "",
+        wait_until: str = "load",
+        timeout: float = 30.0,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/profiles/{profile_id}/pages/navigate",
+            json={
+                "url": url,
+                "target_id": target_id,
+                "wait_until": wait_until,
+                "timeout": timeout,
+            },
+        )
+
+    def snapshot(
+        self,
+        profile_id: str,
+        *,
+        target_id: str = "",
+        max_elements: int = 120,
+        include_text: bool = True,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/profiles/{profile_id}/pages/snapshot",
+            json={
+                "target_id": target_id,
+                "max_elements": max_elements,
+                "include_text": include_text,
+            },
+        )
+
+    def click(
+        self,
+        profile_id: str,
+        selector: str | None = None,
+        *,
+        x: float | None = None,
+        y: float | None = None,
+        target_id: str = "",
+        button: str = "left",
+        click_count: int = 1,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/profiles/{profile_id}/pages/click",
+            json={
+                "selector": selector,
+                "x": x,
+                "y": y,
+                "target_id": target_id,
+                "button": button,
+                "click_count": click_count,
+            },
+        )
+
+    def fill(
+        self,
+        profile_id: str,
+        selector: str,
+        value: str,
+        *,
+        target_id: str = "",
+        clear: bool = True,
+        submit: bool = False,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/profiles/{profile_id}/pages/fill",
+            json={
+                "selector": selector,
+                "value": value,
+                "target_id": target_id,
+                "clear": clear,
+                "submit": submit,
+            },
+        )
+
+    def press_key(self, profile_id: str, key: str, *, target_id: str = "") -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/profiles/{profile_id}/pages/press",
+            json={"key": key, "target_id": target_id},
+        )
+
+    def evaluate(
+        self,
+        profile_id: str,
+        expression: str,
+        *,
+        target_id: str = "",
+        isolated: bool = False,
+        await_promise: bool = True,
+    ) -> Any:
+        return self._request(
+            "POST",
+            f"/profiles/{profile_id}/pages/evaluate",
+            json={
+                "expression": expression,
+                "target_id": target_id,
+                "isolated": isolated,
+                "await_promise": await_promise,
+            },
+        )
+
+    def screenshot(
+        self,
+        profile_id: str,
+        *,
+        target_id: str = "",
+        full_page: bool = False,
+        format: str = "png",
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/profiles/{profile_id}/pages/screenshot",
+            json={"target_id": target_id, "full_page": full_page, "format": format},
+        )

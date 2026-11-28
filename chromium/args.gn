@@ -7,3 +7,7 @@ symbol_level = 0
 # patent-policy-clean open-source build.
 proprietary_codecs = true
 ffmpeg_branding = "Chrome"
+
+# Ship release builds without Blink's development DCHECKs. Without this,
+# is_debug=false still compiles dcheck_always_on=true in non-official GN.
+dcheck_always_on = false

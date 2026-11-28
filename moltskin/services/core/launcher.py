@@ -16,7 +16,7 @@ from camoufox.fingerprints import get_random_preset
 
 from platforms import current as host_platform
 
-from . import chromium, config, db, extensions, geoip
+from . import cdp, chromium, config, cookies as cookie_store, db, extensions, geoip
 from .proxy_bridge import ProxyBridge, ProxyBridgeError
 from .secret_store import decrypt
 from .proxy_settings import chromium_proxy_server
@@ -137,6 +137,18 @@ def _monitor(session_id: str, profile_id: str, proc: subprocess.Popen,
                         f"进程退出码 {code}" if state == "crashed" else None, observed_exit=True)
 
 
+def _enabled_extension_ids(conn, profile_id: str) -> list[str]:
+    return [
+        row["ext_id"]
+        for row in conn.execute(
+            "SELECT pe.ext_id FROM profile_extensions pe "
+            "JOIN extensions e ON e.id = pe.ext_id "
+            "WHERE pe.profile_id=? AND e.enabled=1 ORDER BY e.created_at ASC, pe.ext_id ASC",
+            (profile_id,),
+        ).fetchall()
+    ]
+
+
 def _camoufox_command(profile, proxy, session_id, headless, status_path):
     profile_id = profile["id"]
     fingerprint = json.loads(profile["fingerprint"] or "{}")
@@ -151,13 +163,8 @@ def _camoufox_command(profile, proxy, session_id, headless, status_path):
                 )
 
     with db.session() as conn:
-        ext_ids = [
-            row["ext_id"]
-            for row in conn.execute(
-                "SELECT ext_id FROM profile_extensions WHERE profile_id=?", (profile_id,)
-            ).fetchall()
-        ]
-    addon_paths = extensions.paths_for(ext_ids)
+        ext_ids = _enabled_extension_ids(conn, profile_id)
+    addon_paths = extensions.paths_for(ext_ids, engine="camoufox")
     first_open = not (profile["open_count"] or 0)
     startup_page = profile["startup_page"]
     manager_url = None
@@ -205,8 +212,10 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         if profile is None:
             raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
         is_chromium = profile["engine"] == "chromium"
+        planned_ext_ids: list[str] = []
         if is_chromium:
             profile_dir = _chromium_directory(profile)
+            planned_ext_ids = _enabled_extension_ids(conn, profile_id)
 
         session = _active_session(conn, profile_id)
         if session:
@@ -283,7 +292,10 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 chromium_webgl=profile["chromium_webgl"],
                 canvas_noise_seed=chromium.canvas_noise_seed(profile["id"]) if profile["chromium_canvas_noise"] else 0,
                 audio_noise_seed=chromium.audio_noise_seed(profile["id"]) if profile["chromium_audio_noise"] else 0,
+                hardware_concurrency=profile["chromium_hardware_concurrency"],
+                device_memory=profile["chromium_device_memory"],
                 hardware_seed=chromium.hardware_seed(profile["id"]),
+                extension_dirs=extensions.paths_for(planned_ext_ids, engine="chromium"),
             )
         except BlockingIOError as exc:
             _close_bridge(session_id)
@@ -315,7 +327,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                          "chromium_user_agent", "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
                          "hardware_reporting", "canvas_readback", "webgl_debug_info", "proxy_id", "startup_page", "block_images", "browser_language",
                          "browser_timezone", "browser_window_size", "chromium_screen", "chromium_platform", "chromium_webgl",
-                         "chromium_canvas_noise", "chromium_audio_noise")
+                         "chromium_canvas_noise", "chromium_audio_noise",
+                         "chromium_hardware_concurrency", "chromium_device_memory")
         if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")
         if is_chromium and proxy:
@@ -325,6 +338,8 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 raise LaunchError("PROFILE_CHANGED", "指定代理已更新，请重新启动")
         if is_chromium and _chromium_directory(current) != profile_dir:
             raise LaunchError("INVALID_PROFILE_DIRECTORY", "环境目录已变更，请检查数据目录。")
+        if is_chromium and _enabled_extension_ids(conn, profile_id) != planned_ext_ids:
+            raise LaunchError("PROFILE_CHANGED", "环境扩展设置已更新，请重新启动")
 
         if is_chromium:
             try:
@@ -365,6 +380,7 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         try:
             if is_chromium:
                 profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                (profile_dir / "DevToolsActivePort").unlink(missing_ok=True)
             with log_path.open("w", encoding="utf-8") as log_handle:
                 if is_chromium:
                     preview = {key: current[key] for key in
@@ -479,6 +495,15 @@ def stop(session_id: str, actor: str = "local") -> dict:
     if not alive:
         _recover_exit(session, "PROCESS_GONE", "进程已退出")
     elif _session_alive(session):
+        if session["engine"] == "chromium":
+            try:
+                live_cookies = cdp.export_live_cookies(Path(session["user_data_dir"]))
+                if live_cookies:
+                    cookie_store.save_portable_chromium_cookies(
+                        Path(session["user_data_dir"]), live_cookies
+                    )
+            except Exception:  # noqa: BLE001 - best-effort portable cookie snapshot
+                pass
         host_platform.send_stop(pid, session["engine"])
         timeout = float(db.get_setting("stop_timeout_sec", 8))
         deadline = time.monotonic() + timeout
