@@ -338,27 +338,31 @@
    DCHECK(destinationNode());
  
 +  if (GetMoltskinHardwareSeed() != 0) {
-+    return 0.016;
++    return ContextState() == V8AudioContextState::Enum::kSuspended ? 0.0 : 0.016;
 +  }
    DeferredTaskHandler::GraphAutoLocker locker(GetDeferredTaskHandler());
  
    double factor = GetOutputLatencyQuantizingFactor();
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-@@ -4,6 +4,9 @@
+@@ -3,6 +3,9 @@
+ // found in the LICENSE file.
  
  #include "third_party/blink/renderer/modules/mediastream/media_devices.h"
- 
++
 +#include "third_party/blink/public/common/moltskin_hardware.h"
 +#include "third_party/blink/public/common/moltskin_platform.h"
-+
+ 
  #include <algorithm>
  #include <utility>
- 
-@@ -1495,6 +1498,66 @@
-     }
-   }
- 
+@@ -1491,8 +1494,75 @@
+         media_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
+             String::FromUtf8(device_info.device_id), device_label,
+             String::FromUtf8(device_info.group_id), device_type));
++      }
++    }
++  }
++
 +  if (const uint32_t hardware_seed = GetMoltskinHardwareSeed();
 +      hardware_seed != 0) {
 +    MediaDeviceInfoVector virtual_devices;
@@ -389,10 +393,20 @@
 +          String::FromUtf8(std::string_view(audio_group_hex));
 +      const String video_group =
 +          String::FromUtf8(std::string_view(video_group_hex));
-+      InputDeviceInfo* audio_in = MakeGarbageCollected<InputDeviceInfo>(
-+          String::FromUtf8(std::string_view(audio_in_hex)),
++      const bool is_linux =
++          platform && platform->platform == "linux";
++      const char* microphone_label =
 +          is_windows ? "Default - Microphone (Realtek(R) Audio)"
-+                     : "Built-in Microphone",
++                     : is_linux ? "Built-in Microphone"
++                                : "Built-in Microphone";
++      const char* camera_label =
++          is_windows ? "HD WebCam"
++                     : is_linux ? "Integrated Camera" : "FaceTime HD Camera";
++      const char* output_label =
++          is_windows ? "Default - Speakers (Realtek(R) Audio)"
++                     : is_linux ? "Built-in Audio" : "Built-in Output";
++      InputDeviceInfo* audio_in = MakeGarbageCollected<InputDeviceInfo>(
++          String::FromUtf8(std::string_view(audio_in_hex)), microphone_label,
 +          audio_group, mojom::blink::MediaDeviceType::kMediaAudioInput);
 +      if (!audio_input_capabilities.empty() && audio_input_capabilities[0]) {
 +        audio_in->SetAudioInputCapabilities(
@@ -401,24 +415,19 @@
 +      virtual_devices.push_back(audio_in);
 +
 +      InputDeviceInfo* video_in = MakeGarbageCollected<InputDeviceInfo>(
-+          String::FromUtf8(std::string_view(video_in_hex)),
-+          is_windows ? "HD WebCam" : "FaceTime HD Camera",
++          String::FromUtf8(std::string_view(video_in_hex)), camera_label,
 +          video_group, mojom::blink::MediaDeviceType::kMediaVideoInput);
 +      if (!video_input_capabilities.empty() && video_input_capabilities[0]) {
 +        video_in->SetVideoInputCapabilities(
 +            std::move(video_input_capabilities[0]));
-+      }
+       }
 +      virtual_devices.push_back(video_in);
 +
 +      virtual_devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
-+          String::FromUtf8(std::string_view(audio_out_hex)),
-+          is_windows ? "Default - Speakers (Realtek(R) Audio)"
-+                     : "Built-in Output",
++          String::FromUtf8(std::string_view(audio_out_hex)), output_label,
 +          audio_group, mojom::blink::MediaDeviceType::kMediaAudioOutput));
-+    }
+     }
 +    media_devices = std::move(virtual_devices);
-+  }
-+
+   }
+ 
    ReportCompletedEnumerateDevices(result_contains_nonempty_input_device_ids);
-   result_tracker->Resolve(media_devices);
-   tracer->End();

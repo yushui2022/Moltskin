@@ -111,7 +111,10 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
     if proxy_server:
         args.append(f"--proxy-server={proxy_server}")
         # Do not let WebRTC bypass the profile proxy with direct UDP/STUN.
+        # The chrome policy switch is the one that actually reaches the
+        # PeerConnection manager; the force switch covers embedders/tests.
         args.append("--force-webrtc-ip-handling-policy=disable_non_proxied_udp")
+        args.append("--webrtc-ip-handling-policy=disable_non_proxied_udp")
     if not 1 <= config.PORT <= 65535:
         raise ValueError("控制台端口须在 1 到 65535 之间")
     if config.PORT != 8765:

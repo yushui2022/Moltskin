@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0-alpha.2 — 2026-11-28
+
+### Fixed
+
+- 虚拟媒体设备标签区分 Windows/macOS/Linux，Linux 不再返回 `FaceTime HD Camera` 等 macOS 名称。
+- `AudioContext.outputLatency` 在 `suspended` 状态返回 0，运行后再返回稳定的 `0.016` 秒。
+- 固定代理启动参数同时加入 `--webrtc-ip-handling-policy=disable_non_proxied_udp`；实测只加 `--force-...` 时 WebRTC 仍会泄漏 srflx 宿主公网地址，加入后候选列表为空。
+
 ## 0.8.0-alpha.1 — 2026-11-27
 
 ### Added
