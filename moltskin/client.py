@@ -158,6 +158,25 @@ class MoltskinClient:
         """New fingerprint preset, cookies kept. The profile must be stopped."""
         return self._request("POST", f"/profiles/{profile_id}/reset-fingerprint")
 
+    def generate_chromium_preset(
+        self,
+        os_family: str = "auto",
+        chromium_version: str = "",
+        seed: int | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/chromium/fingerprint-preset",
+            json={"os_family": os_family, "chromium_version": chromium_version, "seed": seed},
+        )
+
+    def randomize_chromium(self, profile_id: str, os_family: str = "auto") -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/profiles/{profile_id}/randomize-chromium",
+            json={"os_family": os_family},
+        )
+
     def launch(self, profile_id: str) -> dict[str, Any]:
         return self._request("POST", f"/profiles/{profile_id}/launch")
 

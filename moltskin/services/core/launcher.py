@@ -167,6 +167,7 @@ def _camoufox_command(profile, proxy, session_id, headless, status_path):
     addon_paths = extensions.paths_for(ext_ids, engine="camoufox")
     first_open = not (profile["open_count"] or 0)
     startup_page = profile["startup_page"]
+    startup_urls = json.loads(profile["startup_urls"] or "[]") if "startup_urls" in profile.keys() else []
     manager_url = None
     if config.OPEN_MANAGER:
         if startup_page == "dashboard":
@@ -189,6 +190,7 @@ def _camoufox_command(profile, proxy, session_id, headless, status_path):
         "proxy": proxy,
         "manager_url": manager_url,
         "startup_page": startup_page,
+        "startup_urls": startup_urls if startup_page == "custom" else [],
         "block_images": bool(profile["block_images"]),
         "status_file": str(status_path),
     }
@@ -267,6 +269,36 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             effective_timezone = effective_timezone or proxy.get("timezone") or ""
             effective_language = effective_language or geoip.locale_for_country(
                 proxy.get("country"))
+        geolocation_coords: tuple[float, float, float] | None = None
+        if profile["geolocation"] == "custom":
+            lat = profile["geolocation_latitude"]
+            lon = profile["geolocation_longitude"]
+            if lat is None or lon is None:
+                _close_bridge(session_id)
+                raise LaunchError("INVALID_GEOLOCATION", "自定义定位模式必须填写经度和纬度", 422)
+            acc = float(profile["geolocation_accuracy"] or 25.0)
+            geolocation_coords = (float(lat), float(lon), acc)
+        elif profile["geolocation"] == "auto" and proxy:
+            plat = proxy.get("latitude")
+            plon = proxy.get("longitude")
+            if plat is not None and plon is not None:
+                base_coords: tuple[float, float] | None = (float(plat), float(plon))
+            else:
+                base_coords = (
+                    geoip.coordinates_for_ip(proxy.get("exit_ip"))
+                    or geoip.coordinates_for_ip(proxy.get("host"))
+                )
+            if base_coords is not None:
+                geolocation_coords = geoip.jitter_coordinates(
+                    base_coords[0], base_coords[1], profile["id"]
+                )
+        webrtc_policy = profile["webrtc_policy"] or "standard"
+        webrtc_public_ip = ""
+        if webrtc_policy == "proxy" and proxy:
+            candidate_ip = (proxy.get("exit_ip") or "").strip()
+            if candidate_ip:
+                webrtc_public_ip = candidate_ip
+        startup_urls = json.loads(profile["startup_urls"] or "[]")
         try:
             process_env = chromium.launch_environment(effective_timezone)
             open_workbench = (not headless and config.OPEN_MANAGER and profile["startup_page"] == "default"
@@ -295,6 +327,11 @@ def launch(profile_id: str, actor: str = "local") -> dict:
                 hardware_concurrency=profile["chromium_hardware_concurrency"],
                 device_memory=profile["chromium_device_memory"],
                 hardware_seed=chromium.hardware_seed(profile["id"]),
+                geolocation_coords=geolocation_coords,
+                webrtc_policy=webrtc_policy,
+                webrtc_public_ip=webrtc_public_ip,
+                restore_last_session=profile["startup_page"] == "restore",
+                startup_urls=startup_urls if profile["startup_page"] == "custom" else (),
                 extension_dirs=extensions.paths_for(planned_ext_ids, engine="chromium"),
             )
         except BlockingIOError as exc:
@@ -308,7 +345,9 @@ def launch(profile_id: str, actor: str = "local") -> dict:
         if profile["media_capture"] != "standard":
             raise LaunchError("ENGINE_OPTIONS", "阻止摄像头与麦克风访问仅支持 Chromium 环境", 422)
         if profile["geolocation"] != "standard":
-            raise LaunchError("ENGINE_OPTIONS", "阻止地理位置访问仅支持 Chromium 环境", 422)
+            raise LaunchError("ENGINE_OPTIONS", "此地理位置设置仅支持 Chromium 环境", 422)
+        if (profile["webrtc_policy"] or "standard") != "standard":
+            raise LaunchError("ENGINE_OPTIONS", "此 WebRTC 策略设置仅支持 Chromium 环境", 422)
         if profile["hardware_reporting"] != "standard":
             raise LaunchError("ENGINE_OPTIONS", "硬件信息限制仅支持 Chromium 环境", 422)
         if profile["canvas_readback"] != "standard" or profile["webgl_debug_info"] != "standard":
@@ -323,11 +362,13 @@ def launch(profile_id: str, actor: str = "local") -> dict:
             raise LaunchError("PROFILE_NOT_FOUND", "环境不存在", 404)
         if _active_session(conn, profile_id):
             raise LaunchError("PROFILE_LOCKED", "该环境正在启动或运行")
-        launch_fields = ("engine", "chromium_version", "local_fonts", "media_capture", "geolocation", "headless",
-                         "chromium_user_agent", "chromium_js_heap_mb", "chromium_mute_audio", "chromium_renderer_limit",
-                         "hardware_reporting", "canvas_readback", "webgl_debug_info", "proxy_id", "startup_page", "block_images", "browser_language",
-                         "browser_timezone", "browser_window_size", "chromium_screen", "chromium_platform", "chromium_webgl",
-                         "chromium_canvas_noise", "chromium_audio_noise",
+        launch_fields = ("engine", "chromium_version", "local_fonts", "media_capture", "geolocation",
+                         "geolocation_latitude", "geolocation_longitude", "geolocation_accuracy", "webrtc_policy",
+                         "headless", "chromium_user_agent", "chromium_js_heap_mb", "chromium_mute_audio",
+                         "chromium_renderer_limit", "hardware_reporting", "canvas_readback", "webgl_debug_info",
+                         "proxy_id", "startup_page", "startup_urls", "block_images", "browser_language",
+                         "browser_timezone", "browser_window_size", "chromium_screen", "chromium_platform",
+                         "chromium_webgl", "chromium_canvas_noise", "chromium_audio_noise",
                          "chromium_hardware_concurrency", "chromium_device_memory")
         if any(current[k] != profile[k] for k in launch_fields):
             raise LaunchError("PROFILE_CHANGED", "环境设置已更新，请重新启动")

@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS proxies (
   exit_ip         TEXT,
   country         TEXT,
   timezone        TEXT,
+  latitude        REAL,
+  longitude       REAL,
   latency_ms      INTEGER,
   status          TEXT NOT NULL DEFAULT 'unchecked',
   last_checked_at TEXT,
@@ -57,7 +59,11 @@ CREATE TABLE IF NOT EXISTS profiles (
   preview_architecture TEXT NOT NULL DEFAULT '',
   local_fonts      TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted')),
   media_capture    TEXT NOT NULL DEFAULT 'standard' CHECK (media_capture IN ('standard','blocked')),
-  geolocation      TEXT NOT NULL DEFAULT 'standard' CHECK (geolocation IN ('standard','blocked')),
+  geolocation      TEXT NOT NULL DEFAULT 'standard' CHECK (geolocation IN ('standard','blocked','auto','custom')),
+  geolocation_latitude REAL,
+  geolocation_longitude REAL,
+  geolocation_accuracy REAL NOT NULL DEFAULT 0,
+  webrtc_policy    TEXT NOT NULL DEFAULT 'standard' CHECK (webrtc_policy IN ('standard','proxy','disabled')),
   hardware_reporting TEXT NOT NULL DEFAULT 'standard' CHECK (hardware_reporting IN ('standard','limited')),
   canvas_readback  TEXT NOT NULL DEFAULT 'standard' CHECK (canvas_readback IN ('standard','blocked')),
   webgl_debug_info TEXT NOT NULL DEFAULT 'standard' CHECK (webgl_debug_info IN ('standard','blocked')),
@@ -74,7 +80,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   chromium_webgl TEXT NOT NULL DEFAULT '',
   chromium_canvas_noise INTEGER NOT NULL DEFAULT 0 CHECK (chromium_canvas_noise IN (0,1)),
   chromium_audio_noise INTEGER NOT NULL DEFAULT 0 CHECK (chromium_audio_noise IN (0,1)),
-  startup_page     TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank')),
+  startup_page     TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank','restore','custom')),
+  startup_urls     TEXT NOT NULL DEFAULT '[]',
   block_images     INTEGER NOT NULL DEFAULT 0 CHECK (block_images IN (0,1)),
   browser_version  TEXT,
   fingerprint      TEXT NOT NULL DEFAULT '{}',
@@ -261,6 +268,11 @@ def init_db() -> None:
 
 def _migrate(conn: sqlite3.Connection) -> None:
     """给旧库补齐后加的列，保持升级不丢数据。"""
+    proxy_columns = {row["name"] for row in conn.execute("PRAGMA table_info(proxies)")}
+    for name, ddl in (("latitude", "REAL"), ("longitude", "REAL")):
+        if proxy_columns and name not in proxy_columns:
+            conn.execute(f"ALTER TABLE proxies ADD COLUMN {name} {ddl}")
+
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(profiles)")}
     additions = {
         "browser_version": "TEXT",
@@ -273,7 +285,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "preview_architecture": "TEXT NOT NULL DEFAULT ''",
         "local_fonts": "TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted'))",
         "media_capture": "TEXT NOT NULL DEFAULT 'standard' CHECK (media_capture IN ('standard','blocked'))",
-        "geolocation": "TEXT NOT NULL DEFAULT 'standard' CHECK (geolocation IN ('standard','blocked'))",
+        "geolocation": "TEXT NOT NULL DEFAULT 'standard' CHECK (geolocation IN ('standard','blocked','auto','custom'))",
+        "geolocation_latitude": "REAL",
+        "geolocation_longitude": "REAL",
+        "geolocation_accuracy": "REAL NOT NULL DEFAULT 0",
+        "webrtc_policy": "TEXT NOT NULL DEFAULT 'standard' CHECK (webrtc_policy IN ('standard','proxy','disabled'))",
         "hardware_reporting": "TEXT NOT NULL DEFAULT 'standard' CHECK (hardware_reporting IN ('standard','limited'))",
         "canvas_readback": "TEXT NOT NULL DEFAULT 'standard' CHECK (canvas_readback IN ('standard','blocked'))",
         "webgl_debug_info": "TEXT NOT NULL DEFAULT 'standard' CHECK (webgl_debug_info IN ('standard','blocked'))",
@@ -290,12 +306,94 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "browser_language": "TEXT NOT NULL DEFAULT ''",
         "browser_timezone": "TEXT NOT NULL DEFAULT ''",
         "browser_window_size": "TEXT NOT NULL DEFAULT ''",
-        "startup_page": "TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank'))",
+        "startup_page": "TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank','restore','custom'))",
+        "startup_urls": "TEXT NOT NULL DEFAULT '[]'",
         "block_images": "INTEGER NOT NULL DEFAULT 0 CHECK (block_images IN (0,1))",
     }
     for name, ddl in additions.items():
         if name not in columns:
             conn.execute(f"ALTER TABLE profiles ADD COLUMN {name} {ddl}")
+
+    profile_ddl_row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='profiles'"
+    ).fetchone()
+    profile_ddl = (profile_ddl_row["sql"] if profile_ddl_row else "") or ""
+    if profile_ddl and ("'auto'" not in profile_ddl or "'restore'" not in profile_ddl):
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """
+                CREATE TABLE profiles__new (
+                  id               TEXT PRIMARY KEY,
+                  name             TEXT NOT NULL UNIQUE,
+                  group_id         TEXT REFERENCES groups(id) ON DELETE SET NULL,
+                  proxy_id         TEXT REFERENCES proxies(id) ON DELETE SET NULL,
+                  tags             TEXT NOT NULL DEFAULT '[]',
+                  remark           TEXT NOT NULL DEFAULT '',
+                  os               TEXT NOT NULL DEFAULT 'windows',
+                  engine           TEXT NOT NULL DEFAULT 'camoufox' CHECK (engine IN ('camoufox','chromium')),
+                  chromium_version TEXT NOT NULL DEFAULT '',
+                  chromium_user_agent TEXT NOT NULL DEFAULT '',
+                  preview_platform TEXT NOT NULL DEFAULT '',
+                  preview_platform_version TEXT NOT NULL DEFAULT '',
+                  preview_architecture TEXT NOT NULL DEFAULT '',
+                  local_fonts      TEXT NOT NULL DEFAULT 'standard' CHECK (local_fonts IN ('standard','restricted')),
+                  media_capture    TEXT NOT NULL DEFAULT 'standard' CHECK (media_capture IN ('standard','blocked')),
+                  geolocation      TEXT NOT NULL DEFAULT 'standard' CHECK (geolocation IN ('standard','blocked','auto','custom')),
+                  geolocation_latitude REAL,
+                  geolocation_longitude REAL,
+                  geolocation_accuracy REAL NOT NULL DEFAULT 0,
+                  webrtc_policy    TEXT NOT NULL DEFAULT 'standard' CHECK (webrtc_policy IN ('standard','proxy','disabled')),
+                  hardware_reporting TEXT NOT NULL DEFAULT 'standard' CHECK (hardware_reporting IN ('standard','limited')),
+                  canvas_readback  TEXT NOT NULL DEFAULT 'standard' CHECK (canvas_readback IN ('standard','blocked')),
+                  webgl_debug_info TEXT NOT NULL DEFAULT 'standard' CHECK (webgl_debug_info IN ('standard','blocked')),
+                  chromium_js_heap_mb INTEGER NOT NULL DEFAULT 0,
+                  chromium_mute_audio INTEGER NOT NULL DEFAULT 0,
+                  chromium_renderer_limit INTEGER NOT NULL DEFAULT 0,
+                  chromium_hardware_concurrency INTEGER NOT NULL DEFAULT 0,
+                  chromium_device_memory INTEGER NOT NULL DEFAULT 0,
+                  browser_language TEXT NOT NULL DEFAULT '',
+                  browser_timezone TEXT NOT NULL DEFAULT '',
+                  browser_window_size TEXT NOT NULL DEFAULT '',
+                  chromium_screen TEXT NOT NULL DEFAULT '',
+                  chromium_platform TEXT NOT NULL DEFAULT '',
+                  chromium_webgl TEXT NOT NULL DEFAULT '',
+                  chromium_canvas_noise INTEGER NOT NULL DEFAULT 0 CHECK (chromium_canvas_noise IN (0,1)),
+                  chromium_audio_noise INTEGER NOT NULL DEFAULT 0 CHECK (chromium_audio_noise IN (0,1)),
+                  startup_page     TEXT NOT NULL DEFAULT 'default' CHECK (startup_page IN ('default','dashboard','blank','restore','custom')),
+                  startup_urls     TEXT NOT NULL DEFAULT '[]',
+                  block_images     INTEGER NOT NULL DEFAULT 0 CHECK (block_images IN (0,1)),
+                  browser_version  TEXT,
+                  fingerprint      TEXT NOT NULL DEFAULT '{}',
+                  user_data_dir    TEXT NOT NULL,
+                  headless         INTEGER NOT NULL DEFAULT 0,
+                  status           TEXT NOT NULL DEFAULT 'draft',
+                  last_session_id  TEXT,
+                  last_opened_at   TEXT,
+                  open_count       INTEGER NOT NULL DEFAULT 0,
+                  created_at       TEXT NOT NULL,
+                  updated_at       TEXT NOT NULL
+                )
+                """
+            )
+            existing_cols = [r["name"] for r in conn.execute("PRAGMA table_info(profiles)")]
+            new_cols = {r["name"] for r in conn.execute("PRAGMA table_info(profiles__new)")}
+            shared = [c for c in existing_cols if c in new_cols]
+            quoted = ", ".join(f'"{c}"' for c in shared)
+            conn.execute(f"INSERT INTO profiles__new ({quoted}) SELECT {quoted} FROM profiles")
+            conn.execute("DROP TABLE profiles")
+            conn.execute("ALTER TABLE profiles__new RENAME TO profiles")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_profiles_status ON profiles(status)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_profiles_group  ON profiles(group_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_profiles_proxy  ON profiles(proxy_id)")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.execute("PRAGMA foreign_keys=ON")
 
     session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)")}
     if "browser_version" not in session_columns:

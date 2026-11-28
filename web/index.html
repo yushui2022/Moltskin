@@ -1794,6 +1794,21 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <details class="editor-section" id="profileFingerprint" data-engine="chromium" name="profile-sections" hidden>
           <summary><strong>指纹设置</strong><span class="editor-summary" id="fFingerprintSummary"></span><svg class="i"><use href="#i-chev"/></svg></summary>
           <div class="editor-fields">
+            <div class="field full" id="fChromiumQuickPreset" style="padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--panel-2);display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:180px">
+                <strong style="font-size:12.5px">一键生成自洽真实指纹画像</strong>
+                <span class="hint" id="fChromiumPresetLabel">自动匹配 OS、UA、显卡 ANGLE 后端、屏幕尺寸、CPU/内存、微噪声、代理定位与 WebRTC IP。</span>
+              </div>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                <select class="select" id="fPresetOsFamily" aria-label="画像系统模板" style="width:auto;min-width:168px">
+                  <option value="auto">跟随本机系统（推荐）</option>
+                  <option value="macos">macOS Apple Silicon</option>
+                  <option value="windows">Windows 10/11 主流机型</option>
+                  <option value="linux">Linux 桌面机型</option>
+                </select>
+                <button type="button" class="btn primary small" id="fGenerateChromiumPreset"><svg class="i" aria-hidden="true"><use href="#i-shuffle"/></svg><span>一键生成 / 换一套</span></button>
+              </div>
+            </div>
             <div class="field"><label for="fBrowserLanguage">网站首选语言</label><select class="select" id="fBrowserLanguage" aria-describedby="fLanguageHint"><option value="">浏览器默认</option></select><span class="hint" id="fLanguageHint">用于网页读取的语言和 HTTP 请求头。</span></div>
             <div class="field"><label for="fBrowserTimezone">时区</label><select class="select" id="fBrowserTimezone"><option value="">跟随系统</option></select></div>
             <div class="field"><label for="fBrowserWindowSize">启动窗口大小</label><select class="select" id="fBrowserWindowSize" aria-describedby="fWindowSizeHint"><option value="">浏览器默认</option></select><span class="hint" id="fWindowSizeHint">窗口外框尺寸，打开后可拖动调整。</span></div>
@@ -1821,8 +1836,26 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <span class="hint" id="fMediaHint"></span>
             </div>
             <div class="field"><label for="fGeolocation">地理位置</label>
-              <select class="select" id="fGeolocation" aria-describedby="fLocationHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
+              <select class="select" id="fGeolocation" aria-describedby="fLocationHint">
+                <option value="standard">由网站请求授权</option>
+                <option value="auto">跟随代理 IP 自动拟真</option>
+                <option value="custom">自定义经纬度坐标</option>
+                <option value="blocked">始终阻止</option>
+              </select>
               <span class="hint" id="fLocationHint"></span>
+            </div>
+            <div class="field full" id="fGeoCustomFields" hidden style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+              <div class="field"><label for="fGeoLat">纬度 (-90 ~ 90)</label><input class="input" id="fGeoLat" type="number" step="any" min="-90" max="90" placeholder="例如 34.0522"></div>
+              <div class="field"><label for="fGeoLon">经度 (-180 ~ 180)</label><input class="input" id="fGeoLon" type="number" step="any" min="-180" max="180" placeholder="例如 -118.2437"></div>
+              <div class="field"><label for="fGeoAcc">精度（米，可选）</label><input class="input" id="fGeoAcc" type="number" step="any" min="1" max="100000" placeholder="默认 25"></div>
+            </div>
+            <div class="field full"><label for="fWebrtcPolicy">WebRTC 公网 IP 保护</label>
+              <select class="select" id="fWebrtcPolicy" aria-describedby="fWebrtcHint">
+                <option value="standard">标准（绑定代理时自动禁用非代理 UDP）</option>
+                <option value="proxy">替换为代理出口公网 IP（推荐，过定位/WebRTC 校验）</option>
+                <option value="disabled">始终禁用非代理 UDP</option>
+              </select>
+              <span class="hint" id="fWebrtcHint">替换模式下底层仍阻断真实直连 UDP，仅在 ICE 候选中合成代理出口 IP，兼顾零泄露与自然度。</span>
             </div>
           </div>
         </details>
@@ -1860,8 +1893,18 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
               <select class="select" id="fHeadless"><option value="0">显示窗口</option><option value="1">后台运行（无头）</option></select>
             </div>
             <div class="field"><label for="fStartupPage">启动页面</label>
-              <select class="select" id="fStartupPage" aria-describedby="fDashboardHint"><option value="default">沿用默认设置</option><option value="dashboard">管理首页（全部环境）</option><option value="blank">空白页</option></select>
+              <select class="select" id="fStartupPage" aria-describedby="fDashboardHint">
+                <option value="default">沿用默认设置</option>
+                <option value="restore">恢复上次打开的标签页</option>
+                <option value="custom">自定义网址（支持多标签页）</option>
+                <option value="dashboard">管理首页（全部环境）</option>
+                <option value="blank">空白页</option>
+              </select>
               <span class="hint" id="fDashboardHint" hidden></span>
+            </div>
+            <div class="field full" id="fStartupUrlsWrap" hidden>
+              <label for="fStartupUrls">自定义启动网址（每行一个 http:// 或 https://，最多 10 个）</label>
+              <textarea class="input" id="fStartupUrls" rows="3" dir="ltr" spellcheck="false" placeholder="https://www.tiktok.com&#10;https://sellercentral.amazon.com"></textarea>
             </div>
             <label class="editor-switch"><span>禁止加载网页图片</span><input type="checkbox" id="fBlockImages" role="switch"></label>
             <label class="editor-switch" data-engine="chromium" hidden><span>静音播放</span><input type="checkbox" id="fMuteAudio" role="switch"></label>
@@ -1892,6 +1935,7 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <select class="select" id="bEngine"><option value="camoufox">Camoufox（Firefox）</option><option value="chromium">Moltskin Chromium</option></select>
         <div class="hint" id="bEngineHint" hidden></div>
       </div>
+      <label class="editor-switch" data-engine="chromium" hidden><span>每个新窗口独立生成自洽真实指纹画像</span><input type="checkbox" id="bAutoChromiumPreset" role="switch"></label>
       <div class="field" data-engine="chromium" hidden><label for="bBrowserLanguage">网站首选语言</label><select class="select" id="bBrowserLanguage"><option value="">浏览器默认</option></select></div>
       <div class="field" data-engine="chromium" hidden><label for="bChromiumVersion">启动内核版本</label><select class="select" id="bChromiumVersion" aria-describedby="bChromiumVersionHint"><option value="">跟随本机默认</option></select><span class="hint" id="bChromiumVersionHint"></span></div>
       <fieldset class="platform-preview" id="bPlatformPreview" data-engine="chromium" hidden><legend>本地兼容性预览</legend></fieldset>
@@ -1935,8 +1979,25 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
         <span class="hint" id="bMediaHint"></span>
       </div>
       <div class="field" data-engine="chromium" hidden><label for="bGeolocation">地理位置</label>
-        <select class="select" id="bGeolocation" aria-describedby="bLocationHint"><option value="standard">由网站请求授权</option><option value="blocked">始终阻止</option></select>
+        <select class="select" id="bGeolocation" aria-describedby="bLocationHint">
+          <option value="standard">由网站请求授权</option>
+          <option value="auto">跟随代理 IP 自动拟真</option>
+          <option value="custom">自定义经纬度坐标</option>
+          <option value="blocked">始终阻止</option>
+        </select>
         <span class="hint" id="bLocationHint"></span>
+      </div>
+      <div class="field full" id="bGeoCustomFields" data-engine="chromium" hidden style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+        <div class="field"><label for="bGeoLat">纬度</label><input class="input" id="bGeoLat" type="number" step="any" min="-90" max="90" placeholder="34.0522"></div>
+        <div class="field"><label for="bGeoLon">经度</label><input class="input" id="bGeoLon" type="number" step="any" min="-180" max="180" placeholder="-118.2437"></div>
+        <div class="field"><label for="bGeoAcc">精度(米)</label><input class="input" id="bGeoAcc" type="number" step="any" min="1" max="100000" placeholder="25"></div>
+      </div>
+      <div class="field full" data-engine="chromium" hidden><label for="bWebrtcPolicy">WebRTC 公网 IP 保护</label>
+        <select class="select" id="bWebrtcPolicy">
+          <option value="standard">标准（绑定代理时自动禁用非代理 UDP）</option>
+          <option value="proxy">替换为代理出口公网 IP（推荐）</option>
+          <option value="disabled">始终禁用非代理 UDP</option>
+        </select>
       </div>
       <div class="field" data-engine="camoufox"><label for="bOs">操作系统</label>
         <select class="select" id="bOs"><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option></select>
@@ -1947,8 +2008,18 @@ input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent);
       <div class="field"><label for="bGroup">分组</label><select class="select" id="bGroup"><option value="">未分组</option></select></div>
       <div class="field"><label for="bProxy">窗口代理</label><select class="select" id="bProxy" aria-describedby="bProxyHint"><option value="">不使用代理</option></select><span class="hint" id="bProxyHint"></span></div>
       <div class="field"><label for="bStartupPage">启动页面</label>
-        <select class="select" id="bStartupPage" aria-describedby="bDashboardHint"><option value="default">沿用默认设置</option><option value="dashboard">管理首页（全部环境）</option><option value="blank">空白页</option></select>
+        <select class="select" id="bStartupPage" aria-describedby="bDashboardHint">
+          <option value="default">沿用默认设置</option>
+          <option value="restore">恢复上次打开的标签页</option>
+          <option value="custom">自定义网址（支持多标签页）</option>
+          <option value="dashboard">管理首页（全部环境）</option>
+          <option value="blank">空白页</option>
+        </select>
         <span class="hint" id="bDashboardHint" hidden></span>
+      </div>
+      <div class="field full" id="bStartupUrlsWrap" hidden>
+        <label for="bStartupUrls">自定义启动网址（每行一个）</label>
+        <textarea class="input" id="bStartupUrls" rows="2" dir="ltr" spellcheck="false" placeholder="https://example.com"></textarea>
       </div>
       <div class="field"><label for="bBlockImages">网页图片</label>
         <select class="select" id="bBlockImages"><option value="0">正常加载</option><option value="1">禁止加载图片</option></select>
@@ -2336,6 +2407,7 @@ const ACTION_LABEL = {
   "profile.purge": "永久删除环境",
   "profile.duplicate": "复制环境",
   "profile.reset_fingerprint": "重置指纹",
+  "profile.randomize_chromium": "生成自洽画像",
   "profile.launch": "打开环境",
   "profile.stop": "关闭环境",
   "session.start": "会话开始",
@@ -3271,7 +3343,7 @@ function openRowMenu(anchor, id) {
     <div class="sep"></div>
     <button data-cmd="edit" data-id="${id}">${icon("edit")}编辑环境</button>
     <button data-cmd="duplicate" data-id="${id}">${icon("copy")}复制环境</button>
-    ${p.engine !== "chromium" ? `<button data-cmd="reset" data-id="${id}">${icon("refresh")}重置指纹</button>` : ""}
+    ${p.engine !== "chromium" ? `<button data-cmd="reset" data-id="${id}">${icon("refresh")}重置指纹</button>` : `<button data-cmd="randomize-chromium" data-id="${id}" ${running ? "disabled" : ""}>${icon("shuffle")}重新生成自洽画像</button>`}
     <div class="sep"></div>
     <button data-cmd="trash" data-id="${id}">${icon("trash")}移入回收站</button>`;
   openPop(anchor, html, { align: "right" });
@@ -3287,6 +3359,20 @@ pop.addEventListener("click", async (e) => {
   if (cmd === "edit") return openProfileModal(id);
   if (cmd === "duplicate") return duplicateProfile(id);
   if (cmd === "trash") return trashProfile(id);
+  if (cmd === "randomize-chromium") {
+    const ok = await askConfirm({
+      title: "重新生成自洽指纹画像",
+      text: "将为该 Chromium 环境重新生成一套自洽的平台、UA、显卡、屏幕、CPU/内存与噪声画像，Cookie 和登录态保持不变。",
+      okText: "重新生成",
+    });
+    if (!ok) return;
+    try {
+      await api(`/profiles/${id}/randomize-chromium`, { method: "POST", body: JSON.stringify({ os_family: "auto" }) });
+      toast("已重新生成自洽指纹画像");
+      await refresh();
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
   if (cmd === "reset") {
     const ok = await askConfirm({
       title: "重置指纹",
@@ -3630,11 +3716,17 @@ editor.querySelectorAll(".editor-section").forEach((section) => {
 function renderStartupHint(prefix) {
   const startup = $(prefix + "StartupPage");
   const hint = $(prefix + "DashboardHint");
+  const urlsWrap = $(prefix + "StartupUrlsWrap");
+  if (urlsWrap) urlsWrap.hidden = startup.value !== "custom";
   const blocked = state.engine?.dashboard_startup_available === false;
   startup.querySelector('[value="dashboard"]').disabled = blocked;
   let text = "";
-  if (blocked && startup.value !== "blank") {
+  if (blocked && startup.value === "dashboard") {
     text = "本机已禁用启动时打开本地页面。";
+  } else if (startup.value === "restore") {
+    text = "下次启动时自动恢复上次正常关闭前保留的标签页。";
+  } else if (startup.value === "custom") {
+    text = "启动时按顺序在独立标签页中打开下方填写的网址。";
   } else if (startup.value === "default" && $(prefix + "Engine").value === "chromium" && state.engine) {
     text = $(prefix + "Headless").value === "1" || !state.engine.chromium?.supports_session_workbench ?
       "此启动方式默认打开空白页。" :
@@ -3642,6 +3734,57 @@ function renderStartupHint(prefix) {
   }
   hint.textContent = text;
   hint.hidden = !text;
+}
+
+function toggleGeoCustomFields(prefix) {
+  const wrap = $(prefix + "GeoCustomFields");
+  if (!wrap) return;
+  const isChromium = $(prefix + "Engine").value === "chromium";
+  const show = isChromium && $(prefix + "Geolocation").value === "custom";
+  wrap.hidden = !show;
+  wrap.style.display = show ? "grid" : "none";
+}
+
+function parseStartupUrlsInput(prefix) {
+  const raw = ($(prefix + "StartupUrls")?.value || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  return raw;
+}
+
+async function applyGeneratedChromiumPreset(osFamily = null) {
+  const family = osFamily || $("fPresetOsFamily").value || "auto";
+  const btn = $("fGenerateChromiumPreset");
+  const locked = $("fLocalFonts").disabled;
+  if (locked) return;
+  btn.disabled = true;
+  try {
+    const preset = await api("/chromium/fingerprint-preset", {
+      method: "POST",
+      body: JSON.stringify({ os_family: family, chromium_version: $("fChromiumVersion").value || "" }),
+    });
+    $("fUserAgent").value = preset.chromium_user_agent || "";
+    validateUserAgent("f");
+    if (!$("fChromiumPlatform").disabled) $("fChromiumPlatform").value = preset.chromium_platform || "";
+    if (!$("fChromiumWebgl").disabled) $("fChromiumWebgl").value = preset.chromium_webgl || "";
+    if (!$("fChromiumScreen").disabled) $("fChromiumScreen").value = preset.chromium_screen || "";
+    if (!$("fBrowserWindowSize").disabled) $("fBrowserWindowSize").value = preset.browser_window_size || "";
+    if (!$("fHardwareConcurrency").disabled) $("fHardwareConcurrency").value = String(preset.chromium_hardware_concurrency || 0);
+    if (!$("fDeviceMemory").disabled) $("fDeviceMemory").value = String(preset.chromium_device_memory || 0);
+    if (!$("fCanvasNoise").disabled) $("fCanvasNoise").checked = Boolean(preset.chromium_canvas_noise);
+    if (!$("fAudioNoise").disabled) $("fAudioNoise").checked = Boolean(preset.chromium_audio_noise);
+    if (!$("fGeolocation").disabled && !$("fGeolocation").querySelector('[value="auto"]')?.disabled) {
+      $("fGeolocation").value = preset.geolocation || "auto";
+      toggleGeoCustomFields("f");
+    }
+    if (!$("fWebrtcPolicy").disabled && !$("fWebrtcPolicy").querySelector('[value="proxy"]')?.disabled) {
+      $("fWebrtcPolicy").value = preset.webrtc_policy || "proxy";
+    }
+    $("fChromiumPresetLabel").textContent = `已套用：${preset.template_label} · 定位跟随代理 · WebRTC 替换出口 IP`;
+    renderEditorSettings();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = $("fLocalFonts").disabled;
+  }
 }
 
 function renderEditorSettings() {
@@ -3919,10 +4062,37 @@ function setEngineFields(prefix, saved = null) {
     const control = $(prefix + field);
     control.disabled = locked || supported === undefined;
     control.querySelector('[value="blocked"]').disabled = !supported;
+    if (field === "Geolocation") {
+      const spoofSupported = capabilities?.supports_geolocation_spoof_policy !== false;
+      for (const mode of ["auto", "custom"]) {
+        const opt = control.querySelector(`[value="${mode}"]`);
+        if (opt) opt.disabled = !spoofSupported;
+      }
+      if (saved) {
+        $(prefix + "GeoLat").value = saved.geolocation_latitude ?? "";
+        $(prefix + "GeoLon").value = saved.geolocation_longitude ?? "";
+        $(prefix + "GeoAcc").value = saved.geolocation_accuracy ? String(saved.geolocation_accuracy) : "";
+      }
+      for (const sub of ["GeoLat", "GeoLon", "GeoAcc"]) $(prefix + sub).disabled = locked;
+      toggleGeoCustomFields(prefix);
+    }
     $(prefix + hintId).textContent = !state.engine ? "正在读取内核信息…" :
       supported === undefined ? `选择支持${label}权限的已安装内核后可设置。` :
       !supported ? `需要安装支持${label}权限的 Moltskin Chromium，才能以阻止模式启动。` :
+      field === "Geolocation" ? "支持按代理出口 IP 自动拟真经纬度（带防关联微抖动）、自定义坐标或完全阻止。" :
       "选择阻止后，" + message;
+  }
+  const webrtcControl = $(prefix + "WebrtcPolicy");
+  if (webrtcControl) {
+    if (saved) webrtcControl.value = saved.webrtc_policy || "standard";
+    const webrtcIpSupported = capabilities?.supports_webrtc_ip_policy !== false;
+    const proxyOpt = webrtcControl.querySelector('[value="proxy"]');
+    if (proxyOpt) proxyOpt.disabled = !webrtcIpSupported;
+    webrtcControl.disabled = locked || !state.engine;
+  }
+  if (prefix === "f") {
+    $("fPresetOsFamily").disabled = locked;
+    $("fGenerateChromiumPreset").disabled = locked;
   }
   hint.textContent = chromium && unavailable ? "本机 Chromium 暂不可用，可先保存环境配置。" : "";
   if (chromium && locked) {
@@ -3961,7 +4131,23 @@ function engineSettings(prefix, creating) {
     const media = $(prefix + "MediaCapture");
     if (!media.disabled) values.media_capture = media.value;
     const location = $(prefix + "Geolocation");
-    if (!location.disabled) values.geolocation = location.value;
+    if (!location.disabled) {
+      values.geolocation = location.value;
+      if (location.value === "custom") {
+        const latRaw = $(prefix + "GeoLat").value.trim();
+        const lonRaw = $(prefix + "GeoLon").value.trim();
+        const accRaw = $(prefix + "GeoAcc").value.trim();
+        values.geolocation_latitude = latRaw === "" ? null : Number(latRaw);
+        values.geolocation_longitude = lonRaw === "" ? null : Number(lonRaw);
+        values.geolocation_accuracy = accRaw === "" ? 0 : Number(accRaw);
+      } else {
+        values.geolocation_latitude = null;
+        values.geolocation_longitude = null;
+        values.geolocation_accuracy = 0;
+      }
+    }
+    const webrtc = $(prefix + "WebrtcPolicy");
+    if (webrtc && !webrtc.disabled) values.webrtc_policy = webrtc.value;
     for (const field of chromiumPrivacyFields) {
       const control = $(prefix + field.control);
       if (!control.disabled) values[field.key] = control.value;
@@ -3972,9 +4158,13 @@ function engineSettings(prefix, creating) {
   return values;
 }
 
-$("fEngine").onchange = () => { clearPlatformPreview(); setEngineFields("f"); renderPresetAction(); };
+$("fEngine").onchange = () => { clearPlatformPreview(); setEngineFields("f"); toggleGeoCustomFields("f"); renderPresetAction(); };
 $("fOs").onchange = renderPresetAction;
-$("bEngine").onchange = () => { setEngineFields("b"); renderStartupHint("b"); };
+$("fGeolocation").onchange = () => toggleGeoCustomFields("f");
+$("bGeolocation").onchange = () => toggleGeoCustomFields("b");
+$("fStartupPage").onchange = () => renderStartupHint("f");
+$("fGenerateChromiumPreset").onclick = () => applyGeneratedChromiumPreset();
+$("bEngine").onchange = () => { setEngineFields("b"); toggleGeoCustomFields("b"); renderStartupHint("b"); };
 $("bHeadless").onchange = $("bStartupPage").onchange = () => renderStartupHint("b");
 for (const prefix of ["f", "b"]) {
   $(prefix + "PlatformPreview").insertAdjacentHTML("beforeend", `<div class="preview-fields">
@@ -4023,7 +4213,7 @@ function updateEditLock(id, status) {
   setEngineFields("f");
 }
 
-async function openProfileModal(id = null, {engine = "camoufox", section = "profileBasics"} = {}) {
+async function openProfileModal(id = null, {engine = "camoufox", section = "profileBasics", autoPreset = false} = {}) {
   clearPlatformPreview();
   const form = { id, draftId: null, presets: new Map(), saving: false };
   profileForm = form;
@@ -4050,6 +4240,8 @@ async function openProfileModal(id = null, {engine = "camoufox", section = "prof
   $("fLocalFonts").disabled = p?.status === "running";
   $("fMediaCapture").value = p?.media_capture || "standard";
   $("fGeolocation").value = p?.geolocation || "standard";
+  $("fWebrtcPolicy").value = p?.webrtc_policy || "standard";
+  $("fChromiumPresetLabel").textContent = "自动匹配 OS、UA、显卡 ANGLE 后端、屏幕尺寸、CPU/内存、微噪声、代理定位与 WebRTC IP。";
   setEngineFields("f", p || {});
   $("fOs").value = p?.os || "windows";
   $("fOs").disabled = isEdit;
@@ -4058,11 +4250,15 @@ async function openProfileModal(id = null, {engine = "camoufox", section = "prof
   $("fTags").value = (p?.tags || []).join(", ");
   $("fRemark").value = p?.remark || "";
   $("fStartupPage").value = p?.startup_page || "default";
+  $("fStartupUrls").value = (p?.startup_urls || []).join("\n");
   $("fBlockImages").checked = Boolean(p?.block_images);
   $("fNextLaunch").hidden = !isEdit;
   renderEditorPreset(p?.engine === "chromium" ? null : p?.fingerprint_preview);
   renderPresetAction();
   renderEditorSettings();
+  if (!isEdit && autoPreset && $("fEngine").value === "chromium") {
+    await applyGeneratedChromiumPreset("auto");
+  }
   $(section).open = true;
   openModal("profileMask", section === "profileBasics" ? $("fName") : $(section).querySelector("summary"));
   if (section === "profileBasics") editor.querySelector(".editor-sections").scrollTop = 0;
@@ -4161,6 +4357,7 @@ $("confirmProfile").onclick = async () => {
     name,
     ...engineSettings("f", !state.editingId),
     startup_page: $("fStartupPage").value,
+    startup_urls: $("fStartupPage").value === "custom" ? parseStartupUrlsInput("f") : [],
     block_images: $("fBlockImages").checked,
     group_id: $("fGroup").value || null,
     headless: $("fHeadless").value === "1",
@@ -4213,6 +4410,7 @@ function openChromiumSettingsDraft(section = "profileFingerprint") {
 $("createMenuBtn").onclick = (e) => {
   openPop(e.currentTarget, `
     <button data-create="single">${icon("plus")}创建单个窗口</button>
+    <button data-create="chromium-auto">${icon("bolt")}一键生成 Chromium 自洽窗口</button>
     <button data-create="chromium">${icon("finger")}自选 Chromium 窗口指纹</button>
     <button data-create="batch">${icon("copy")}批量创建</button>
     <div class="sep"></div>
@@ -4226,6 +4424,7 @@ pop.addEventListener("click", (e) => {
   closePop();
   const what = btn.dataset.create;
   if (what === "single") openProfileModal();
+  if (what === "chromium-auto") openProfileModal(null, {engine: "chromium", section: "profileBasics", autoPreset: true});
   if (what === "chromium") openChromiumSettingsDraft();
   if (what === "batch") openBatchModal();
   if (what === "import") $("importFile").click();
@@ -4242,7 +4441,10 @@ function openBatchModal() {
   $("bLocalFonts").value = "standard";
   $("bMediaCapture").value = "standard";
   $("bGeolocation").value = "standard";
+  $("bWebrtcPolicy").value = "standard";
+  $("bAutoChromiumPreset").checked = true;
   $("bStartupPage").value = "default";
+  $("bStartupUrls").value = "";
   renderStartupHint("b");
   $("bBlockImages").value = "0";
   setEngineFields("b", {});
@@ -4281,19 +4483,44 @@ $("confirmBatch").onclick = async () => {
     group_id: $("bGroup").value || null,
     headless: $("bHeadless").value === "1",
     startup_page: $("bStartupPage").value,
+    startup_urls: $("bStartupPage").value === "custom" ? parseStartupUrlsInput("b") : [],
     block_images: $("bBlockImages").value === "1",
     tags: $("bTags").value.split(",").map((x) => x.trim()).filter(Boolean),
     remark: "",
   };
+  const autoChromium = $("bEngine").value === "chromium" && $("bAutoChromiumPreset").checked;
   const btn = $("confirmBatch");
   btn.disabled = true;
   btn.textContent = `创建中 0/${count}`;
   let ok = 0, failed = 0, firstError = "";
   for (let i = 0; i < count; i++) {
     try {
+      let rowPayload = { ...base, name: `${prefix}-${pad(start + i)}` };
+      if (autoChromium) {
+        const preset = await api("/chromium/fingerprint-preset", {
+          method: "POST",
+          body: JSON.stringify({ os_family: "auto", chromium_version: base.chromium_version || "" }),
+        });
+        const canGeoAuto = !$("bGeolocation").disabled && !$("bGeolocation").querySelector('[value="auto"]')?.disabled;
+        const canWebrtcProxy = !$("bWebrtcPolicy").disabled && !$("bWebrtcPolicy").querySelector('[value="proxy"]')?.disabled;
+        rowPayload = {
+          ...rowPayload,
+          chromium_platform: rowPayload.chromium_platform || ($("bChromiumPlatform").disabled ? "" : preset.chromium_platform),
+          chromium_user_agent: rowPayload.chromium_user_agent || ($("bUserAgent").disabled ? "" : preset.chromium_user_agent),
+          chromium_webgl: rowPayload.chromium_webgl || ($("bChromiumWebgl").disabled ? "" : preset.chromium_webgl),
+          chromium_screen: rowPayload.chromium_screen || ($("bChromiumScreen").disabled ? "" : preset.chromium_screen),
+          browser_window_size: rowPayload.browser_window_size || ($("bBrowserWindowSize").disabled ? "" : preset.browser_window_size),
+          chromium_hardware_concurrency: rowPayload.chromium_hardware_concurrency || ($("bHardwareConcurrency").disabled ? 0 : preset.chromium_hardware_concurrency),
+          chromium_device_memory: rowPayload.chromium_device_memory || ($("bDeviceMemory").disabled ? 0 : preset.chromium_device_memory),
+          chromium_canvas_noise: rowPayload.chromium_canvas_noise || (!$("bCanvasNoise").disabled && Boolean(preset.chromium_canvas_noise)),
+          chromium_audio_noise: rowPayload.chromium_audio_noise || (!$("bAudioNoise").disabled && Boolean(preset.chromium_audio_noise)),
+          geolocation: rowPayload.geolocation !== "standard" ? rowPayload.geolocation : (canGeoAuto ? preset.geolocation : "standard"),
+          webrtc_policy: rowPayload.webrtc_policy !== "standard" ? rowPayload.webrtc_policy : (canWebrtcProxy ? preset.webrtc_policy : "standard"),
+        };
+      }
       await api("/profiles", {
         method: "POST",
-        body: JSON.stringify({ ...base, name: `${prefix}-${pad(start + i)}` }),
+        body: JSON.stringify(rowPayload),
       });
       ok++;
     } catch (err) {
@@ -4420,7 +4647,9 @@ function openDetail(id, initialFocus = null) {
       <div class="kv"><div class="k">Canvas 像素读取</div><div class="v">${p.canvas_readback === "blocked" ? "限制读取" : "标准"}</div></div>
       <div class="kv"><div class="k">WebGL 显卡信息</div><div class="v">${p.webgl_debug_info === "blocked" ? "限制读取" : "标准"}</div></div>
       <div class="kv"><div class="k">摄像头和麦克风</div><div class="v">${p.media_capture === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
-      <div class="kv"><div class="k">地理位置</div><div class="v">${p.geolocation === "blocked" ? "始终阻止" : "由网站请求授权"}</div></div>
+      <div class="kv"><div class="k">地理位置</div><div class="v">${p.geolocation === "blocked" ? "始终阻止" : p.geolocation === "auto" ? "跟随代理 IP 自动拟真" : p.geolocation === "custom" ? esc(`自定义 (${p.geolocation_latitude}, ${p.geolocation_longitude})`) : "由网站请求授权"}</div></div>
+      <div class="kv"><div class="k">WebRTC 公网 IP 保护</div><div class="v">${p.webrtc_policy === "proxy" ? "替换为代理出口公网 IP" : p.webrtc_policy === "disabled" ? "禁用非代理 UDP" : "标准"}</div></div>
+      <div class="kv"><div class="k">启动页面</div><div class="v">${p.startup_page === "restore" ? "恢复上次打开的标签页" : p.startup_page === "custom" ? esc(`自定义 (${(p.startup_urls || []).length} 个标签)`) : p.startup_page === "dashboard" ? "管理首页" : p.startup_page === "blank" ? "空白页" : "沿用默认设置"}</div></div>
       <div class="kv"><div class="k">启动方式</div><div class="v">${p.headless ? "无头（后台）" : "有头（显示窗口）"}</div></div>
       <div class="kv"><div class="k">逻辑处理器数量</div><div class="v">${p.chromium_hardware_concurrency ? esc(p.chromium_hardware_concurrency) + " 核" : "由 Chromium 分配"}</div></div>
       <div class="kv"><div class="k">设备内存容量</div><div class="v">${p.chromium_device_memory ? esc(p.chromium_device_memory) + " GiB" : "由 Chromium 分配"}</div></div>

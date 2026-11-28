@@ -19,6 +19,7 @@ from platforms import current as host_platform
 CAPABILITY = "moltskin-disable-local-font-access"
 MEDIA_CAPTURE_CAPABILITY = "moltskin-block-media-capture"
 GEOLOCATION_CAPABILITY = "moltskin-block-geolocation"
+GEOLOCATION_SPOOF_CAPABILITY = "moltskin-geolocation"
 WEBGL_DEBUG_INFO_CAPABILITY = "moltskin-block-webgl-debug-info"
 CANVAS_READBACK_CAPABILITY = "moltskin-block-canvas-readback"
 HARDWARE_REPORTING_CAPABILITY = "moltskin-limit-hardware-reporting"
@@ -36,13 +37,15 @@ SPEECH_VOICES_CAPABILITY = "moltskin-speech-voices"
 FONT_FILTER_CAPABILITY = "moltskin-font-filter"
 BRAND_CAPABILITY = "moltskin-brand"
 WEBGPU_CAPABILITY = "moltskin-webgpu"
+WEBRTC_IP_CAPABILITY = "moltskin-webrtc-public-ip"
 HARDWARE_PROFILE_CAPABILITY = "moltskin-hardware-profile"
 CANVAS_READBACK_SWITCH = CANVAS_READBACK_CAPABILITY
-DESKTOP_CAPABILITIES = frozenset({CAPABILITY, MEDIA_CAPTURE_CAPABILITY, GEOLOCATION_CAPABILITY,
+DESKTOP_CAPABILITIES = frozenset({CAPABILITY, MEDIA_CAPTURE_CAPABILITY, GEOLOCATION_CAPABILITY, GEOLOCATION_SPOOF_CAPABILITY,
                                   WEBGL_DEBUG_INFO_CAPABILITY, CANVAS_READBACK_CAPABILITY, HARDWARE_REPORTING_CAPABILITY,
                                   WEBDRIVER_CAPABILITY, CDP_STEALTH_CAPABILITY, SCREEN_METRICS_CAPABILITY, SCREEN_AVAIL_CAPABILITY, PLATFORM_CAPABILITY,
                                   WEBGL_INFO_CAPABILITY, WEBGL_PARAMS_CAPABILITY, CANVAS_NOISE_CAPABILITY, AUDIO_NOISE_CAPABILITY, LOCALE_CAPABILITY,
-                                  SPEECH_VOICES_CAPABILITY, FONT_FILTER_CAPABILITY, BRAND_CAPABILITY, WEBGPU_CAPABILITY, HARDWARE_PROFILE_CAPABILITY,
+                                  SPEECH_VOICES_CAPABILITY, FONT_FILTER_CAPABILITY, BRAND_CAPABILITY, WEBGPU_CAPABILITY, WEBRTC_IP_CAPABILITY,
+                                  HARDWARE_PROFILE_CAPABILITY,
                                   "moltskin-panel", "moltskin-toolbar"})
 
 
@@ -124,11 +127,15 @@ def resolve_build(version: str) -> InstalledBuild:
 
 def check_access_policies(capabilities: frozenset[str], media_capture: str, geolocation: str,
                           webgl_debug_info: str = "standard", canvas_readback: str = "standard",
-                          hardware_reporting: str = "standard") -> None:
+                          hardware_reporting: str = "standard", webrtc_policy: str = "standard") -> None:
     if media_capture == "blocked" and MEDIA_CAPTURE_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {MEDIA_CAPTURE_CAPABILITY} 补丁，请更新内核以阻止摄像头与麦克风访问")
     if geolocation == "blocked" and GEOLOCATION_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {GEOLOCATION_CAPABILITY} 补丁，请更新内核以阻止地理位置访问")
+    if geolocation in ("auto", "custom") and GEOLOCATION_SPOOF_CAPABILITY not in capabilities:
+        raise ValueError(f"当前内核缺少 {GEOLOCATION_SPOOF_CAPABILITY} 补丁，请更新内核以使用地理位置拟真")
+    if webrtc_policy == "proxy" and WEBRTC_IP_CAPABILITY not in capabilities:
+        raise ValueError(f"当前内核缺少 {WEBRTC_IP_CAPABILITY} 补丁，请更新内核以使用 WebRTC 公网 IP 替换")
     if webgl_debug_info == "blocked" and WEBGL_DEBUG_INFO_CAPABILITY not in capabilities:
         raise ValueError(f"当前内核缺少 {WEBGL_DEBUG_INFO_CAPABILITY} 补丁，请更新内核以限制 WebGL 显卡信息")
     if canvas_readback == "blocked" and CANVAS_READBACK_CAPABILITY not in capabilities:

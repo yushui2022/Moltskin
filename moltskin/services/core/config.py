@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path, PureWindowsPath
 from typing import Literal, get_args
+from urllib.parse import urlsplit
 from zoneinfo import available_timezones
 
 # moltskin/services/core/config.py -> 项目根目录
@@ -134,6 +135,28 @@ def validate_chromium_user_agent(value: str) -> str:
             or not value.isprintable() or value != value.strip()):
         raise ValueError("User-Agent 可留空，或填写最多 512 个可打印 ASCII 字符，首尾不能有空格。")
     return value
+
+
+def validate_startup_urls(value: list[str]) -> list[str]:
+    if not isinstance(value, list):
+        raise ValueError("自定义启动网址必须是列表。")
+    cleaned: list[str] = []
+    for raw in value:
+        if not isinstance(raw, str):
+            raise ValueError("启动网址必须是字符串。")
+        url = raw.strip()
+        if not url:
+            continue
+        if (len(url) > 1024 or not url.isascii() or not url.isprintable()
+                or any(ch.isspace() for ch in url) or url.startswith("-")):
+            raise ValueError("启动网址仅支持最长 1024 字符的 HTTP/HTTPS 网址，且不能包含空白字符。")
+        parsed = urlsplit(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("启动网址必须以 http:// 或 https:// 开头并包含有效域名。")
+        cleaned.append(url)
+    if len(cleaned) > 10:
+        raise ValueError("自定义启动网址最多支持 10 个标签页。")
+    return cleaned
 
 
 def profile_directory(profile_id: str) -> Path:

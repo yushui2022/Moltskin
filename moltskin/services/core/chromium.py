@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 import hashlib
+import ipaddress
+import math
 import os
 import re
 import stat
@@ -12,12 +14,13 @@ from pathlib import Path
 from platforms import current as host_platform
 
 from chromium.native import (
-    CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
+    CANVAS_READBACK_SWITCH, CAPABILITY, GEOLOCATION_CAPABILITY, GEOLOCATION_SPOOF_CAPABILITY,
+    MEDIA_CAPTURE_CAPABILITY, VERSION_PATTERN,
     AUDIO_NOISE_CAPABILITY, CANVAS_NOISE_CAPABILITY, HARDWARE_REPORTING_CAPABILITY, LOCALE_CAPABILITY,
     FONT_FILTER_CAPABILITY, PLATFORM_CAPABILITY, SPEECH_VOICES_CAPABILITY,
     SCREEN_METRICS_CAPABILITY, SCREEN_AVAIL_CAPABILITY,
     WEBDRIVER_CAPABILITY, WEBGL_DEBUG_INFO_CAPABILITY, WEBGL_INFO_CAPABILITY, WEBGL_PARAMS_CAPABILITY,
-    BRAND_CAPABILITY, HARDWARE_PROFILE_CAPABILITY, WEBGPU_CAPABILITY,
+    BRAND_CAPABILITY, HARDWARE_PROFILE_CAPABILITY, WEBGPU_CAPABILITY, WEBRTC_IP_CAPABILITY,
     check_access_policies, chromium_owns_directory, resolve_build,
 )
 
@@ -50,6 +53,10 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
                    audio_noise_seed: int = 0,
                    hardware_concurrency: int = 0, device_memory: int = 0,
                    hardware_seed: int = 0,
+                   geolocation_coords: tuple[float, float, float] | None = None,
+                   webrtc_policy: str = "standard", webrtc_public_ip: str = "",
+                   restore_last_session: bool = False,
+                   startup_urls: Iterable[str] = (),
                    extension_dirs: Iterable[str | Path] = ()) -> tuple[list[str], str]:
     if not host_platform.supports_chromium:
         raise ValueError(host_platform.unsupported_chromium_message)
@@ -57,8 +64,10 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("未知的字体访问设置")
     if media_capture not in ("standard", "blocked"):
         raise ValueError("未知的摄像头与麦克风访问设置")
-    if geolocation not in ("standard", "blocked"):
+    if geolocation not in ("standard", "blocked", "auto", "custom"):
         raise ValueError("未知的地理位置访问设置")
+    if webrtc_policy not in ("standard", "proxy", "disabled"):
+        raise ValueError("未知的 WebRTC 策略设置")
     if hardware_reporting not in ("standard", "limited"):
         raise ValueError("未知的硬件信息设置")
     if canvas_readback not in ("standard", "blocked") or webgl_debug_info not in ("standard", "blocked"):
@@ -87,9 +96,25 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         raise ValueError("不支持的设备内存容量")
     if hardware_seed and not 0 < hardware_seed <= 0xFFFFFFFF:
         raise ValueError("硬件防关联种子无效")
+    validated_startup_urls = config.validate_startup_urls(list(startup_urls))
+    if geolocation_coords is not None:
+        lat, lon, acc = geolocation_coords
+        if (not math.isfinite(lat) or not -90.0 <= lat <= 90.0
+                or not math.isfinite(lon) or not -180.0 <= lon <= 180.0
+                or not math.isfinite(acc) or not 0.0 < acc <= 100000.0):
+            raise ValueError("地理位置经纬度或精度范围无效")
+    canonical_webrtc_ip = ""
+    if webrtc_public_ip:
+        try:
+            canonical_webrtc_ip = str(ipaddress.ip_address(webrtc_public_ip.strip()))
+        except ValueError as exc:
+            raise ValueError("WebRTC 公网 IP 格式无效") from exc
     config.validate_chromium_user_agent(chromium_user_agent)
     binary, version, capabilities = resolve_build(chromium_version)
-    check_access_policies(capabilities, media_capture, geolocation, webgl_debug_info, canvas_readback, hardware_reporting)
+    check_access_policies(
+        capabilities, media_capture, geolocation, webgl_debug_info,
+        canvas_readback, hardware_reporting, webrtc_policy,
+    )
     if chromium_screen and SCREEN_METRICS_CAPABILITY not in capabilities:
         raise ValueError("当前内核缺少 moltskin-screen-metrics 补丁，请更新内核以使用屏幕预设")
     if chromium_platform and PLATFORM_CAPABILITY not in capabilities:
@@ -112,11 +137,14 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--moltskin-brand-full-version=" + brand_versions[1])
     if proxy_server:
         args.append(f"--proxy-server={proxy_server}")
+    if proxy_server or webrtc_policy in ("proxy", "disabled"):
         # Do not let WebRTC bypass the profile proxy with direct UDP/STUN.
         # The chrome policy switch is the one that actually reaches the
         # PeerConnection manager; the force switch covers embedders/tests.
         args.append("--force-webrtc-ip-handling-policy=disable_non_proxied_udp")
         args.append("--webrtc-ip-handling-policy=disable_non_proxied_udp")
+    if webrtc_policy == "proxy" and canonical_webrtc_ip:
+        args.append(f"--{WEBRTC_IP_CAPABILITY}={canonical_webrtc_ip}")
     if not 1 <= config.PORT <= 65535:
         raise ValueError("控制台端口须在 1 到 65535 之间")
     if config.PORT != 8765:
@@ -127,6 +155,9 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--" + MEDIA_CAPTURE_CAPABILITY)
     if geolocation == "blocked":
         args.append("--" + GEOLOCATION_CAPABILITY)
+    elif geolocation in ("auto", "custom") and geolocation_coords is not None:
+        lat, lon, acc = geolocation_coords
+        args.append(f"--{GEOLOCATION_SPOOF_CAPABILITY}={lat:.6f},{lon:.6f},{acc:.1f}")
     if hardware_reporting == "limited":
         args.append("--" + HARDWARE_REPORTING_CAPABILITY)
     if hardware_concurrency:
@@ -212,7 +243,11 @@ def prepare_launch(profile_dir: Path, local_fonts: str, headless: bool, *,
         args.append("--headless")
     if workbench_button_url:
         args.append("--moltskin-workbench-url=" + workbench_button_url)
-    if workbench_session:
+    if restore_last_session:
+        args.append("--restore-last-session")
+    elif validated_startup_urls:
+        args.extend(validated_startup_urls)
+    elif workbench_session:
         args.append(workbench_button_url or workbench_url(workbench_session))
     else:
         args.append(config.local_dashboard_url() if open_dashboard else "about:blank")
@@ -234,6 +269,10 @@ def _brand_versions(user_agent: str, fallback: str) -> tuple[str, str] | None:
         while len(parts) < 4:
             parts.append("0")
         version = ".".join(parts[:4])
+        if (re.fullmatch(r"[0-9]+(?:\.[0-9]+){3}", fallback)
+                and parts[0] == fallback.split(".", 1)[0]
+                and parts[1:4] == ["0", "0", "0"]):
+            return version, fallback
         return version, version
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){1,3}", fallback):
         return None

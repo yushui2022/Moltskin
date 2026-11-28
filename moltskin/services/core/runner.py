@@ -132,17 +132,29 @@ def main() -> int:
                 # Diagnostic failures must leave the user's browser running.
                 print(f"启动读数不可用 ({type(exc).__name__})", flush=True)
 
-            start_url = plan.get("manager_url")
-            if not start_url and plan.get("startup_page", "default") != "default":
-                start_url = "about:blank"
-            if start_url:
-                try:
-                    page = context.pages[0] if context.pages else context.new_page()
-                    page.goto(start_url, wait_until="domcontentloaded", timeout=15000)
-                    page.bring_to_front()
-                    print(f"startup page: {page.title()}", flush=True)
-                except Exception as exc:  # noqa: BLE001 - 管理页打不开不应影响环境本身
-                    print(f"startup page failed: {exc}", flush=True)
+            startup_mode = plan.get("startup_page", "default")
+            custom_urls = plan.get("startup_urls") or []
+            if startup_mode == "custom" and custom_urls:
+                for idx, target_url in enumerate(custom_urls):
+                    try:
+                        page = (context.pages[0] if idx == 0 and context.pages else context.new_page())
+                        page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
+                        if idx == 0:
+                            page.bring_to_front()
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"startup url failed ({target_url}): {exc}", flush=True)
+            elif startup_mode != "restore":
+                start_url = plan.get("manager_url")
+                if not start_url and startup_mode != "default":
+                    start_url = "about:blank"
+                if start_url:
+                    try:
+                        page = context.pages[0] if context.pages else context.new_page()
+                        page.goto(start_url, wait_until="domcontentloaded", timeout=15000)
+                        page.bring_to_front()
+                        print(f"startup page: {page.title()}", flush=True)
+                    except Exception as exc:  # noqa: BLE001 - 管理页打不开不应影响环境本身
+                        print(f"startup page failed: {exc}", flush=True)
 
             while not STOP:
                 try:

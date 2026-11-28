@@ -1,0 +1,638 @@
+diff --git a/chrome/app/chrome_main_delegate.cc b/chrome/app/chrome_main_delegate.cc
+index 05b6d4cffe..d4f09a2150 100644
+--- a/chrome/app/chrome_main_delegate.cc
++++ b/chrome/app/chrome_main_delegate.cc
+@@ -444,6 +444,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+       puts("moltskin-disable-local-font-access");
+       puts("moltskin-block-media-capture");
+       puts("moltskin-block-geolocation");
++      puts("moltskin-geolocation");
+       puts("moltskin-block-webgl-debug-info");
+       puts("moltskin-block-canvas-readback");
+       puts("moltskin-audio-noise");
+@@ -462,6 +463,7 @@ bool HandleVersionSwitches(const base::CommandLine& command_line) {
+       puts("moltskin-webgl-info");
+       puts("moltskin-webgl-params");
+       puts("moltskin-webgpu");
++      puts("moltskin-webrtc-public-ip");
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+       puts("moltskin-panel");
+       puts("moltskin-toolbar");
+diff --git a/components/permissions/contexts/geolocation_permission_context.cc b/components/permissions/contexts/geolocation_permission_context.cc
+index 9e7f738cc2..c0fde5327a 100644
+--- a/components/permissions/contexts/geolocation_permission_context.cc
++++ b/components/permissions/contexts/geolocation_permission_context.cc
+@@ -6,6 +6,7 @@
+ 
+ #include <variant>
+ 
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/metrics/histogram_functions.h"
+@@ -26,6 +27,7 @@
+ #include "content/public/browser/device_service.h"
+ #include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/common/moltskin_switches.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
+ #include "url/origin.h"
+ 
+@@ -89,7 +91,8 @@ void GeolocationPermissionContext::UpdateTabContext(
+     }
+   }
+ 
+-  if (allowed) {
++  if (allowed && !base::CommandLine::ForCurrentProcess()->HasSwitch(
++                     switches::kMoltskinGeolocation)) {
+     GetGeolocationControl()->UserDidOptIntoLocationServices();
+   }
+ }
+diff --git a/components/permissions/contexts/geolocation_permission_context_system.cc b/components/permissions/contexts/geolocation_permission_context_system.cc
+index 870024d865..5aba8615ec 100644
+--- a/components/permissions/contexts/geolocation_permission_context_system.cc
++++ b/components/permissions/contexts/geolocation_permission_context_system.cc
+@@ -4,11 +4,13 @@
+ 
+ #include "components/permissions/contexts/geolocation_permission_context_system.h"
+ 
++#include "base/command_line.h"
+ #include "components/content_settings/core/browser/content_settings_observer.h"
+ #include "components/content_settings/core/browser/content_settings_registry.h"
+ #include "components/content_settings/core/common/content_settings.h"
+ #include "components/content_settings/core/common/features.h"
+ #include "content/public/browser/browser_thread.h"
++#include "content/public/common/moltskin_switches.h"
+ #include "services/device/public/cpp/geolocation/location_system_permission_status.h"
+ 
+ namespace permissions {
+@@ -17,6 +19,11 @@ GeolocationPermissionContextSystem::GeolocationPermissionContextSystem(
+     std::unique_ptr<Delegate> delegate)
+     : GeolocationPermissionContext(browser_context, std::move(delegate)) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinGeolocation)) {
++    system_permission_ = LocationSystemPermissionStatus::kAllowed;
++    return;
++  }
+   auto* geolocation_system_permission_manager =
+       device::GeolocationSystemPermissionManager::GetInstance();
+   DCHECK(geolocation_system_permission_manager);
+@@ -27,6 +34,10 @@ GeolocationPermissionContextSystem::GeolocationPermissionContextSystem(
+ 
+ GeolocationPermissionContextSystem::~GeolocationPermissionContextSystem() {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinGeolocation)) {
++    return;
++  }
+   auto* geolocation_system_permission_manager =
+       device::GeolocationSystemPermissionManager::GetInstance();
+   if (geolocation_system_permission_manager) {
+@@ -58,6 +69,11 @@ GeolocationPermissionContextSystem::GetPermissionStatusInternal(
+     }
+   }
+ 
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
++          switches::kMoltskinGeolocation)) {
++    return site_permission;
++  }
++
+   switch (system_permission_) {
+     case LocationSystemPermissionStatus::kNotDetermined:
+       return is_permission_content_setting
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index bd7f0181db..2cd85a7e31 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -4055,6 +4055,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       blink::switches::kMoltskinWebgpuArchitecture,
+       blink::switches::kMoltskinWebgpuDevice,
+       blink::switches::kMoltskinWebgpuVendor,
++      blink::switches::kMoltskinWebrtcPublicIp,
+       blink::switches::kNetworkQuietTimeout,
+       blink::switches::kShowContentfulPaintRects,
+       blink::switches::kShowLayoutShiftRegions,
+diff --git a/content/browser/web_contents/web_contents_impl.cc b/content/browser/web_contents/web_contents_impl.cc
+index a2638c29d4..38bf9994d0 100644
+--- a/content/browser/web_contents/web_contents_impl.cc
++++ b/content/browser/web_contents/web_contents_impl.cc
+@@ -42,6 +42,7 @@
+ #include "base/observer_list.h"
+ #include "base/process/process.h"
+ #include "base/strings/strcat.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_split.h"
+ #include "base/strings/string_util.h"
+ #include "base/strings/stringprintf.h"
+@@ -181,6 +182,7 @@
+ #include "content/public/common/content_client.h"
+ #include "content/public/common/content_features.h"
+ #include "content/public/common/content_switches.h"
++#include "content/public/common/moltskin_switches.h"
+ #include "content/public/common/referrer_type_converters.h"
+ #include "content/public/common/url_constants.h"
+ #include "content/public/common/widget_type.h"
+@@ -190,6 +192,7 @@
+ #include "net/http/http_util.h"
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "partition_alloc/buildflags.h"
++#include "services/device/public/mojom/geoposition.mojom.h"
+ #include "services/device/public/mojom/wake_lock.mojom.h"
+ #include "services/network/public/cpp/features.h"
+ #include "services/network/public/cpp/request_destination.h"
+@@ -6694,6 +6697,33 @@ device::mojom::GeolocationContext* WebContentsImpl::GetGeolocationContext() {
+   if (!geolocation_context_) {
+     GetDeviceService().BindGeolocationContext(
+         geolocation_context_.BindNewPipeAndPassReceiver());
++    const std::string spec =
++        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++            switches::kMoltskinGeolocation);
++    if (!spec.empty()) {
++      const std::vector<std::string_view> parts = base::SplitStringPiece(
++          spec, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
++      double lat = 0.0;
++      double lon = 0.0;
++      double accuracy = 25.0;
++      const bool ok =
++          (parts.size() == 2 || parts.size() == 3) &&
++          base::StringToDouble(parts[0], &lat) &&
++          base::StringToDouble(parts[1], &lon) &&
++          (parts.size() == 2 || base::StringToDouble(parts[2], &accuracy)) &&
++          std::isfinite(lat) && lat >= -90.0 && lat <= 90.0 &&
++          std::isfinite(lon) && lon >= -180.0 && lon <= 180.0 &&
++          std::isfinite(accuracy) && accuracy > 0.0;
++      if (ok) {
++        auto position = device::mojom::Geoposition::New();
++        position->latitude = lat;
++        position->longitude = lon;
++        position->accuracy = accuracy;
++        position->timestamp = base::Time::Now();
++        geolocation_context_->SetOverride(
++            device::mojom::GeopositionResult::NewPosition(std::move(position)));
++      }
++    }
+   }
+   return geolocation_context_.get();
+ }
+diff --git a/content/public/common/moltskin_switches.h b/content/public/common/moltskin_switches.h
+index 8bfce968ae..20b8151614 100644
+--- a/content/public/common/moltskin_switches.h
++++ b/content/public/common/moltskin_switches.h
+@@ -10,6 +10,9 @@ namespace switches {
+ // Denies both precise and approximate geolocation for this browser process.
+ inline constexpr char kMoltskinBlockGeolocation[] = "moltskin-block-geolocation";
+ 
++// Overrides web geolocation with LAT,LON[,ACCURACY] without OS location query.
++inline constexpr char kMoltskinGeolocation[] = "moltskin-geolocation";
++
+ // Denies microphone and camera capture for this Moltskin browser process.
+ inline constexpr char kMoltskinBlockMediaCapture[] =
+     "moltskin-block-media-capture";
+diff --git a/services/device/geolocation/geolocation_impl.cc b/services/device/geolocation/geolocation_impl.cc
+index ec15db906b..7e594f6edd 100644
+--- a/services/device/geolocation/geolocation_impl.cc
++++ b/services/device/geolocation/geolocation_impl.cc
+@@ -11,6 +11,7 @@
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
+ #include "base/metrics/histogram_functions.h"
++#include "base/time/time.h"
+ #include "components/content_settings/core/common/features.h"
+ #include "services/device/geolocation/geolocation_context.h"
+ #include "services/device/public/mojom/geoposition.mojom.h"
+@@ -109,7 +110,11 @@ void GeolocationImpl::QueryNextPosition(QueryNextPositionCallback callback) {
+ void GeolocationImpl::QueryCachedPosition(
+     QueryCachedPositionCallback callback) {
+   if (position_override_) {
+-    std::move(callback).Run(position_override_.Clone());
++    auto cloned = position_override_.Clone();
++    if (cloned->is_position()) {
++      cloned->get_position()->timestamp = base::Time::Now();
++    }
++    std::move(callback).Run(std::move(cloned));
+     return;
+   }
+ 
+@@ -221,6 +226,9 @@ void GeolocationImpl::ReportCurrentPosition() {
+   CHECK(current_result_);
+   CHECK(position_override_ || !IsPrecisePosition(current_result_.get()) ||
+         has_precise_permission_);
++  if (position_override_ && current_result_->is_position()) {
++    current_result_->get_position()->timestamp = base::Time::Now();
++  }
+   if (current_result_->is_position() &&
+       !current_result_->get_position()->is_precise) {
+     current_result_->get_position()->heading = mojom::kBadHeading;
+diff --git a/third_party/blink/public/common/moltskin_switches.h b/third_party/blink/public/common/moltskin_switches.h
+index 9792a7712d..5a8ac13822 100644
+--- a/third_party/blink/public/common/moltskin_switches.h
++++ b/third_party/blink/public/common/moltskin_switches.h
+@@ -79,6 +79,9 @@ inline constexpr char kMoltskinSpeechVoices[] = "moltskin-speech-voices";
+ // Restricts locally matched CSS families to a cross-platform allowlist.
+ inline constexpr char kMoltskinFontFilter[] = "moltskin-font-filter";
+ 
++// Synthesizes/replaces WebRTC public ICE candidate IP with the proxy exit IP.
++inline constexpr char kMoltskinWebrtcPublicIp[] = "moltskin-webrtc-public-ip";
++
+ }  // namespace blink::switches
+ 
+ #endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_MOLTSKIN_SWITCHES_H_
+diff --git a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
+index 65c71ea9de..1a46ed0ce3 100644
+--- a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
++++ b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.cc
+@@ -41,21 +41,30 @@
+ 
+ #include "base/check.h"
+ #include "base/check_op.h"
++#include "base/command_line.h"
+ #include "base/containers/to_vector.h"
++#include "base/hash/hash.h"
+ #include "base/lazy_instance.h"
+ #include "base/location.h"
+ #include "base/logging.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/histogram_macros.h"
++#include "base/no_destructor.h"
+ #include "base/notreached.h"
+ #include "base/numerics/safe_conversions.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "base/strings/stringprintf.h"
+ #include "base/task/single_thread_task_runner.h"
+ #include "base/task/thread_pool.h"
+ #include "base/time/time.h"
++#include "base/unguessable_token.h"
+ #include "build/build_config.h"
+ #include "services/metrics/public/cpp/ukm_builders.h"
+ #include "services/network/public/cpp/connection_allowlist.h"
++#include "third_party/blink/public/common/moltskin_switches.h"
+ #include "third_party/blink/public/platform/platform.h"
+ #include "third_party/blink/public/platform/task_type.h"
+ #include "third_party/blink/public/platform/web_crypto_algorithm.h"
+@@ -179,6 +188,7 @@
+ #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+ #include "third_party/blink/renderer/platform/wtf/vector.h"
+ #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
++#include "third_party/webrtc/api/candidate.h"
+ #include "third_party/webrtc/api/crypto/crypto_options.h"
+ #include "third_party/webrtc/api/data_channel_interface.h"
+ #include "third_party/webrtc/api/dtls_transport_interface.h"
+@@ -2614,11 +2624,175 @@ void RTCPeerConnection::NegotiationNeeded() {
+   MaybeDispatchEvent(Event::Create(event_type_names::kNegotiationneeded));
+ }
+ 
++namespace {
++
++const std::string& MoltskinConfiguredWebrtcPublicIp() {
++  static const base::NoDestructor<std::string> kPublicIp([]() -> std::string {
++    const auto* cmd = base::CommandLine::ForCurrentProcess();
++    if (!cmd || !cmd->HasSwitch(switches::kMoltskinWebrtcPublicIp)) {
++      return std::string();
++    }
++    std::string raw =
++        cmd->GetSwitchValueASCII(switches::kMoltskinWebrtcPublicIp);
++    base::TrimWhitespaceASCII(raw, base::TRIM_ALL, &raw);
++    if (raw.empty() || raw.size() > 45) {
++      return std::string();
++    }
++    for (unsigned char ch : raw) {
++      if (!base::IsHexDigit(ch) && ch != '.' && ch != ':') {
++        return std::string();
++      }
++    }
++    webrtc::SocketAddress sock(raw, 9);
++    if (sock.IsNil() || sock.IsUnresolvedIP()) {
++      return std::string();
++    }
++    return sock.HostAsURIString();
++  }());
++  return *kPublicIp;
++}
++
++uint32_t MoltskinWebrtcSeed() {
++  static const uint32_t kSeed = []() -> uint32_t {
++    const auto* cmd = base::CommandLine::ForCurrentProcess();
++    uint32_t parsed = 0;
++    if (cmd && cmd->HasSwitch(switches::kMoltskinHardwareSeed) &&
++        base::StringToUint(
++            cmd->GetSwitchValueASCII(switches::kMoltskinHardwareSeed),
++            &parsed) &&
++        parsed != 0) {
++      return parsed;
++    }
++    return 0x6d6f6c74u;
++  }();
++  return kSeed;
++}
++
++const std::string& MoltskinMdnsHostname() {
++  static const base::NoDestructor<std::string> kHost([]() -> std::string {
++    const base::UnguessableToken token = base::UnguessableToken::Create();
++    const uint64_t hi = token.GetHighForSerialization();
++    const uint64_t lo = token.GetLowForSerialization();
++    const uint32_t a = static_cast<uint32_t>(hi >> 32);
++    const uint16_t b = static_cast<uint16_t>((hi >> 16) & 0xffffu);
++    const uint16_t c =
++        static_cast<uint16_t>(((hi & 0x0fffu) | 0x4000u) & 0xffffu);
++    const uint16_t d = static_cast<uint16_t>(
++        (((lo >> 48) & 0x3fffu) | 0x8000u) & 0xffffu);
++    const uint64_t e = lo & 0x0000ffffffffffffULL;
++    return base::StringPrintf("%08x-%04x-%04x-%04x-%012llx.local", a, b, c, d,
++                              static_cast<unsigned long long>(e));
++  }());
++  return *kHost;
++}
++
++bool ExtractFirstMediaUfragAndMid(const std::string& sdp,
++                                  std::string* out_ufrag,
++                                  std::string* out_mid) {
++  bool seen_media = false;
++  std::string session_ufrag;
++  std::string media_ufrag;
++  std::string mid = "0";
++  for (std::string_view raw_line :
++       base::SplitStringPiece(sdp, "\n", base::KEEP_WHITESPACE,
++                              base::SPLIT_WANT_NONEMPTY)) {
++    std::string_view line =
++        base::TrimWhitespaceASCII(raw_line, base::TRIM_TRAILING);
++    if (base::StartsWith(line, "m=")) {
++      if (seen_media) {
++        break;
++      }
++      seen_media = true;
++      continue;
++    }
++    if (base::StartsWith(line, "a=ice-ufrag:")) {
++      const std::string val(line.substr(12));
++      if (seen_media && media_ufrag.empty()) {
++        media_ufrag = val;
++      } else if (!seen_media && session_ufrag.empty()) {
++        session_ufrag = val;
++      }
++    } else if (seen_media && base::StartsWith(line, "a=mid:")) {
++      mid = std::string(line.substr(6));
++    }
++  }
++  if (!seen_media) {
++    return false;
++  }
++  *out_ufrag = !media_ufrag.empty() ? media_ufrag : session_ufrag;
++  *out_mid = mid.empty() ? "0" : mid;
++  return !out_ufrag->empty();
++}
++
++std::string InjectCandidateBlockIntoSdp(const std::string& sdp,
++                                        const std::string& candidate_block,
++                                        const std::string& public_ip) {
++  if (sdp.find(candidate_block) != std::string::npos) {
++    return sdp;
++  }
++  const bool is_ipv6 = public_ip.find(':') != std::string::npos;
++  std::string out;
++  out.reserve(sdp.size() + candidate_block.size() + 64);
++  bool in_first_media = false;
++  bool injected = false;
++  for (std::string_view raw_line :
++       base::SplitStringPiece(sdp, "\n", base::KEEP_WHITESPACE,
++                              base::SPLIT_WANT_NONEMPTY)) {
++    std::string_view line =
++        base::TrimWhitespaceASCII(raw_line, base::TRIM_TRAILING);
++    if (base::StartsWith(line, "m=")) {
++      if (in_first_media && !injected) {
++        out.append(candidate_block);
++        injected = true;
++      }
++      in_first_media = !injected;
++    } else if (in_first_media && !public_ip.empty() &&
++               (line == "c=IN IP4 0.0.0.0" || line == "c=IN IP6 ::")) {
++      out.append(is_ipv6 ? "c=IN IP6 " : "c=IN IP4 ");
++      out.append(public_ip);
++      out.append("\r\n");
++      continue;
++    }
++    out.append(line);
++    out.append("\r\n");
++  }
++  if (in_first_media && !injected) {
++    out.append(candidate_block);
++  }
++  return out;
++}
++
++}  // namespace
++
+ void RTCPeerConnection::DidGenerateICECandidate(
+     RTCIceCandidatePlatform* platform_candidate) {
+   DCHECK(!closed_);
+   DCHECK(GetExecutionContext()->IsContextThread());
+   DCHECK(platform_candidate);
++  const std::string& public_ip = MoltskinConfiguredWebrtcPublicIp();
++  if (!public_ip.empty()) {
++    const std::string addr = platform_candidate->Address().Utf8();
++    const std::string type = platform_candidate->Type().Utf8();
++    if (type == "host" && !base::EndsWith(addr, ".local",
++                                          base::CompareCase::INSENSITIVE_ASCII)) {
++      return;
++    }
++    if ((type == "srflx" || type == "prflx") && !addr.empty() &&
++        addr != public_ip) {
++      std::string cand = platform_candidate->Candidate().Utf8();
++      const size_t pos = cand.find(addr);
++      if (pos != std::string::npos) {
++        cand.replace(pos, addr.size(), public_ip);
++        platform_candidate = MakeGarbageCollected<RTCIceCandidatePlatform>(
++            String::FromUtf8(cand), platform_candidate->SdpMid(),
++            platform_candidate->SdpMLineIndex(),
++            platform_candidate->UsernameFragment(), platform_candidate->Url());
++      }
++      moltskin_emitted_webrtc_candidates_ = true;
++    } else if (type == "srflx") {
++      moltskin_emitted_webrtc_candidates_ = true;
++    }
++  }
+   RTCIceCandidate* ice_candidate = RTCIceCandidate::Create(platform_candidate);
+   MaybeDispatchEvent(RTCPeerConnectionIceEvent::Create(ice_candidate));
+ }
+@@ -2658,6 +2832,23 @@ void RTCPeerConnection::DidChangeSessionDescriptions(
+       current_remote_description
+           ? RTCSessionDescription::Create(current_remote_description)
+           : nullptr;
++  if (!MoltskinConfiguredWebrtcPublicIp().empty()) {
++    RTCSessionDescription* active_local = localDescription();
++    std::string ufrag;
++    std::string mid;
++    if (active_local &&
++        ExtractFirstMediaUfragAndMid(active_local->sdp().Utf8(), &ufrag, &mid)) {
++      if (!moltskin_injected_ufrag_.empty() &&
++          moltskin_injected_ufrag_.Utf8() == ufrag) {
++        ApplyMoltskinCandidatesToDescriptions();
++      } else if (moltskin_injected_ufrag_.Utf8() != ufrag) {
++        moltskin_injected_ufrag_ = String();
++        moltskin_injected_candidate_block_ = String();
++        moltskin_injected_public_ip_ = String();
++        moltskin_emitted_webrtc_candidates_ = false;
++      }
++    }
++  }
+ }
+ 
+ void RTCPeerConnection::DidChangeIceGatheringState(
+@@ -2969,10 +3160,130 @@ void RTCPeerConnection::ChangeSignalingState(
+   }
+ }
+ 
++void RTCPeerConnection::ApplyMoltskinCandidatesToDescriptions() {
++  if (moltskin_injected_candidate_block_.empty()) {
++    return;
++  }
++  const std::string block = moltskin_injected_candidate_block_.Utf8();
++  const std::string ip = moltskin_injected_public_ip_.Utf8();
++  for (RTCSessionDescription* desc :
++       {pending_local_description_.Get(), current_local_description_.Get()}) {
++    if (!desc) {
++      continue;
++    }
++    std::string ufrag;
++    std::string mid;
++    const std::string current_sdp = desc->sdp().Utf8();
++    if (ExtractFirstMediaUfragAndMid(current_sdp, &ufrag, &mid) &&
++        ufrag == moltskin_injected_ufrag_.Utf8()) {
++      desc->setSdp(
++          String::FromUtf8(InjectCandidateBlockIntoSdp(current_sdp, block, ip)));
++    }
++  }
++}
++
++void RTCPeerConnection::MaybeEmitMoltskinIceCandidates() {
++  const std::string& public_ip = MoltskinConfiguredWebrtcPublicIp();
++  if (public_ip.empty() || moltskin_emitted_webrtc_candidates_ || !peer_handler_ ||
++      are_ice_candidates_administratively_prohibited_) {
++    return;
++  }
++  const auto& config = peer_handler_->GetConfiguration();
++  if (config.type == webrtc::PeerConnectionInterface::kRelay) {
++    return;
++  }
++  RTCSessionDescription* local = localDescription();
++  if (!local) {
++    return;
++  }
++  std::string ufrag;
++  std::string mid;
++  if (!ExtractFirstMediaUfragAndMid(local->sdp().Utf8(), &ufrag, &mid)) {
++    return;
++  }
++
++  std::string stun_url;
++  for (const auto& server : config.servers) {
++    for (const auto& url : server.urls) {
++      if (!url.empty()) {
++        stun_url = url;
++        break;
++      }
++    }
++    if (!stun_url.empty()) {
++      break;
++    }
++  }
++
++  const uint32_t seed = MoltskinWebrtcSeed();
++  const size_t h1 = base::FastHash(
++      base::StringPrintf("%u:host:%s", seed, ufrag.c_str()));
++  const size_t h2 = base::FastHash(
++      base::StringPrintf("%u:srflx:%s:%s", seed, public_ip.c_str(), ufrag.c_str()));
++  const uint32_t f_host = 1000000000u + static_cast<uint32_t>(h1 % 3000000000u);
++  const uint32_t f_srflx = 1000000000u + static_cast<uint32_t>(h2 % 3000000000u);
++  const uint16_t port =
++      static_cast<uint16_t>(49152u + static_cast<uint32_t>((h2 >> 16) % 16383u));
++
++  const std::string host_cand = base::StringPrintf(
++      "candidate:%u 1 udp 2122260223 %s %u typ host generation 0 ufrag %s "
++      "network-cost 999",
++      f_host, MoltskinMdnsHostname().c_str(), static_cast<unsigned>(port),
++      ufrag.c_str());
++
++  std::string sdp_block = "a=" + host_cand + "\r\n";
++  std::string srflx_cand;
++  if (!stun_url.empty()) {
++    const char* raddr =
++        (public_ip.find(':') != std::string::npos) ? "::" : "0.0.0.0";
++    srflx_cand = base::StringPrintf(
++        "candidate:%u 1 udp 1686052607 %s %u typ srflx raddr %s rport 0 "
++        "generation 0 ufrag %s network-cost 999",
++        f_srflx, public_ip.c_str(), static_cast<unsigned>(port), raddr,
++        ufrag.c_str());
++    sdp_block += "a=" + srflx_cand + "\r\n";
++  }
++  sdp_block += "a=end-of-candidates\r\n";
++
++  moltskin_emitted_webrtc_candidates_ = true;
++  moltskin_injected_ufrag_ = String::FromUtf8(ufrag);
++  moltskin_injected_candidate_block_ = String::FromUtf8(sdp_block);
++  moltskin_injected_public_ip_ =
++      !stun_url.empty() ? String::FromUtf8(public_ip) : String();
++
++  auto* host_platform = MakeGarbageCollected<RTCIceCandidatePlatform>(
++      String::FromUtf8(host_cand), String::FromUtf8(mid), uint16_t{0},
++      String::FromUtf8(ufrag), String());
++  ScheduleDispatchEvent(
++      RTCPeerConnectionIceEvent::Create(RTCIceCandidate::Create(host_platform)),
++      BindOnce(
++          [](RTCPeerConnection* self) {
++            self->ApplyMoltskinCandidatesToDescriptions();
++            return true;
++          },
++          WrapPersistent(this)));
++
++  if (!srflx_cand.empty()) {
++    auto* srflx_platform = MakeGarbageCollected<RTCIceCandidatePlatform>(
++        String::FromUtf8(srflx_cand), String::FromUtf8(mid), uint16_t{0},
++        String::FromUtf8(ufrag), String::FromUtf8(stun_url));
++    ScheduleDispatchEvent(RTCPeerConnectionIceEvent::Create(
++        RTCIceCandidate::Create(srflx_platform)));
++  }
++}
++
+ void RTCPeerConnection::ChangeIceGatheringState(
+     webrtc::PeerConnectionInterface::IceGatheringState ice_gathering_state) {
+   if (ice_connection_state_ !=
+       webrtc::PeerConnectionInterface::kIceConnectionClosed) {
++    if (ice_gathering_state ==
++        webrtc::PeerConnectionInterface::kIceGatheringGathering) {
++      moltskin_emitted_webrtc_candidates_ = false;
++    }
++    if (ice_gathering_state ==
++        webrtc::PeerConnectionInterface::kIceGatheringComplete) {
++      MaybeEmitMoltskinIceCandidates();
++    }
+     ScheduleDispatchEvent(
+         Event::Create(event_type_names::kIcegatheringstatechange),
+         BindOnce(&RTCPeerConnection::SetIceGatheringState, WrapPersistent(this),
+diff --git a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h
+index 12d08682af..41affdf7b7 100644
+--- a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h
++++ b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection.h
+@@ -463,6 +463,8 @@ class MODULES_EXPORT RTCPeerConnection final
+   void ChangeIceGatheringState(
+       webrtc::PeerConnectionInterface::IceGatheringState);
+   bool SetIceGatheringState(webrtc::PeerConnectionInterface::IceGatheringState);
++  void MaybeEmitMoltskinIceCandidates();
++  void ApplyMoltskinCandidatesToDescriptions();
+ 
+   void ChangeIceConnectionState(
+       webrtc::PeerConnectionInterface::IceConnectionState);
+@@ -590,6 +592,10 @@ class MODULES_EXPORT RTCPeerConnection final
+   // globally. See https://w3c.github.io/webappsec-csp/#directive-webrtc
+   // and https://w3c.github.io/webrtc-extensions/#ice-csp-modifications.
+   bool are_ice_candidates_administratively_prohibited_ = false;
++  bool moltskin_emitted_webrtc_candidates_ = false;
++  String moltskin_injected_ufrag_;
++  String moltskin_injected_candidate_block_;
++  String moltskin_injected_public_ip_;
+ };
+ 
+ }  // namespace blink

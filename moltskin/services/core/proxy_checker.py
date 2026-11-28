@@ -114,13 +114,15 @@ def check_and_save(proxy: dict) -> dict:
     language = geoip.locale_for_country(result.get("country"), result.get("locale"))
     with db.session() as conn:
         conn.execute(
-            "UPDATE proxies SET status=?, exit_ip=?, country=?, timezone=?, latency_ms=?, "
-            "last_checked_at=?, updated_at=? WHERE id=?",
+            "UPDATE proxies SET status=?, exit_ip=?, country=?, timezone=?, latitude=?, longitude=?, "
+            "latency_ms=?, last_checked_at=?, updated_at=? WHERE id=?",
             (
                 result["status"],
                 result["exit_ip"],
                 result["country"],
                 result["timezone"],
+                result["latitude"],
+                result["longitude"],
                 result["latency_ms"],
                 db.now(),
                 db.now(),
